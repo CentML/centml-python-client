@@ -8,6 +8,6 @@ ipaddress>=1.0.17;python_version=="2.7"  # PSF
 websocket-client>=0.32.0,!=0.40.0,!=0.41.*,!=0.42.* # LGPLv2+
 requests-oauthlib # ISC 
 requests # Apache-2.0
-urllib3==1.24.2  # MIT 
+urllib3==1.26.5  # MIT 
 
 kubernetes==26.1.0 # APL 2.0
