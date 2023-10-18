@@ -3,6 +3,14 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# custom
+to_folder_dump/
+from_folder_test.py
+to_folder_test.py
+*.temp
+pickled_objects_client/
+pickled_objects_server/
+
 # C extensions
 *.so
 
