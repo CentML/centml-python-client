@@ -66,7 +66,9 @@ async def download_handler(model_id: str):
 
 
 def run():
-    uvicorn.run("server:app", host="0.0.0.0", port=8083, reload=True)
+    server_IP = os.getenv('CENTML_SERVER_IP', default="0.0.0.0")
+    server_port = os.getenv('CENTML_SERVER_PORT', default="8080")
+    uvicorn.run("server:app", host=server_IP, port=server_port, reload=True)
 
 if __name__ == "__main__":
     run()

@@ -19,7 +19,10 @@ import requests
 base_path = os.getenv('CENTML_CACHE_DIR', default=os.path.expanduser("~/.cache/centml/compiler"))
 os.makedirs(base_path, exist_ok=True)
 
-server_url = os.getenv('CENTML_SERVER_URL', default="http://0.0.0.0:8083")
+server_IP = os.getenv('CENTML_SERVER_IP', default="0.0.0.0")
+server_port = os.getenv('CENTML_SERVER_PORT', default="8080")
+
+server_url = f'http://{server_IP}:{server_port}'
 class Runner:
     def __init__(self, module, inputs):
         self._module = module
