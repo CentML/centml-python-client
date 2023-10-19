@@ -115,8 +115,6 @@ def get_flow_graph(tfx_graph, example_inputs) -> FlowGraph:
         else:
             raise ValueError(f"hidet_backend: unexpected example input {example_input}, type {type(example_input)}")
 
-    # may want to add the logging thing here
-
     output = interpreter(*inputs)
     output_format, output_tensors = serialize_output(output)
     input_tensors = [x for x in inputs if isinstance(x, hidet.Tensor)]
@@ -137,5 +135,4 @@ def hidet_backend_server(graph_module, example_inputs, model_id):
         graph_module.graph.print_tabular()
 
     flow_graph, _, _ = get_flow_graph(graph_module, example_inputs)
-
     generate_executor(flow_graph, model_id)

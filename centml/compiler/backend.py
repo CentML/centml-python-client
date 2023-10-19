@@ -28,9 +28,7 @@ class Runner:
     def __init__(self, module, inputs):
         self._module = module
         self._inputs = inputs
-
         self.compiled_forward_function = None
-
         # to be used with the non-blocking version
         self.compiled = False
 
@@ -68,8 +66,8 @@ class Runner:
 
     def remote_compilation(self):
         flow_graph, inputs, output_format = get_flow_graph(self.module, self._inputs)
-
         fg_file_path = os.path.join(base_path, "pickled_flowgraph.temp")
+
         try:
             hidet.save_graph(flow_graph, fg_file_path)
         except Exception as e:

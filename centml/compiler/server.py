@@ -9,8 +9,6 @@ from centml.compiler.dynamo_server import hidet_backend_server, storage_path, Co
 
 app = FastAPI()
 
-count = 0
-
 
 @app.get("/status/{model_id}")
 async def status_handler(model_id: str):
