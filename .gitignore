@@ -8,6 +8,7 @@ to_folder_dump/
 to_folder_test.py
 *.temp
 client_test.py
+settings.json
 
 # C extensions
 *.so
