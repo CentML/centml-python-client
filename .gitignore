@@ -5,11 +5,9 @@ __pycache__/
 
 # custom
 to_folder_dump/
-from_folder_test.py
 to_folder_test.py
 *.temp
-pickled_objects_client/
-pickled_objects_server/
+client_test.py
 
 # C extensions
 *.so

@@ -21,7 +21,8 @@ class Compilation_Status(Enum):
     COMPILING = 2	
     DONE = 3
 
-storage_path = os.path.join(os.getcwd(), "pickled_objects_server")
+storage_path = os.getenv('CENTML_SERVER_CACHE_DIR', default=os.path.expanduser("~/.cache/centml-server"))
+os.makedirs(storage_path, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,7 @@ def generate_executor(flow_graph: FlowGraph, model_id: str) -> Callable:
     try:
         save_compiled_graph(cgraph, os.path.join(storage_path, model_id, "cgraph.pkl"))
     except:
-        raise Exception
+        raise Exception("Saving compiled graph failed")
 
 # taken from hidet.graph.frontend.torch.hidet_backend
 def get_flow_graph(tfx_graph, example_inputs) -> FlowGraph:

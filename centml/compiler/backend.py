@@ -15,8 +15,10 @@ from hidet.runtime import CompiledGraph
 from centml.compiler.dynamo_server import get_flow_graph, Compilation_Status, preprocess_inputs, dir_cleanup
 import requests
 
-base_path = os.path.join(os.getcwd(), "centml/compiler/pickled_objects_client")
-server_url = "http://0.0.0.0:8083"  
+base_path = os.getenv('CENTML_CACHE_DIR', default=os.path.expanduser("~/.cache/centml/compiler"))
+os.makedirs(base_path, exist_ok=True)
+
+server_url = os.getenv('CENTML_SERVER_URL', default="http://0.0.0.0:8083")
 class Runner:
     def __init__(self, module, inputs):
         self._module = module
@@ -47,7 +49,7 @@ class Runner:
             raise Exception("Download request failed")
 
         # TODO: see if load_compiled_graph can be rewritten to the sent file object to a cgraph object without using the disk.
-        download_path = os.path.join(base_path, f"downloaded_cgraphs/cgraph_{model_id}.temp")
+        download_path = os.path.join(base_path, f"cgraph_{model_id}.temp")
         with open(download_path, 'wb') as f:
             f.write(download_response.content)
         cgraph = load_compiled_graph(download_path)
