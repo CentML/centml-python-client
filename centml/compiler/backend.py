@@ -16,7 +16,7 @@ from hidet.runtime.compiled_graph import load_compiled_graph
 from centml.compiler import config_instance
 from centml.compiler.server_compilation import CompilationStatus, get_flow_graph, preprocess_inputs, dir_cleanup
 
-base_path = os.getenv("CENTML_CACHE_DIR", default=os.path.expanduser("~/.cache/centml/compiler"))
+base_path = os.path.join(config_instance.CACHE_PATH, "compiler")
 os.makedirs(base_path, exist_ok=True)
 server_url = f"http://{config_instance.SERVER_IP}:{config_instance.SERVER_PORT}"
 
@@ -61,8 +61,6 @@ class Runner:
             f.write(download_response.content)
         cgraph = load_compiled_graph(download_path)
 
-        # delete downloaded CompiledGraph file
-        os.unlink(download_path)
         return cgraph
 
     def __compile_model(self, model_id):
@@ -98,16 +96,21 @@ class Runner:
 
         model_id = self.__get_model_id(flow_graph)
 
-        # check if the corresponding CompiledGraph is cached on the server
-        cache_response = requests.get(f"{server_url}/status/{model_id}", timeout=config_instance.TIMEOUT)
-        if cache_response.status_code != HTTPStatus.OK:
-            raise Exception("Status check failed")
+        # check if the corresponding CompiledGraph is saved locally
+        cgraph_path = os.path.join(base_path, f"cgraph_{model_id}.temp")
+        if os.path.isfile(cgraph_path):
+            cgraph = load_compiled_graph(cgraph_path)
+        else:
+            # check if the corresponding CompiledGraph is cached on the server
+            cache_response = requests.get(f"{server_url}/status/{model_id}", timeout=config_instance.TIMEOUT)
+            if cache_response.status_code != HTTPStatus.OK:
+                raise Exception("Status check failed")
 
-        status = cache_response.json()["status"]
-        if status != CompilationStatus.DONE.value:
-            self.__wait_for_status(model_id)
+            status = cache_response.json()["status"]
+            if status != CompilationStatus.DONE.value:
+                self.__wait_for_status(model_id)
 
-        cgraph = self.__download_model(model_id)
+            cgraph = self.__download_model(model_id)
 
         def run_executor(*inputs: torch.Tensor):
             hidet_inputs = preprocess_inputs(inputs)
