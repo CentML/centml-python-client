@@ -1,6 +1,8 @@
 import os
 import pickle
 import hashlib
+import time
+import tempfile
 from http import HTTPStatus
 from typing import List, Sequence
 import requests
@@ -16,9 +18,7 @@ from centml.compiler.dynamo_server import CompilationStatus, get_flow_graph, pre
 
 base_path = os.getenv("CENTML_CACHE_DIR", default=os.path.expanduser("~/.cache/centml/compiler"))
 os.makedirs(base_path, exist_ok=True)
-server_IP = os.getenv("CENTML_SERVER_IP", default="0.0.0.0")
-server_port = os.getenv("CENTML_SERVER_PORT", default="8080")
-server_url = f"http://{server_IP}:{server_port}"
+server_url = f"http://{config_instance.SERVER_IP}:{config_instance.SERVER_PORT}"
 
 
 class Runner:
@@ -39,13 +39,23 @@ class Runner:
     def inputs(self):
         return self._inputs
 
-    def download_model(self, model_id):
+    def __get_model_id(self, flow_graph):
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            try:
+                hidet.save_graph(flow_graph, temp_file.name)
+            except Exception as e:
+                raise Exception("Failed to save FlowGraph for hashing") from e
+
+            with open(temp_file.name, "rb") as f:
+                flow_graph_hash = hashlib.md5(f.read()).hexdigest()
+
+        return flow_graph_hash
+    
+    def __download_model(self, model_id):
         download_response = requests.get(url=f"{server_url}/download/{model_id}", timeout=config_instance.TIMEOUT)
         if download_response.status_code != HTTPStatus.OK:
             raise Exception("Download request failed")
-
-        # TODO: see if load_compiled_graph can be rewritten to save
-        # the file object to a cgraph object without using the disk.
+        
         download_path = os.path.join(base_path, f"cgraph_{model_id}.temp")
         with open(download_path, "wb") as f:
             f.write(download_response.content)
@@ -54,75 +64,52 @@ class Runner:
         # delete downloaded CompiledGraph file
         os.unlink(download_path)
         return cgraph
+    
+    def __compile_model(self, model_id):
+        compile_response = requests.post(
+            url=f"{server_url}/compile_model/{model_id}",
+            files={"model": pickle.dumps(self.module), "inputs": pickle.dumps(self.inputs)},
+            timeout=config_instance.TIMEOUT_COMPILE,
+        )
+        return compile_response
+
+    def __wait_for_status(self, model_id):
+        failed_tries = 0
+        while True:
+            status_response = requests.get(
+                f"{server_url}/status/{model_id}", timeout=config_instance.TIMEOUT
+            )
+            if status_response.status_code != HTTPStatus.OK:
+                raise Exception("Status check failed")
+            status = status_response.json()["status"] 
+            if status == CompilationStatus.DONE.value:
+                break
+            if status == CompilationStatus.COMPILING.value:
+                time.sleep(1)
+                continue
+            if status == CompilationStatus.NOT_FOUND.value or compiled_response.status_code != HTTPStatus.OK:
+                # If model isn't compiling after requesting compilation, retry up to 3 times
+                dir_cleanup(model_id)
+                compiled_response = self.__compile_model(model_id)
+                failed_tries += 1
+                if failed_tries > config_instance.MAX_RETRIES:
+                    raise Exception("Compilation failed too many times")
 
     def remote_compilation(self):
-        flow_graph, inputs, output_format = get_flow_graph(self.module, self._inputs)
-        fg_file_path = os.path.join(base_path, "pickled_flowgraph.temp")
+        flow_graph, inputs, output_format = get_flow_graph(self.module, self.inputs)
 
-        try:
-            hidet.save_graph(flow_graph, fg_file_path)
-        except Exception as e:
-            raise Exception("Failed to save FlowGraph for hashing") from e
-
-        with open(fg_file_path, "rb") as f:
-            flow_graph_hash = hashlib.md5(f.read()).hexdigest()
-
-        # delete the FlowGraph now that it's been hashed
-        os.unlink(fg_file_path)
+        model_id = self.__get_model_id(flow_graph)
 
         # check if the corresponding CompiledGraph is cached on the server
-        cache_response = requests.get(f"{server_url}/status/{flow_graph_hash}", timeout=config_instance.TIMEOUT)
-
+        cache_response = requests.get(f"{server_url}/status/{model_id}", timeout=config_instance.TIMEOUT)
         if cache_response.status_code != HTTPStatus.OK:
             raise Exception("Status check failed")
 
         status = cache_response.json()["status"]
+        if status != CompilationStatus.DONE.value:    
+            self.__wait_for_status(model_id)
 
-        if status == CompilationStatus.DONE.value:
-            # model has already been compiled, so we just need to download
-            cgraph = self.download_model(flow_graph_hash)
-        elif status == CompilationStatus.COMPILING.value:
-            # returning none will tell self.__call__ to return the uncompiled forward function
-            return None
-        elif status == CompilationStatus.NOT_FOUND.value:  # NOT_FOUND
-
-            def compile_model():
-                compile_response = requests.post(
-                    url=f"{server_url}/compile_model/",
-                    data={"model_id": flow_graph_hash},
-                    files={"serialized_model": pickle.dumps(self.module), "serialized_example_inputs": pickle.dumps(self.inputs)},
-                    timeout=config_instance.TIMEOUT_COMPILE,
-                )
-
-                return compile_response
-
-            compiled_response = compile_model()
-            failed_tries = 0
-
-            while True:
-                status_response = requests.get(
-                    f"{server_url}/status/{flow_graph_hash}", timeout=config_instance.TIMEOUT
-                )
-                if status_response.status_code != HTTPStatus.OK:
-                    raise Exception("Status check failed")
-
-                status = status_response.json()["status"]
-                if status == CompilationStatus.DONE.value:
-                    break
-                if status == CompilationStatus.COMPILING.value:
-                    continue
-                if status == CompilationStatus.NOT_FOUND.value or compiled_response.status_code != HTTPStatus.OK:
-                    # If model isn't compiling after requesting compilation, retry up to 3 times
-                    dir_cleanup(flow_graph_hash)
-                    compiled_response = compile_model()
-                    if failed_tries > config_instance.MAX_RETRIES:
-                        raise Exception("Compilation failed too many times")
-                    failed_tries += 1
-
-            cgraph = self.download_model(flow_graph_hash)
-
-        else:
-            raise Exception("Invalid status returned from server")
+        cgraph = self.__download_model(model_id)
 
         def run_executor(*inputs: torch.Tensor):
             hidet_inputs = preprocess_inputs(inputs)
