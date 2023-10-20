@@ -15,6 +15,7 @@ from hidet.graph.frontend.torch.utils import serialize_output, resolve_save_dir_
 from hidet.graph.frontend.torch.dynamo_config import dynamo_config
 from hidet.runtime.compiled_graph import save_compiled_graph
 from hidet.graph.frontend.torch.interpreter import Interpreter
+from centml.compiler import config_instance
 
 
 class CompilationStatus(Enum):
@@ -23,7 +24,7 @@ class CompilationStatus(Enum):
     DONE = 3
 
 
-storage_path = os.getenv("CENTML_CACHE_DIR", default=os.path.expanduser("~/.cache/centml/server"))
+storage_path = os.path.join(config_instance.CACHE_PATH, "server")
 os.makedirs(storage_path, exist_ok=True)
 
 logger = logging.getLogger(__name__)
