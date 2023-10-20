@@ -23,13 +23,13 @@ class CompilationStatus(Enum):
     DONE = 3
 
 
-storage_path = os.getenv("CENTML_SERVER_CACHE_DIR", default=os.path.expanduser("~/.cache/centml-server"))
+storage_path = os.getenv("CENTML_CACHE_DIR", default=os.path.expanduser("~/.cache/centml/server"))
 os.makedirs(storage_path, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 
 
-# This function will delete the compiler/pickled_objects_server/{model_id} directory
+# This function will delete the storage_path/{model_id} directory
 def dir_cleanup(model_id):
     dir_path = os.path.join(storage_path, model_id)
     if not os.path.exists(dir_path):
