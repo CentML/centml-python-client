@@ -14,7 +14,7 @@ from hidet.ir.expr import SymbolVar
 from hidet.graph.frontend.torch.utils import deserialize_output
 from hidet.runtime.compiled_graph import load_compiled_graph
 from centml.compiler import config_instance
-from centml.compiler.dynamo_server import CompilationStatus, get_flow_graph, preprocess_inputs, dir_cleanup
+from centml.compiler.server_compilation import CompilationStatus, get_flow_graph, preprocess_inputs, dir_cleanup
 
 base_path = os.getenv("CENTML_CACHE_DIR", default=os.path.expanduser("~/.cache/centml/compiler"))
 os.makedirs(base_path, exist_ok=True)
@@ -50,12 +50,12 @@ class Runner:
                 flow_graph_hash = hashlib.md5(f.read()).hexdigest()
 
         return flow_graph_hash
-    
+
     def __download_model(self, model_id):
         download_response = requests.get(url=f"{server_url}/download/{model_id}", timeout=config_instance.TIMEOUT)
         if download_response.status_code != HTTPStatus.OK:
             raise Exception("Download request failed")
-        
+
         download_path = os.path.join(base_path, f"cgraph_{model_id}.temp")
         with open(download_path, "wb") as f:
             f.write(download_response.content)
@@ -64,7 +64,7 @@ class Runner:
         # delete downloaded CompiledGraph file
         os.unlink(download_path)
         return cgraph
-    
+
     def __compile_model(self, model_id):
         compile_response = requests.post(
             url=f"{server_url}/compile_model/{model_id}",
@@ -76,12 +76,10 @@ class Runner:
     def __wait_for_status(self, model_id):
         failed_tries = 0
         while True:
-            status_response = requests.get(
-                f"{server_url}/status/{model_id}", timeout=config_instance.TIMEOUT
-            )
+            status_response = requests.get(f"{server_url}/status/{model_id}", timeout=config_instance.TIMEOUT)
             if status_response.status_code != HTTPStatus.OK:
                 raise Exception("Status check failed")
-            status = status_response.json()["status"] 
+            status = status_response.json()["status"]
             if status == CompilationStatus.DONE.value:
                 break
             if status == CompilationStatus.COMPILING.value:
@@ -106,7 +104,7 @@ class Runner:
             raise Exception("Status check failed")
 
         status = cache_response.json()["status"]
-        if status != CompilationStatus.DONE.value:    
+        if status != CompilationStatus.DONE.value:
             self.__wait_for_status(model_id)
 
         cgraph = self.__download_model(model_id)

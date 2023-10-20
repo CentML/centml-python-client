@@ -1,14 +1,14 @@
 import os
 import pickle
-from typing import Annotated
 from http import HTTPStatus
 import uvicorn
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import FileResponse
-from centml.compiler.dynamo_server import hidet_backend_server, storage_path, CompilationStatus, dir_cleanup
+from centml.compiler.server_compilation import hidet_backend_server, storage_path, CompilationStatus, dir_cleanup
 from centml.compiler import config_instance
 
 app = FastAPI()
+
 
 @app.get("/status/{model_id}")
 async def status_handler(model_id: str):
@@ -26,12 +26,7 @@ async def status_handler(model_id: str):
 
 
 @app.post("/compile_model/{model_id}")
-async def compile_model_handler(
-    # model_id: Annotated[str, Form()],
-    model_id: str,
-    model: UploadFile = File(...),
-    inputs: UploadFile = File(...),
-):
+async def compile_model_handler(model_id: str, model: UploadFile = File(...), inputs: UploadFile = File(...)):
     # Leave the directory empty until compilation complete.
     os.makedirs(os.path.join(storage_path, model_id))
 
