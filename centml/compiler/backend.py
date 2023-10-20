@@ -87,27 +87,12 @@ class Runner:
         elif status == CompilationStatus.NOT_FOUND.value:  # NOT_FOUND
 
             def compile_model():
-                # Is it really needed to dump to disk, instead of just sending a pickled object directly?
-                # allegedly, sending over pickled objects is dangerous. Maybe we should try to send as JSON.
-                tfx_file_path = os.path.join(base_path, "pickled_tfx_graph.temp")
-                with open(tfx_file_path, "wb") as f:
-                    pickle.dump(self.module, f)
-
-                example_inputs_path = os.path.join(base_path, "pickled_example_inputs.temp")
-                with open(example_inputs_path, "wb") as f:
-                    pickle.dump(self.inputs, f)
-
-                with open(tfx_file_path, "rb") as tfx_f, open(example_inputs_path, "rb") as ei_f:
-                    compile_response = requests.post(
-                        url=f"{server_url}/compile_model/",
-                        data={"model_id": flow_graph_hash},
-                        files={"serialized_model": tfx_f, "serialized_example_inputs": ei_f},
-                        timeout=config_instance.TIMEOUT_COMPILE,
-                    )
-
-                # delete the tfx_graph and example_inputs now that they have been sent over
-                os.unlink(tfx_file_path)
-                os.unlink(example_inputs_path)
+                compile_response = requests.post(
+                    url=f"{server_url}/compile_model/",
+                    data={"model_id": flow_graph_hash},
+                    files={"serialized_model": pickle.dumps(self.module), "serialized_example_inputs": pickle.dumps(self.inputs)},
+                    timeout=config_instance.TIMEOUT_COMPILE,
+                )
 
                 return compile_response
 
