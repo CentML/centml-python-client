@@ -20,6 +20,7 @@ server_IP = os.getenv("CENTML_SERVER_IP", default="0.0.0.0")
 server_port = os.getenv("CENTML_SERVER_PORT", default="8080")
 server_url = f"http://{server_IP}:{server_port}"
 
+
 class Runner:
     def __init__(self, module, inputs):
         self._module = module
@@ -29,7 +30,6 @@ class Runner:
         self.compiled = False
 
         self.remote_compilation()
-
 
     @property
     def module(self):
@@ -115,7 +115,9 @@ class Runner:
             failed_tries = 0
 
             while True:
-                status_response = requests.get(f"{server_url}/status/{flow_graph_hash}", timeout=config_instance.TIMEOUT)
+                status_response = requests.get(
+                    f"{server_url}/status/{flow_graph_hash}", timeout=config_instance.TIMEOUT
+                )
                 if status_response.status_code != HTTPStatus.OK:
                     raise Exception("Status check failed")
 

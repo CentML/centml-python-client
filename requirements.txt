@@ -3,3 +3,5 @@ fastapi>=0.103.0
 uvicorn>=0.23.0
 python-multipart>=0.0.6
 Pillow>=10.1.0
+black>=23.10.0
+pylint>=3.0.1
