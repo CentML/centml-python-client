@@ -11,6 +11,7 @@ from hidet.ir.type import DataType
 from hidet.ir.expr import SymbolVar
 from hidet.graph.frontend.torch.utils import deserialize_output
 from hidet.runtime.compiled_graph import load_compiled_graph
+from centml.compiler import config_instance
 from centml.compiler.dynamo_server import CompilationStatus, get_flow_graph, preprocess_inputs, dir_cleanup
 
 base_path = os.getenv("CENTML_CACHE_DIR", default=os.path.expanduser("~/.cache/centml/compiler"))
@@ -18,11 +19,6 @@ os.makedirs(base_path, exist_ok=True)
 server_IP = os.getenv("CENTML_SERVER_IP", default="0.0.0.0")
 server_port = os.getenv("CENTML_SERVER_PORT", default="8080")
 server_url = f"http://{server_IP}:{server_port}"
-
-TIMEOUT = 10
-TIMEOUT_COMPILE = 100
-MAX_RETRIES = 3
-
 
 class Runner:
     def __init__(self, module, inputs):
@@ -34,11 +30,6 @@ class Runner:
 
         self.remote_compilation()
 
-        # mp.set_start_method("forkserver", force=True)
-        # self.child_process = mp.Process(
-        #     target=self.remote_compilation, args=(self.compiled,)
-        # )
-        # self.child_process.start()
 
     @property
     def module(self):
@@ -49,7 +40,7 @@ class Runner:
         return self._inputs
 
     def download_model(self, model_id):
-        download_response = requests.get(url=f"{server_url}/download/{model_id}", timeout=TIMEOUT)
+        download_response = requests.get(url=f"{server_url}/download/{model_id}", timeout=config_instance.TIMEOUT)
         if download_response.status_code != HTTPStatus.OK:
             raise Exception("Download request failed")
 
@@ -80,7 +71,7 @@ class Runner:
         os.unlink(fg_file_path)
 
         # check if the corresponding CompiledGraph is cached on the server
-        cache_response = requests.get(f"{server_url}/status/{flow_graph_hash}", timeout=TIMEOUT)
+        cache_response = requests.get(f"{server_url}/status/{flow_graph_hash}", timeout=config_instance.TIMEOUT)
 
         if cache_response.status_code != HTTPStatus.OK:
             raise Exception("Status check failed")
@@ -111,7 +102,7 @@ class Runner:
                         url=f"{server_url}/compile_model/",
                         data={"model_id": flow_graph_hash},
                         files={"serialized_model": tfx_f, "serialized_example_inputs": ei_f},
-                        timeout=TIMEOUT_COMPILE,
+                        timeout=config_instance.TIMEOUT_COMPILE,
                     )
 
                 # delete the tfx_graph and example_inputs now that they have been sent over
@@ -124,7 +115,7 @@ class Runner:
             failed_tries = 0
 
             while True:
-                status_response = requests.get(f"{server_url}/status/{flow_graph_hash}", timeout=TIMEOUT)
+                status_response = requests.get(f"{server_url}/status/{flow_graph_hash}", timeout=config_instance.TIMEOUT)
                 if status_response.status_code != HTTPStatus.OK:
                     raise Exception("Status check failed")
 
@@ -137,7 +128,7 @@ class Runner:
                     # If model isn't compiling after requesting compilation, retry up to 3 times
                     dir_cleanup(flow_graph_hash)
                     compiled_response = compile_model()
-                    if failed_tries > MAX_RETRIES:
+                    if failed_tries > config_instance.MAX_RETRIES:
                         raise Exception("Compilation failed too many times")
                     failed_tries += 1
 
