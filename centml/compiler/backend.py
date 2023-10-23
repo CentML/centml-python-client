@@ -54,7 +54,7 @@ class Runner:
     def __download_model(self, model_id):
         download_response = requests.get(url=f"{server_url}/download/{model_id}", timeout=config_instance.TIMEOUT)
         if download_response.status_code != HTTPStatus.OK:
-            raise Exception("Download request failed")
+            raise Exception(f"Download request failed, exception from server: {download_response.text['detail']}")
 
         download_path = os.path.join(base_path, f"cgraph_{model_id}.temp")
         with open(download_path, "wb") as f:
@@ -76,7 +76,7 @@ class Runner:
         while True:
             status_response = requests.get(f"{server_url}/status/{model_id}", timeout=config_instance.TIMEOUT)
             if status_response.status_code != HTTPStatus.OK:
-                raise Exception("Status check failed")
+                raise Exception(f"Status check failed, exception from server: {status_response.text['detail']}")
             status = status_response.json()["status"]
             if status == CompilationStatus.DONE.value:
                 break
@@ -89,7 +89,7 @@ class Runner:
                 compiled_response = self.__compile_model(model_id)
                 failed_tries += 1
                 if failed_tries > config_instance.MAX_RETRIES:
-                    raise Exception("Compilation failed too many times")
+                    raise Exception(f"Compilation failed too many times, {compiled_response.text['detail']}")
 
     def remote_compilation(self):
         flow_graph, inputs, output_format = get_flow_graph(self.module, self.inputs)
@@ -104,7 +104,7 @@ class Runner:
             # check if the corresponding CompiledGraph is cached on the server
             cache_response = requests.get(f"{server_url}/status/{model_id}", timeout=config_instance.TIMEOUT)
             if cache_response.status_code != HTTPStatus.OK:
-                raise Exception("Status check failed")
+                raise Exception(f"Cache/status check failed, exception from server: {cache_response.text['detail']}")
 
             status = cache_response.json()["status"]
             if status != CompilationStatus.DONE.value:
