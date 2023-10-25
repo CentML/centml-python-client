@@ -47,7 +47,7 @@ async def compile_model_handler(model_id: str, model: UploadFile = File(...), in
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Error loading pickled content") from e
 
     try:
-        # This will safe the model to {storage_path}/{model_id}/cgraph.pkl
+        # This will save the model to {storage_path}/{model_id}/cgraph.pkl
         hidet_backend_server(tfx_graph, example_inputs, model_id)
     except Exception as e:
         dir_cleanup(model_id)
@@ -64,4 +64,8 @@ async def download_handler(model_id: str):
 
 
 def run():
-    uvicorn.run("server:app", host=config_instance.SERVER_IP, port=config_instance.SERVER_PORT, reload=True)
+    uvicorn.run("server:app", host=config_instance.SERVER_IP, port=int(config_instance.SERVER_PORT), reload=True)
+
+
+if __name__ == "__main__":
+    run()

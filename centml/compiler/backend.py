@@ -4,17 +4,15 @@ import hashlib
 import time
 import tempfile
 from http import HTTPStatus
-from typing import List, Sequence
+from typing import List
 import requests
 import hidet
 import torch
-from hidet import Tensor
-from hidet.ir.type import DataType
-from hidet.ir.expr import SymbolVar
-from hidet.graph.frontend.torch.utils import deserialize_output
+from hidet.graph.frontend.torch.interpreter import Interpreter
+from hidet.graph.frontend.torch.dynamo_backends import get_flow_graph, get_wrapper
 from hidet.runtime.compiled_graph import load_compiled_graph
 from centml.compiler import config_instance
-from centml.compiler.server_compilation import CompilationStatus, get_flow_graph, preprocess_inputs, dir_cleanup
+from centml.compiler.server_compilation import CompilationStatus, dir_cleanup
 
 base_path = os.path.join(config_instance.CACHE_PATH, "compiler")
 os.makedirs(base_path, exist_ok=True)
@@ -89,10 +87,17 @@ class Runner:
                 compiled_response = self.__compile_model(model_id)
                 failed_tries += 1
                 if failed_tries > config_instance.MAX_RETRIES:
-                    raise Exception(f"Compilation failed too many times. Most recent server exception:, {compiled_response.json().get('detail')}")
+                    failure_reason = (
+                        f"Most recent server exception: {compiled_response.json().get('detail')}."
+                        if compiled_response.status_code != HTTPStatus.OK
+                        else "Compilation not found on server."
+                    )
+                    raise Exception("Compilation failed too many times. " + failure_reason)
 
     def remote_compilation(self):
-        flow_graph, inputs, output_format = get_flow_graph(self.module, self.inputs)
+        interpreter: Interpreter = hidet.frontend.from_torch(self.module)
+
+        flow_graph, inputs, output_format = get_flow_graph(interpreter, self.inputs)
 
         model_id = self.__get_model_id(flow_graph)
 
@@ -104,42 +109,17 @@ class Runner:
             # check if the corresponding CompiledGraph is cached on the server
             cache_response = requests.get(f"{server_url}/status/{model_id}", timeout=config_instance.TIMEOUT)
             if cache_response.status_code != HTTPStatus.OK:
-                raise Exception(f"Cache/status check failed, exception from server: {cache_response.json().get('detail')}")
+                raise Exception(
+                    f"Cache/status check failed, exception from server: {cache_response.json().get('detail')}"
+                )
 
-            status = cache_response.json()["status"]
+            status = cache_response.json().get("status")
             if status != CompilationStatus.DONE.value:
                 self.__wait_for_status(model_id)
 
             cgraph = self.__download_model(model_id)
 
-        def run_executor(*inputs: torch.Tensor):
-            hidet_inputs = preprocess_inputs(inputs)
-            hidet_outputs: List[hidet.Tensor] = cgraph.run_async(hidet_inputs)
-            torch_outputs: List[torch.Tensor] = [tensor.torch() for tensor in hidet_outputs]
-            return torch_outputs
-
-        def wrapper(*args: Tensor):
-            tensor_args = []
-            for param, arg in zip(inputs, args):
-                if isinstance(param, Tensor):
-                    tensor_args.append(arg)
-                elif isinstance(param, SymbolVar):
-                    dtype = param.type
-                    assert isinstance(dtype, DataType)
-                    if dtype.name == "int32":
-                        from hidet.ffi import runtime_api
-
-                        runtime_api.set_symbol_value(param.name, int(arg))
-                    else:
-                        raise ValueError(
-                            f"hidet_backend: unsupported symbolic dtype {dtype}. We only support int32 now."
-                        )
-                else:
-                    # ignore constant
-                    pass
-            outputs: Sequence[torch.Tensor] = run_executor(*tensor_args)
-            ret = deserialize_output(output_format, outputs)
-            return ret
+        wrapper = get_wrapper(cgraph, inputs, output_format)
 
         self.compiled_forward_function = wrapper
         self.compiled = True
