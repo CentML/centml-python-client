@@ -40,14 +40,10 @@ def dir_cleanup(model_id):
 
 def hidet_backend_server(graph_module, example_inputs, model_id):
     assert isinstance(graph_module, torch.fx.GraphModule)
+    hidet.option.parallel_build(True)
 
     logger.info("received a subgraph with %d nodes to optimize", len(graph_module.graph.nodes))
     logger.debug("graph: %s", graph_module.graph)
-
-    if dynamo_config["print_input_graph"]:
-        graph_module.print_readable()
-        print("---")
-        graph_module.graph.print_tabular()
 
     interpreter: Interpreter = hidet.frontend.from_torch(graph_module)
     flow_graph, _, _ = get_flow_graph(interpreter, example_inputs)

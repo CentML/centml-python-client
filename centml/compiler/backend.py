@@ -12,7 +12,7 @@ from hidet.graph.frontend.torch.interpreter import Interpreter
 from hidet.graph.frontend.torch.dynamo_backends import get_flow_graph, get_wrapper
 from hidet.runtime.compiled_graph import load_compiled_graph
 from centml.compiler import config_instance
-from centml.compiler.server_compilation import CompilationStatus, dir_cleanup
+from centml.compiler.server_compilation import CompilationStatus
 
 base_path = os.path.join(config_instance.CACHE_PATH, "compiler")
 os.makedirs(base_path, exist_ok=True)
@@ -24,8 +24,6 @@ class Runner:
         self._module = module
         self._inputs = inputs
         self.compiled_forward_function = None
-        # to be used with the non-blocking version
-        self.compiled = False
 
         self.remote_compilation()
 
@@ -38,7 +36,7 @@ class Runner:
         return self._inputs
 
     def __get_model_id(self, flow_graph):
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+        with tempfile.NamedTemporaryFile() as temp_file:
             try:
                 hidet.save_graph(flow_graph, temp_file.name)
             except Exception as e:
@@ -69,60 +67,60 @@ class Runner:
         )
         return compile_response
 
+    # 
     def __wait_for_status(self, model_id):
         failed_tries = 0
+
         while True:
+            #get server compilation status
             status_response = requests.get(f"{server_url}/status/{model_id}", timeout=config_instance.TIMEOUT)
             if status_response.status_code != HTTPStatus.OK:
                 raise Exception(f"Status check failed, exception from server: {status_response.json().get('detail')}")
-            status = status_response.json()["status"]
-            if status == CompilationStatus.DONE.value:
-                break
-            if status == CompilationStatus.COMPILING.value:
-                time.sleep(1)
+            status = status_response.json().get("status")
+            
+            if   status == CompilationStatus.DONE.value:
+                return True
+            elif status == CompilationStatus.COMPILING.value:
+                print("COMPILING")
                 continue
-            if status == CompilationStatus.NOT_FOUND.value or compiled_response.status_code != HTTPStatus.OK:
-                # If model isn't compiling after requesting compilation, retry up to 3 times
-                dir_cleanup(model_id)
-                compiled_response = self.__compile_model(model_id)
+            elif status == CompilationStatus.NOT_FOUND.value or compiled_response.status_code != HTTPStatus.OK:
                 failed_tries += 1
-                if failed_tries > config_instance.MAX_RETRIES:
-                    failure_reason = (
-                        f"Most recent server exception: {compiled_response.json().get('detail')}."
-                        if compiled_response.status_code != HTTPStatus.OK
-                        else "Compilation not found on server."
-                    )
-                    raise Exception("Compilation failed too many times. " + failure_reason)
+            else:
+                raise Exception("Server returned invalid status response")
+
+            if failed_tries > config_instance.MAX_RETRIES:
+                return False
+                # failure_reason = (
+                #     f"Most recent server exception: {compiled_response.json().get('detail')}."
+                #     if compiled_response.status_code != HTTPStatus.OK
+                #     else "Compilation not found on server."
+                # )
+                # raise Exception("Compilation failed too many times. " + failure_reason)
+            else:
+                compiled_response = self.__compile_model(model_id)
+                # time.sleep(config_instance.COMPILING_SLEEP_TIME)
 
     def remote_compilation(self):
+        #start by getting the model_id
         interpreter: Interpreter = hidet.frontend.from_torch(self.module)
-
         flow_graph, inputs, output_format = get_flow_graph(interpreter, self.inputs)
-
         model_id = self.__get_model_id(flow_graph)
 
-        # check if the corresponding CompiledGraph is saved locally
         cgraph_path = os.path.join(base_path, f"cgraph_{model_id}.temp")
-        if os.path.isfile(cgraph_path):
+        if os.path.isfile(cgraph_path): # cgraph is saved locally
             cgraph = load_compiled_graph(cgraph_path)
         else:
-            # check if the corresponding CompiledGraph is cached on the server
-            cache_response = requests.get(f"{server_url}/status/{model_id}", timeout=config_instance.TIMEOUT)
-            if cache_response.status_code != HTTPStatus.OK:
-                raise Exception(
-                    f"Cache/status check failed, exception from server: {cache_response.json().get('detail')}"
-                )
+            status_return = self.__wait_for_status(model_id)
 
-            status = cache_response.json().get("status")
-            if status != CompilationStatus.DONE.value:
-                self.__wait_for_status(model_id)
-
-            cgraph = self.__download_model(model_id)
+            if not status_return:
+                # 
+                raise Exception("status check failed")
+                
+        cgraph = self.__download_model(model_id)
 
         wrapper = get_wrapper(cgraph, inputs, output_format)
 
         self.compiled_forward_function = wrapper
-        self.compiled = True
 
     def __call__(self, *args, **kwargs):
         # If model is currently compiling, return the uncompiled forward function
