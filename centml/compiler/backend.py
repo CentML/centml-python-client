@@ -67,10 +67,8 @@ class Runner:
         )
         return compile_response
 
-    # 
     def __wait_for_status(self, model_id):
-        failed_tries = 0
-
+        tries = 0
         while True:
             #get server compilation status
             status_response = requests.get(f"{server_url}/status/{model_id}", timeout=config_instance.TIMEOUT)
@@ -81,14 +79,13 @@ class Runner:
             if   status == CompilationStatus.DONE.value:
                 return True
             elif status == CompilationStatus.COMPILING.value:
-                print("COMPILING")
                 continue
             elif status == CompilationStatus.NOT_FOUND.value or compiled_response.status_code != HTTPStatus.OK:
-                failed_tries += 1
+                tries += 1
             else:
                 raise Exception("Server returned invalid status response")
 
-            if failed_tries > config_instance.MAX_RETRIES:
+            if tries > config_instance.MAX_RETRIES:
                 return False
                 # failure_reason = (
                 #     f"Most recent server exception: {compiled_response.json().get('detail')}."
@@ -98,7 +95,8 @@ class Runner:
                 # raise Exception("Compilation failed too many times. " + failure_reason)
             else:
                 compiled_response = self.__compile_model(model_id)
-                # time.sleep(config_instance.COMPILING_SLEEP_TIME)
+                # What is the point of sleeping if the compilation request is blocking?
+                time.sleep(config_instance.COMPILING_SLEEP_TIME)
 
     def remote_compilation(self):
         #start by getting the model_id
@@ -110,13 +108,11 @@ class Runner:
         if os.path.isfile(cgraph_path): # cgraph is saved locally
             cgraph = load_compiled_graph(cgraph_path)
         else:
-            status_return = self.__wait_for_status(model_id)
-
-            if not status_return:
-                # 
-                raise Exception("status check failed")
+            if not self.__wait_for_status(model_id):
+                # When remote compilation fails, still use uncompiled forward function
+                return
                 
-        cgraph = self.__download_model(model_id)
+            cgraph = self.__download_model(model_id)
 
         wrapper = get_wrapper(cgraph, inputs, output_format)
 
