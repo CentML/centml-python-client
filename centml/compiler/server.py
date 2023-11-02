@@ -9,11 +9,9 @@ from centml.compiler import config_instance
 
 app = FastAPI()
 
-import time
 
 @app.get("/status/{model_id}")
 async def status_handler(model_id: str):
-
     if not os.path.isdir(os.path.join(storage_path, model_id)):
         return {"status": CompilationStatus.NOT_FOUND}
 
@@ -29,8 +27,6 @@ async def status_handler(model_id: str):
 
 @app.post("/compile_model/{model_id}")
 async def compile_model_handler(model_id: str, model: UploadFile = File(...), inputs: UploadFile = File(...)):
-    # Leave the directory empty until compilation complete.
-
     dir_cleanup(model_id)
     os.makedirs(os.path.join(storage_path, model_id))
 
@@ -51,10 +47,9 @@ async def compile_model_handler(model_id: str, model: UploadFile = File(...), in
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Error loading pickled content") from e
 
     try:
-        # This will save the model to {storage_path}/{model_id}/cgraph.pkl
+        # This will save the cgraph to {storage_path}/{model_id}/cgraph.pkl
         hidet_backend_server(tfx_graph, example_inputs, model_id)
     except Exception as e:
-        print(e)
         dir_cleanup(model_id)
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Compilation Failed") from e
 

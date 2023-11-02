@@ -4,7 +4,6 @@ import logging
 from enum import Enum
 import hidet
 import torch
-from hidet.graph.frontend.torch.dynamo_config import dynamo_config
 from hidet.runtime.compiled_graph import save_compiled_graph
 from hidet.graph.frontend.torch.interpreter import Interpreter
 from hidet.graph.frontend.torch.dynamo_backends import get_flow_graph, get_compiled_graph
