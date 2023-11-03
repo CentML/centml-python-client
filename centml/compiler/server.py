@@ -2,8 +2,9 @@ import os
 import pickle
 from http import HTTPStatus
 import uvicorn
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
+from fastapi.concurrency import run_in_threadpool
 from centml.compiler.server_compilation import hidet_backend_server, storage_path, CompilationStatus, dir_cleanup
 from centml.compiler import config_instance
 
@@ -24,12 +25,7 @@ async def status_handler(model_id: str):
     # Something is wrong if we get here
     raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Invalid status state")
 
-
-@app.post("/compile_model/{model_id}")
-async def compile_model_handler(model_id: str, model: UploadFile = File(...), inputs: UploadFile = File(...)):
-    dir_cleanup(model_id)
-    os.makedirs(os.path.join(storage_path, model_id))
-
+async def background_compile(model_id: str, model, inputs):
     try:
         tfx_contents = await model.read()
         ei_contents = await inputs.read()
@@ -52,6 +48,12 @@ async def compile_model_handler(model_id: str, model: UploadFile = File(...), in
     except Exception as e:
         dir_cleanup(model_id)
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Compilation Failed") from e
+
+@app.post("/compile_model/{model_id}")
+async def compile_model_handler(model_id: str, model: UploadFile, inputs: UploadFile, background_task: BackgroundTasks):
+    dir_cleanup(model_id)
+    os.makedirs(os.path.join(storage_path, model_id))
+    background_task.add_task(background_compile, model_id, model, inputs)
 
 
 @app.get("/download/{model_id}")
