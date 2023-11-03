@@ -35,9 +35,11 @@ class Runner:
     @property
     def inputs(self):
         return self._inputs
-    
+
     def __print_exceptions(self):
-        print(f"--- ERROR: Remote compilation failed with the following exceptions: ---\n{self.exception_logs}--- Using uncompiled forward function ---")
+        print("--- ERROR: Remote compilation failed with the following exceptions: ---")
+        print(self.exception_logs, end="")
+        print("--- Using uncompiled forward function ---")
 
     def __get_model_id(self, flow_graph):
         with tempfile.NamedTemporaryFile() as temp_file:
@@ -81,9 +83,7 @@ class Runner:
             # get server compilation status
             status_response = requests.get(f"{server_url}/status/{model_id}", timeout=config_instance.TIMEOUT)
             if status_response.status_code != HTTPStatus.OK:
-                self.exception_logs += (
-                    f"Status check: exception from server: {status_response.json().get('detail')}"
-                )
+                self.exception_logs += f"Status check: exception from server: {status_response.json().get('detail')}"
                 return False
             status = status_response.json().get("status")
 
@@ -98,11 +98,11 @@ class Runner:
                     self.exception_logs += f"{compiled_response.json().get('detail')}\n"
             else:
                 tries += 1
-                
+
             if tries > config_instance.MAX_RETRIES:
                 self.exception_logs += "Waiting for status: compilation failed too many times.\n"
                 return False
-            
+
             time.sleep(config_instance.COMPILING_SLEEP_TIME)
 
     def remote_compilation(self):

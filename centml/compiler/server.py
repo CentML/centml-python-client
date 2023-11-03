@@ -2,9 +2,8 @@ import os
 import pickle
 from http import HTTPStatus
 import uvicorn
-from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
+from fastapi import FastAPI, UploadFile, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
-from fastapi.concurrency import run_in_threadpool
 from centml.compiler.server_compilation import hidet_backend_server, storage_path, CompilationStatus, dir_cleanup
 from centml.compiler import config_instance
 
@@ -25,35 +24,41 @@ async def status_handler(model_id: str):
     # Something is wrong if we get here
     raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Status check: invalid status state.")
 
+
 async def background_compile(model_id: str, tfx_graph, example_inputs):
     try:
         # This will save the cgraph to {storage_path}/{model_id}/cgraph.pkl
         hidet_backend_server(tfx_graph, example_inputs, model_id)
-    except:
+    except Exception:
         dir_cleanup(model_id)
         return
+
 
 @app.post("/compile_model/{model_id}")
 async def compile_model_handler(model_id: str, model: UploadFile, inputs: UploadFile, background_task: BackgroundTasks):
     dir_cleanup(model_id)
     os.makedirs(os.path.join(storage_path, model_id))
-    
+
     try:
         tfx_contents = await model.read()
         ei_contents = await inputs.read()
-    except:
+    except Exception as e:
         dir_cleanup(model_id)
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Compilation: error reading serialized content.")
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST, detail="Compilation: error reading serialized content."
+        ) from e
     finally:
         model.file.close()
 
     try:
         tfx_graph = pickle.loads(tfx_contents)
         example_inputs = pickle.loads(ei_contents)
-    except:
+    except Exception as e:
         dir_cleanup(model_id)
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Compilation: error loading pickled content.")
-    
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST, detail="Compilation: error loading pickled content."
+        ) from e
+
     # perform the compilation in the background after return HTTP.OK to client
     background_task.add_task(background_compile, model_id, tfx_graph, example_inputs)
 
