@@ -35,6 +35,9 @@ class Runner:
     @property
     def inputs(self):
         return self._inputs
+    
+    def __print_exceptions(self):
+        print(f"Compilation failed with the following exceptions:\n{self.exception_logs}")
 
     def __get_model_id(self, flow_graph):
         with tempfile.NamedTemporaryFile() as temp_file:
@@ -74,7 +77,6 @@ class Runner:
 
     def __wait_for_status(self, model_id):
         tries = 0
-        compiled_response = None
         while True:
             # get server compilation status
             status_response = requests.get(f"{server_url}/status/{model_id}", timeout=config_instance.TIMEOUT)
@@ -89,25 +91,19 @@ class Runner:
                 return True
             elif status == CompilationStatus.COMPILING.value:
                 pass
-            elif status == CompilationStatus.NOT_FOUND.value or (
-                compiled_response and compiled_response.status_code != HTTPStatus.OK
-            ):
+            elif status == CompilationStatus.NOT_FOUND.value:
                 tries += 1
-            else:
-                self.exception_logs += "Server returned invalid status response\n"
-                return False
-
-            if tries > config_instance.MAX_RETRIES:
-                failure_reason = (
-                    f"Most recent server exception: {compiled_response.json().get('detail')}."
-                    if compiled_response.status_code != HTTPStatus.OK
-                    else "Compilation not found on server."
-                )
-                self.exception_logs += f"Compilation failed too many times. {failure_reason}\n"
-                return False
-            else:
                 compiled_response = self.__compile_model(model_id)
-
+                if compiled_response.status_code != HTTPStatus.OK:
+                    self.exception_logs += "Failure when sending compilation request\n"
+                    return False
+            else:
+                tries += 1
+                
+            if tries > config_instance.MAX_RETRIES:
+                self.exception_logs += "Compilation failed too many times.\n"
+                return False
+            
             time.sleep(config_instance.COMPILING_SLEEP_TIME)
 
     def remote_compilation(self):
@@ -116,7 +112,7 @@ class Runner:
         flow_graph, inputs, output_format = get_flow_graph(interpreter, self.inputs)
         model_id = self.__get_model_id(flow_graph)
         if model_id is None:
-            print(self.exception_logs)
+            self.__print_exceptions()
             return
 
         cgraph_path = os.path.join(base_path, f"cgraph_{model_id}.temp")
@@ -124,12 +120,12 @@ class Runner:
             cgraph = load_compiled_graph(cgraph_path)
         else:
             if not self.__wait_for_status(model_id):
-                print(self.exception_logs)
+                self.__print_exceptions()
                 return
 
             cgraph = self.__download_model(model_id)
             if cgraph is None:
-                print(self.exception_logs)
+                self.__print_exceptions()
                 return
 
         wrapper = get_wrapper(cgraph, inputs, output_format)
@@ -139,7 +135,6 @@ class Runner:
     def __call__(self, *args, **kwargs):
         # If model is currently compiling, return the uncompiled forward function
         if not self.compiled_forward_function:
-            print("using uncompiled forward")
             return self.module(*args, **kwargs)
 
         forward_function = self.compiled_forward_function(*args)
