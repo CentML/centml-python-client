@@ -37,14 +37,14 @@ class Runner:
         return self._inputs
     
     def __print_exceptions(self):
-        print(f"Compilation failed with the following exceptions:\n{self.exception_logs}")
+        print(f"--- ERROR: Remote compilation failed with the following exceptions: ---\n{self.exception_logs}--- Using uncompiled forward function ---")
 
     def __get_model_id(self, flow_graph):
         with tempfile.NamedTemporaryFile() as temp_file:
             try:
                 hidet.save_graph(flow_graph, temp_file.name)
             except Exception as e:
-                self.exception_logs += f"Failed to save Flowgraph. {e}\n"
+                self.exception_logs += f"Getting model id: failed to save FlowGraph. {e}\n"
                 return None
 
             with open(temp_file.name, "rb") as f:
@@ -56,7 +56,7 @@ class Runner:
         download_response = requests.get(url=f"{server_url}/download/{model_id}", timeout=config_instance.TIMEOUT)
         if download_response.status_code != HTTPStatus.OK:
             self.exception_logs += (
-                f"Download request failed, exception from server: {download_response.json().get('detail')}"
+                f"Download: request failed, exception from server: {download_response.json().get('detail')}"
             )
             return None
 
@@ -82,7 +82,7 @@ class Runner:
             status_response = requests.get(f"{server_url}/status/{model_id}", timeout=config_instance.TIMEOUT)
             if status_response.status_code != HTTPStatus.OK:
                 self.exception_logs += (
-                    f"Status check failed, exception from server: {status_response.json().get('detail')}"
+                    f"Status check: exception from server: {status_response.json().get('detail')}"
                 )
                 return False
             status = status_response.json().get("status")
@@ -95,13 +95,12 @@ class Runner:
                 tries += 1
                 compiled_response = self.__compile_model(model_id)
                 if compiled_response.status_code != HTTPStatus.OK:
-                    self.exception_logs += "Failure when sending compilation request\n"
-                    return False
+                    self.exception_logs += f"{compiled_response.json().get('detail')}\n"
             else:
                 tries += 1
                 
             if tries > config_instance.MAX_RETRIES:
-                self.exception_logs += "Compilation failed too many times.\n"
+                self.exception_logs += "Waiting for status: compilation failed too many times.\n"
                 return False
             
             time.sleep(config_instance.COMPILING_SLEEP_TIME)

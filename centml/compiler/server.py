@@ -23,44 +23,46 @@ async def status_handler(model_id: str):
         return {"status": CompilationStatus.DONE}
 
     # Something is wrong if we get here
-    raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Invalid status state")
+    raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Status check: invalid status state.")
 
-async def background_compile(model_id: str, model, inputs):
+async def background_compile(model_id: str, tfx_graph, example_inputs):
+    try:
+        # This will save the cgraph to {storage_path}/{model_id}/cgraph.pkl
+        hidet_backend_server(tfx_graph, example_inputs, model_id)
+    except:
+        dir_cleanup(model_id)
+        return
+
+@app.post("/compile_model/{model_id}")
+async def compile_model_handler(model_id: str, model: UploadFile, inputs: UploadFile, background_task: BackgroundTasks):
+    dir_cleanup(model_id)
+    os.makedirs(os.path.join(storage_path, model_id))
+    
     try:
         tfx_contents = await model.read()
         ei_contents = await inputs.read()
-    except Exception as e:
+    except:
         dir_cleanup(model_id)
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Error reading serialized content") from e
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Compilation: error reading serialized content.")
     finally:
         model.file.close()
 
     try:
         tfx_graph = pickle.loads(tfx_contents)
         example_inputs = pickle.loads(ei_contents)
-    except Exception as e:
+    except:
         dir_cleanup(model_id)
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Error loading pickled content") from e
-
-    try:
-        # This will save the cgraph to {storage_path}/{model_id}/cgraph.pkl
-        hidet_backend_server(tfx_graph, example_inputs, model_id)
-    except Exception as e:
-        dir_cleanup(model_id)
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Compilation Failed") from e
-
-@app.post("/compile_model/{model_id}")
-async def compile_model_handler(model_id: str, model: UploadFile, inputs: UploadFile, background_task: BackgroundTasks):
-    dir_cleanup(model_id)
-    os.makedirs(os.path.join(storage_path, model_id))
-    background_task.add_task(background_compile, model_id, model, inputs)
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Compilation: error loading pickled content.")
+    
+    # perform the compilation in the background after return HTTP.OK to client
+    background_task.add_task(background_compile, model_id, tfx_graph, example_inputs)
 
 
 @app.get("/download/{model_id}")
 async def download_handler(model_id: str):
     compiled_forward_path = os.path.join(storage_path, model_id, "cgraph.pkl")
     if not os.path.isfile(compiled_forward_path):
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Compiled file not found")
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Download: compiled file not found")
 
     return FileResponse(compiled_forward_path)
 
