@@ -71,7 +71,7 @@ class Runner:
 
     def __compile_model(self, model_id):
         compile_response = requests.post(
-            url=f"{server_url}/compile_model/{model_id}",
+            url=f"{server_url}/submit/{model_id}",
             files={"model": pickle.dumps(self.module), "inputs": pickle.dumps(self.inputs)},
             timeout=config_instance.TIMEOUT_COMPILE,
         )

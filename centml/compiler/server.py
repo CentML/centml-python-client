@@ -34,7 +34,7 @@ async def background_compile(model_id: str, tfx_graph, example_inputs):
         return
 
 
-@app.post("/compile_model/{model_id}")
+@app.post("/submit/{model_id}")
 async def compile_model_handler(model_id: str, model: UploadFile, inputs: UploadFile, background_task: BackgroundTasks):
     dir_cleanup(model_id)
     os.makedirs(os.path.join(storage_path, model_id))
