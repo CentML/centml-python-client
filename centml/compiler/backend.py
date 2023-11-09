@@ -73,7 +73,7 @@ class Runner:
         compile_response = requests.post(
             url=f"{server_url}/submit/{model_id}",
             files={"model": pickle.dumps(self.module), "inputs": pickle.dumps(self.inputs)},
-            timeout=config_instance.TIMEOUT_COMPILE,
+            timeout=config_instance.TIMEOUT,
         )
         return compile_response
 

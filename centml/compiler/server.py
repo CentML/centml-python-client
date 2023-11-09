@@ -25,7 +25,7 @@ async def status_handler(model_id: str):
     raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Status check: invalid status state.")
 
 
-async def background_compile(model_id: str, tfx_graph, example_inputs):
+def background_compile(model_id: str, tfx_graph, example_inputs):
     try:
         # This will save the cgraph to {storage_path}/{model_id}/cgraph.pkl
         hidet_backend_server(tfx_graph, example_inputs, model_id)
@@ -68,12 +68,11 @@ async def download_handler(model_id: str):
     compiled_forward_path = os.path.join(storage_path, model_id, "cgraph.pkl")
     if not os.path.isfile(compiled_forward_path):
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Download: compiled file not found")
-
     return FileResponse(compiled_forward_path)
 
 
 def run():
-    uvicorn.run("server:app", host=config_instance.SERVER_IP, port=int(config_instance.SERVER_PORT))
+    uvicorn.run("server:app", host=config_instance.SERVER_IP, port=int(config_instance.SERVER_PORT), workers=4)
 
 
 if __name__ == "__main__":
