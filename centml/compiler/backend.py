@@ -62,7 +62,9 @@ class Runner:
             )
             return None
 
-        download_path = os.path.join(base_path, f"cgraph_{model_id}.temp")
+        download_dir = os.path.join(base_path, model_id)
+        os.makedirs(download_dir, exist_ok=True)
+        download_path = os.path.join(download_dir, "cgraph.zip")
         with open(download_path, "wb") as f:
             f.write(download_response.content)
         cgraph = load_compiled_graph(download_path)
@@ -114,7 +116,7 @@ class Runner:
             self.__print_exceptions()
             return
 
-        cgraph_path = os.path.join(base_path, f"cgraph_{model_id}.temp")
+        cgraph_path = os.path.join(base_path, model_id, "cgraph.zip")
         if os.path.isfile(cgraph_path):  # cgraph is saved locally
             cgraph = load_compiled_graph(cgraph_path)
         else:

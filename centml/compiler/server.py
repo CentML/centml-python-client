@@ -15,10 +15,10 @@ async def status_handler(model_id: str):
     if not os.path.isdir(os.path.join(storage_path, model_id)):
         return {"status": CompilationStatus.NOT_FOUND}
 
-    if not os.path.isfile(os.path.join(storage_path, model_id, "cgraph.pkl")):
+    if not os.path.isfile(os.path.join(storage_path, model_id, "cgraph.zip")):
         return {"status": CompilationStatus.COMPILING}
 
-    if os.path.isfile(os.path.join(storage_path, model_id, "cgraph.pkl")):
+    if os.path.isfile(os.path.join(storage_path, model_id, "cgraph.zip")):
         return {"status": CompilationStatus.DONE}
 
     # Something is wrong if we get here
@@ -27,7 +27,7 @@ async def status_handler(model_id: str):
 
 def background_compile(model_id: str, tfx_graph, example_inputs):
     try:
-        # This will save the cgraph to {storage_path}/{model_id}/cgraph.pkl
+        # This will save the cgraph to {storage_path}/{model_id}/cgraph.zip
         hidet_backend_server(tfx_graph, example_inputs, model_id)
     except Exception:
         dir_cleanup(model_id)
@@ -65,7 +65,7 @@ async def compile_model_handler(model_id: str, model: UploadFile, inputs: Upload
 
 @app.get("/download/{model_id}")
 async def download_handler(model_id: str):
-    compiled_forward_path = os.path.join(storage_path, model_id, "cgraph.pkl")
+    compiled_forward_path = os.path.join(storage_path, model_id, "cgraph.zip")
     if not os.path.isfile(compiled_forward_path):
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Download: compiled file not found")
     return FileResponse(compiled_forward_path)
