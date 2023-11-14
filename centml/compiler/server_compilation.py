@@ -39,7 +39,6 @@ def dir_cleanup(model_id):
 
 def hidet_backend_server(graph_module, example_inputs, model_id):
     assert isinstance(graph_module, torch.fx.GraphModule)
-    hidet.option.store_dispatch_table(True)
 
     logger.info("received a subgraph with %d nodes to optimize", len(graph_module.graph.nodes))
     logger.debug("graph: %s", graph_module.graph)
