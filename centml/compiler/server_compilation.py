@@ -52,6 +52,6 @@ def hidet_backend_server(graph_module, example_inputs, model_id):
     cgraph.run_async(hidet_inputs)
 
     try:
-        save_compiled_graph(cgraph, os.path.join(storage_path, model_id, "cgraph.zip"))
+        save_compiled_graph(cgraph, os.path.join(storage_path, model_id, "cgraph.zip"), save_dispatch_table=True)
     except Exception as e:
         raise Exception("Saving compiled graph failed") from e
