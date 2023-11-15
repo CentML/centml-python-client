@@ -1,9 +1,12 @@
 import os
+import gc
 import pickle
 import hashlib
 import time
 import tempfile
 import logging
+import weakref
+import threading as th
 from http import HTTPStatus
 from typing import List, Callable
 import requests
@@ -24,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 class Runner:
     def __init__(self, module: torch.fx.GraphModule, inputs: List[torch.Tensor]):
-        self._module: torch.fx.GraphModule = module
+        self._module: torch.fx.GraphModule = weakref.ref(module)
         self._inputs: List[torch.Tensor] = inputs
         self.compiled_forward_function: Callable[[torch.Tensor], tuple] = None
 
@@ -41,6 +44,15 @@ class Runner:
     def inputs(self):
         return self._inputs
 
+    @module.deleter
+    def module(self):
+        self._module().graph.owning_module = None
+        self._module = None
+
+    @inputs.deleter
+    def inputs(self):
+        self._inputs = None
+
     def __get_model_id(self, flow_graph: hidet.FlowGraph) -> str:
         with tempfile.NamedTemporaryFile() as temp_file:
             try:
@@ -53,7 +65,7 @@ class Runner:
 
         return flow_graph_hash
 
-    def __download_model(self, model_id: str) -> CompiledGraph:
+    def __download_model(self, model_id) -> CompiledGraph:
         download_response = requests.get(url=f"{server_url}/download/{model_id}", timeout=config_instance.TIMEOUT)
         if download_response.status_code != HTTPStatus.OK:
             raise Exception(
@@ -65,14 +77,13 @@ class Runner:
         download_path = os.path.join(download_dir, "cgraph.zip")
         with open(download_path, "wb") as f:
             f.write(download_response.content)
-        cgraph = load_compiled_graph(download_path)
 
-        return cgraph
+        return load_compiled_graph(download_path)
 
     def __compile_model(self, model_id: str):
         compile_response = requests.post(
             url=f"{server_url}/submit/{model_id}",
-            files={"model": pickle.dumps(self.module), "inputs": pickle.dumps(self.inputs)},
+            files={"model": pickle.dumps(self.module()), "inputs": pickle.dumps(self.inputs)},
             timeout=config_instance.TIMEOUT,
         )
         if compile_response.status_code != HTTPStatus.OK:
@@ -109,10 +120,12 @@ class Runner:
 
     def remote_compilation(self):
         # start by getting the model_id
-        interpreter: Interpreter = hidet.frontend.from_torch(self.module)
+        interpreter: Interpreter = hidet.frontend.from_torch(self.module())
         flow_graph, inputs, output_format = get_flow_graph(interpreter, self.inputs)
+
         model_id = self.__get_model_id(flow_graph)
 
+        # check if cgraph is saved locally
         cgraph_path = os.path.join(base_path, model_id, "cgraph.zip")
         if os.path.isfile(cgraph_path):  # cgraph is saved locally
             cgraph = load_compiled_graph(cgraph_path)
@@ -123,10 +136,17 @@ class Runner:
         wrapper = get_wrapper(cgraph, inputs, output_format)
         self.compiled_forward_function = wrapper
 
+        # Let gc free the memory used by the uncompiled model
+        del self.inputs
+        del self.module
+        gc.collect()
+        torch.cuda.empty_cache()
+
     def __call__(self, *args, **kwargs):
         # If model is currently compiling, return the uncompiled forward function
         if not self.compiled_forward_function:
-            return self.module.forward(*args, **kwargs)
+            ret = self.module()
+            return ret(*args, **kwargs)
 
         return self.compiled_forward_function(*args)
 
