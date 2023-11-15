@@ -4,13 +4,13 @@ import hashlib
 import time
 import tempfile
 from http import HTTPStatus
-from typing import List
+from typing import List, Callable
 import requests
 import hidet
 import torch
 from hidet.graph.frontend.torch.interpreter import Interpreter
 from hidet.graph.frontend.torch.dynamo_backends import get_flow_graph, get_wrapper
-from hidet.runtime.compiled_graph import load_compiled_graph
+from hidet.runtime.compiled_graph import load_compiled_graph, CompiledGraph
 from centml.compiler import config_instance
 from centml.compiler.server_compilation import CompilationStatus
 
@@ -20,11 +20,11 @@ server_url = f"http://{config_instance.SERVER_IP}:{config_instance.SERVER_PORT}"
 
 
 class Runner:
-    def __init__(self, module, inputs):
-        self._module = module
-        self._inputs = inputs
-        self.compiled_forward_function = None
-        self.exception_logs = ""
+    def __init__(self, module: torch.fx.GraphModule, inputs: List[torch.Tensor]):
+        self._module: torch.fx.GraphModule = module
+        self._inputs: List[torch.Tensor] = inputs
+        self.compiled_forward_function: Callable[[torch.Tensor], tuple] = None
+        self.exception_logs: str = ""
 
         self.remote_compilation()
 
@@ -41,7 +41,7 @@ class Runner:
         print(self.exception_logs, end="")
         print("--- Using uncompiled forward function ---")
 
-    def __get_model_id(self, flow_graph):
+    def __get_model_id(self, flow_graph: hidet.FlowGraph) -> str:
         with tempfile.NamedTemporaryFile() as temp_file:
             try:
                 hidet.save_graph(flow_graph, temp_file.name)
@@ -54,7 +54,7 @@ class Runner:
 
         return flow_graph_hash
 
-    def __download_model(self, model_id):
+    def __download_model(self, model_id: str) -> CompiledGraph:
         download_response = requests.get(url=f"{server_url}/download/{model_id}", timeout=config_instance.TIMEOUT)
         if download_response.status_code != HTTPStatus.OK:
             self.exception_logs += (
@@ -71,7 +71,7 @@ class Runner:
 
         return cgraph
 
-    def __compile_model(self, model_id):
+    def __compile_model(self, model_id: str):
         compile_response = requests.post(
             url=f"{server_url}/submit/{model_id}",
             files={"model": pickle.dumps(self.module), "inputs": pickle.dumps(self.inputs)},
@@ -79,7 +79,7 @@ class Runner:
         )
         return compile_response
 
-    def __wait_for_status(self, model_id):
+    def __wait_for_status(self, model_id: str) -> bool:
         tries = 0
         while True:
             # get server compilation status
@@ -130,7 +130,6 @@ class Runner:
                 return
 
         wrapper = get_wrapper(cgraph, inputs, output_format)
-
         self.compiled_forward_function = wrapper
 
     def __call__(self, *args, **kwargs):

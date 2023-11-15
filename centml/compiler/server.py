@@ -1,7 +1,10 @@
 import os
 import pickle
 from http import HTTPStatus
+from typing import List
 import uvicorn
+from torch import Tensor
+from torch.fx import GraphModule
 from fastapi import FastAPI, UploadFile, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from centml.compiler.server_compilation import hidet_backend_server, storage_path, CompilationStatus, dir_cleanup
@@ -25,13 +28,12 @@ async def status_handler(model_id: str):
     raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Status check: invalid status state.")
 
 
-def background_compile(model_id: str, tfx_graph, example_inputs):
+def background_compile(model_id: str, tfx_graph: GraphModule, example_inputs: List[Tensor]):
     try:
         # This will save the cgraph to {storage_path}/{model_id}/cgraph.zip
         hidet_backend_server(tfx_graph, example_inputs, model_id)
     except Exception:
         dir_cleanup(model_id)
-        return
 
 
 @app.post("/submit/{model_id}")
