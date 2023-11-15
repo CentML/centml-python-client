@@ -1,5 +1,4 @@
 import torch._dynamo
-import hidet
 from .compiler import backend
 
 # Register centml compiler backend to torch dynamo
