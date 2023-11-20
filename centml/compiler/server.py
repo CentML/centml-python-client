@@ -9,8 +9,11 @@ from fastapi import FastAPI, UploadFile, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from centml.compiler.server_compilation import hidet_backend_server, storage_path, CompilationStatus, dir_cleanup
 from centml.compiler import config_instance
+from fastapi.middleware.gzip import GZipMiddleware
+
 
 app = FastAPI()
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 @app.get("/status/{model_id}")
