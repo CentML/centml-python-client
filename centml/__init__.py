@@ -1,6 +1,6 @@
+import hidet
 import torch._dynamo
 from .compiler import backend
-import hidet
 
 hidet.option.imperative(False)
 
