@@ -2,7 +2,7 @@ import os
 
 
 class Config:
-    TIMEOUT = 1000
+    TIMEOUT = 10
     MAX_RETRIES = 3
     COMPILING_SLEEP_TIME = 15
 

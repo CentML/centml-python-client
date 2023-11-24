@@ -10,8 +10,8 @@ import threading as th
 from http import HTTPStatus
 from typing import List, Callable
 import requests
-import hidet
 import torch
+import hidet
 from hidet.graph.frontend.torch.interpreter import Interpreter
 from hidet.graph.frontend.torch.dynamo_backends import get_flow_graph, get_wrapper
 from hidet.runtime.compiled_graph import load_compiled_graph, CompiledGraph
@@ -31,11 +31,12 @@ class Runner:
         self._inputs: List[torch.Tensor] = inputs
         self.compiled_forward_function: Callable[[torch.Tensor], tuple] = None
 
+        self.child_thread = th.Thread(target=self.remote_compilation)
         try:
-            self.remote_compilation()
+            self.child_thread.start()
         except:
             logger.exception("Remote compilation failed with the following exception: \n")
-
+        
     @property
     def module(self):
         return self._module
@@ -145,9 +146,8 @@ class Runner:
     def __call__(self, *args, **kwargs):
         # If model is currently compiling, return the uncompiled forward function
         if not self.compiled_forward_function:
-            ret = self.module()
-            return ret(*args, **kwargs)
-
+            return self.module().forward(*args, **kwargs)
+        
         return self.compiled_forward_function(*args)
 
 
