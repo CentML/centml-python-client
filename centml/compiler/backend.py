@@ -30,7 +30,7 @@ class Runner:
 
         try:
             self.remote_compilation()
-        except Exception as e:
+        except:
             logger.exception(f"Remote compilation failed with the following exception: \n")
 
     @property
