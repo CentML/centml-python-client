@@ -17,21 +17,24 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 def get_status(model_id: str):
     if not os.path.isdir(os.path.join(storage_path, model_id)):
-        return {"status": CompilationStatus.NOT_FOUND}
+        return CompilationStatus.NOT_FOUND
 
     if not os.path.isfile(os.path.join(storage_path, model_id, "cgraph.zip")):
-        return {"status": CompilationStatus.COMPILING}
+        return CompilationStatus.COMPILING
 
     if os.path.isfile(os.path.join(storage_path, model_id, "cgraph.zip")):
-        return {"status": CompilationStatus.DONE}
+        return CompilationStatus.DONE
 
-    # Something is wrong if we get here
-    raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Status check: invalid status state.")
+    return None
 
 
 @app.get("/status/{model_id}")
 async def status_handler(model_id: str):
-    return get_status(model_id)
+    status = get_status(model_id)
+    if status:
+        return {"status": status}
+    else:
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Status check: invalid status state.")
 
 
 def background_compile(model_id: str, model: UploadFile, inputs: UploadFile):
@@ -65,7 +68,7 @@ def background_compile(model_id: str, model: UploadFile, inputs: UploadFile):
 @app.post("/submit/{model_id}")
 async def compile_model_handler(model_id: str, model: UploadFile, inputs: UploadFile, background_task: BackgroundTasks):
     try:
-        status = get_status(model_id).get("status")
+        status = get_status(model_id)
     except Exception as e:
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST, detail=f"Compilation: error checking status. {e}"
