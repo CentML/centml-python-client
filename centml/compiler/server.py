@@ -86,7 +86,7 @@ async def compile_model_handler(model_id: str, model: UploadFile, inputs: Upload
 async def download_handler(model_id: str):
     compiled_forward_path = os.path.join(storage_path, model_id, "cgraph.zip")
     if not os.path.isfile(compiled_forward_path):
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Download: compiled file not found")
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Download: compiled file not found")
     return FileResponse(compiled_forward_path)
 
 
