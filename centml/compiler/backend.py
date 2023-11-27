@@ -66,7 +66,7 @@ class Runner:
 
         return flow_graph_hash
 
-    def __download_model(self, model_id) -> CompiledGraph:
+    def __download_model(self, model_id: str) -> CompiledGraph:
         download_response = requests.get(url=f"{server_url}/download/{model_id}", timeout=config_instance.TIMEOUT)
         if download_response.status_code != HTTPStatus.OK:
             raise Exception(
