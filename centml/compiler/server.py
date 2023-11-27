@@ -67,12 +67,9 @@ def background_compile(model_id: str, model: UploadFile, inputs: UploadFile):
 
 @app.post("/submit/{model_id}")
 async def compile_model_handler(model_id: str, model: UploadFile, inputs: UploadFile, background_task: BackgroundTasks):
-    try:
-        status = get_status(model_id)
-    except Exception as e:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST, detail=f"Compilation: error checking status. {e}"
-        ) from e
+    status = get_status(model_id)
+    if status is None:
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Compilation: error checking status.")
 
     # Only compile if the model is not compiled or compiling
     if status != CompilationStatus.NOT_FOUND:
