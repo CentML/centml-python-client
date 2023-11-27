@@ -36,7 +36,7 @@ class Runner:
             self.child_thread.start()
         except:
             logger.exception("Remote compilation failed with the following exception: \n")
-        
+
     @property
     def module(self):
         return self._module
@@ -147,7 +147,7 @@ class Runner:
         # If model is currently compiling, return the uncompiled forward function
         if not self.compiled_forward_function:
             return self.module().forward(*args, **kwargs)
-        
+
         return self.compiled_forward_function(*args)
 
 
