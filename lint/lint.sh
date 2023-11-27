@@ -8,3 +8,4 @@ cd $SCRIPT_DIR
 
 # run pylint
 python -m pylint --rcfile ./pylintrc -j $(nproc) ../centml
+python -m pylint --rcfile ./pylintrc -j $(nproc) ../tests
