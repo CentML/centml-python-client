@@ -31,7 +31,7 @@ class Runner:
         try:
             self.remote_compilation()
         except:
-            logger.exception(f"Remote compilation failed with the following exception: \n")
+            logger.exception("Remote compilation failed with the following exception: \n")
 
     @property
     def module(self):
