@@ -1,3 +1,10 @@
 torch>=2.0.0
 fastapi>=0.103.0
 uvicorn>=0.23.0
+python-multipart>=0.0.6
+black>=23.10.0
+pylint>=3.0.1
+Requests==2.31.0
+
+--extra-index-url https://download.hidet.org/whl 
+hidet>=0.3.1.dev20231124
