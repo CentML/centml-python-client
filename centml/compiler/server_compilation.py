@@ -10,12 +10,7 @@ from hidet.graph.frontend import from_torch
 from hidet.graph.frontend.torch.interpreter import Interpreter
 from hidet.graph.frontend.torch.dynamo_backends import get_flow_graph, get_compiled_graph, preprocess_inputs
 from centml.compiler import config_instance
-
-
-class CompilationStatus(Enum):
-    NOT_FOUND = 1
-    COMPILING = 2
-    DONE = 3
+from .config import CompilationStatus
 
 
 storage_path = os.path.join(config_instance.CACHE_PATH, "server")
