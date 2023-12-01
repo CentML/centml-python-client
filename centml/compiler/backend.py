@@ -24,12 +24,17 @@ server_url = f"http://{config_instance.SERVER_IP}:{config_instance.SERVER_PORT}"
 
 logger = logging.getLogger(__name__)
 
+sem = th.Semaphore(value=0)
 
 class Runner:
     def __init__(self, module: torch.fx.GraphModule, inputs: List[torch.Tensor]):
         self._module: torch.fx.GraphModule = weakref.ref(module)
         self._inputs: List[torch.Tensor] = inputs
+        
+        self.uncompiled_forward_function: Callable[[torch.Tensor], tuple] = self.module.forward
         self.compiled_forward_function: Callable[[torch.Tensor], tuple] = None
+        
+        self.test = weakref.ref(module)
 
         self.child_thread = th.Thread(target=self.remote_compilation)
         try:
@@ -39,7 +44,7 @@ class Runner:
 
     @property
     def module(self):
-        return self._module
+        return self._module()
 
     @property
     def inputs(self):
@@ -48,7 +53,9 @@ class Runner:
     @module.deleter
     def module(self):
         self._module().graph.owning_module = None
-        self._module = None
+        self.uncompiled_forward_function = self.compiled_forward_function
+    
+        del self._module
 
     @inputs.deleter
     def inputs(self):
@@ -84,7 +91,7 @@ class Runner:
     def __compile_model(self, model_id: str):
         compile_response = requests.post(
             url=f"{server_url}/submit/{model_id}",
-            files={"model": pickle.dumps(self.module()), "inputs": pickle.dumps(self.inputs)},
+            files={"model": pickle.dumps(self.module), "inputs": pickle.dumps(self.inputs)},
             timeout=config_instance.TIMEOUT,
         )
         if compile_response.status_code != HTTPStatus.OK:
@@ -121,7 +128,7 @@ class Runner:
 
     def remote_compilation(self):
         # start by getting the model_id
-        interpreter: Interpreter = hidet.frontend.from_torch(self.module())
+        interpreter: Interpreter = hidet.frontend.from_torch(self.module)
         flow_graph, inputs, output_format = get_flow_graph(interpreter, self.inputs)
 
         model_id = self.__get_model_id(flow_graph)
@@ -136,17 +143,18 @@ class Runner:
 
         wrapper = get_wrapper(cgraph, inputs, output_format)
         self.compiled_forward_function = wrapper
-
+        
         # Let gc free the memory used by the uncompiled model
         del self.inputs
         del self.module
+        interpreter = None
         gc.collect()
         torch.cuda.empty_cache()
 
     def __call__(self, *args, **kwargs):
         # If model is currently compiling, return the uncompiled forward function
         if not self.compiled_forward_function:
-            return self.module().forward(*args, **kwargs)
+            return self.uncompiled_forward_function(*args, **kwargs)
 
         return self.compiled_forward_function(*args)
 
