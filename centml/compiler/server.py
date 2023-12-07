@@ -91,7 +91,7 @@ async def download_handler(model_id: str):
 
 
 def run():
-    uvicorn.run("server:app", host=config_instance.SERVER_IP, port=int(config_instance.SERVER_PORT))
+    uvicorn.run(app, host=config_instance.SERVER_IP, port=int(config_instance.SERVER_PORT))
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ with open('requirements.txt') as f:
     for line in f:
         line, _, _ = line.partition('#')
         line = line.strip()
-        if not line or line.startswith('setuptools') or line.startswith('--'):
+        if not line or line.startswith('setuptools'):
             continue
 
         REQUIRES.append(line)
@@ -13,7 +13,7 @@ with open('requirements.txt') as f:
 setup(
     name='centml',
     version='0.1.0',
-    packages=find_packages(include=['centml']),
+    packages=find_packages(),
     scripts=['bin/centml'],
 	install_requires=REQUIRES
 )
