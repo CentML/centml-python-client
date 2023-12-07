@@ -5,7 +5,7 @@ with open('requirements.txt') as f:
     for line in f:
         line, _, _ = line.partition('#')
         line = line.strip()
-        if not line or line.startswith('setuptools') or line.startswith('--'):
+        if not line or line.startswith('setuptools'):
             continue
 
         REQUIRES.append(line)
