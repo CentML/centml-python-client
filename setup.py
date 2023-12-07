@@ -13,7 +13,7 @@ with open('requirements.txt') as f:
 setup(
     name='centml',
     version='0.1.0',
-    packages=find_packages(include=['centml']),
+    packages=find_packages(),
     scripts=['bin/centml'],
 	install_requires=REQUIRES
 )
