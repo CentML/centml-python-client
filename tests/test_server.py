@@ -82,12 +82,13 @@ class TestBackgroundCompile(TestCase):
 
             self.assertIn("error loading pickled content", log_message)
 
+    @patch("centml.compiler.server_compilation.save_compiled_graph")
     @patch("logging.Logger.exception")
-    def test_successful_compilation_resnet(self, mock_logger):
-        model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True, verbose=False).eval()
+    def test_successful_compilation_resnet(self, mock_logger, mock_save_cgraph):
+        model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True, verbose=False).eval().cuda()
         graph_module: GraphModule = torch.fx.symbolic_trace(model)
 
-        inputs = [torch.zeros(1, 3, 224, 224)]
+        inputs = [torch.zeros(1, 3, 224, 224).cuda()]
         model_id = "successful_model_resnet"
 
         with tempfile.NamedTemporaryFile() as model_file, tempfile.NamedTemporaryFile() as input_file:
@@ -103,9 +104,11 @@ class TestBackgroundCompile(TestCase):
             background_compile(model_id, model_file, input_file)
 
         mock_logger.assert_not_called()
-
+        mock_save_cgraph.assert_called_once()
+        
+    @patch("centml.compiler.server_compilation.save_compiled_graph")
     @patch("logging.Logger.exception")
-    def test_successful_compilation_roberta(self, mock_logger):
+    def test_successful_compilation_roberta(self, mock_logger, mock_save_cgraph):
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
         # Use wrapper to specify to tracer that model uses input_ids and not input_embeds
@@ -154,6 +157,7 @@ class TestBackgroundCompile(TestCase):
             background_compile(model_id, model_file, input_file)
 
         mock_logger.assert_not_called()
+        mock_save_cgraph.assert_called_once()
 
 
 class TestCompileHandler(TestCase):
