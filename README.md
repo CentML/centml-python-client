@@ -11,9 +11,15 @@ pip install --pre --extra-index-url https://download.hidet.org/whl hidet
 To run tests, first install required packages:
 ```bash
 pip install -r requirements-dev.txt
-```
-Then, run the tests with
-```bash
 cd tests
+```
+
+When running on a local machine, it is recommended to run tests with the following command. This skips tests that require a GPU.
+```bash
+pytest --sanity
+```
+
+To run all the tests, use:
+```bash
 pytest
 ```
