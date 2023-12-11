@@ -10,18 +10,19 @@ from centml.compiler.server_compilation import CompilationStatus
 from centml.compiler import config_instance
 
 
-class TestGetModelId(TestCase):
-    def get_graph_module(self, name):
-        model = torch.hub.load('pytorch/vision:v0.10.0', name, pretrained=True, verbose=False).eval()
-        graph_module: GraphModule = torch.fx.symbolic_trace(model)
-        interpreter = hidet.frontend.from_torch(graph_module)
-        return graph_module, interpreter
+def get_graph_module(name):
+    model = torch.hub.load('pytorch/vision:v0.10.0', name, pretrained=True, verbose=False).eval()
+    graph_module: GraphModule = torch.fx.symbolic_trace(model)
+    interpreter = hidet.frontend.from_torch(graph_module)
+    return graph_module, interpreter
 
+
+class TestGetModelId(TestCase):
     @patch('threading.Thread.start')
     def setUp(self, mock_thread) -> None:
         self.inputs = [torch.zeros(1, 3, 224, 224)]
-        graph_module, interpreter = self.get_graph_module('resnet18')
-        graph_module_34, interpreter_34 = self.get_graph_module('resnet34')
+        graph_module, interpreter = get_graph_module('resnet18')
+        graph_module_34, interpreter_34 = get_graph_module('resnet34')
         self.flow_graph, _, _ = get_flow_graph(interpreter, self.inputs)
         self.flow_graph_34, _, _ = get_flow_graph(interpreter_34, self.inputs)
         self.runner = Runner(graph_module, None)
@@ -156,3 +157,31 @@ class TestWaitForStatus(TestCase):
 
         model_id = "compilation_done"
         self.runner._wait_for_status(model_id)
+
+
+class TestRemoteCompilation(TestCase):
+    @patch('threading.Thread.start')
+    def setUp(self, mock_thread) -> None:
+        model = get_graph_module('resnet18')[0]
+        self.runner = Runner(model, [torch.zeros(1, 3, 224, 224)])
+
+    @patch('os.path.isfile')
+    @patch('centml.compiler.backend.load_compiled_graph')
+    def test_cgraph_saved(self, mock_load, mock_isfile):
+        mock_isfile.return_value = True
+        mock_load.return_value = MagicMock()
+
+        self.runner.remote_compilation()
+        mock_load.assert_called_once()
+
+    @patch('os.path.isfile')
+    @patch('centml.compiler.backend.Runner._download_model')
+    @patch('centml.compiler.backend.Runner._wait_for_status')
+    def test_cgraph_not_saved(self, mock_status, mock_download, mock_isfile):
+        mock_isfile.return_value = False
+        mock_status.return_value = True
+        mock_download.return_value = MagicMock()
+
+        self.runner.remote_compilation()
+        mock_status.assert_called_once()
+        mock_download.assert_called_once()
