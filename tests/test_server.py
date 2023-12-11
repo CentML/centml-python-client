@@ -4,6 +4,7 @@ import pickle
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
 from http import HTTPStatus
+import pytest
 import torch
 from transformers import AutoTokenizer, BertForSequenceClassification
 from torch.fx import GraphModule
@@ -82,6 +83,7 @@ class TestBackgroundCompile(TestCase):
 
             self.assertIn("error loading pickled content", log_message)
 
+    @pytest.mark.gpu
     @patch("centml.compiler.server_compilation.save_compiled_graph")
     @patch("logging.Logger.exception")
     def test_successful_compilation_resnet(self, mock_logger, mock_save_cgraph):
@@ -105,7 +107,8 @@ class TestBackgroundCompile(TestCase):
 
         mock_logger.assert_not_called()
         mock_save_cgraph.assert_called_once()
-        
+
+    @pytest.mark.gpu
     @patch("centml.compiler.server_compilation.save_compiled_graph")
     @patch("logging.Logger.exception")
     def test_successful_compilation_roberta(self, mock_logger, mock_save_cgraph):
