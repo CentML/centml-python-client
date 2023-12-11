@@ -1,6 +1,7 @@
 import os
 import tempfile
 import pickle
+import warnings
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
 from http import HTTPStatus
@@ -112,6 +113,7 @@ class TestBackgroundCompile(TestCase):
     @patch("centml.compiler.server_compilation.save_compiled_graph")
     @patch("logging.Logger.exception")
     def test_successful_compilation_roberta(self, mock_logger, mock_save_cgraph):
+        warnings.filterwarnings("ignore", category=UserWarning)
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
         # Use wrapper to specify to tracer that model uses input_ids and not input_embeds
