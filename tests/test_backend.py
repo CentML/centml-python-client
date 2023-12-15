@@ -1,4 +1,5 @@
 from http import HTTPStatus
+from copy import deepcopy
 from unittest import TestCase
 from unittest.mock import patch, MagicMock
 import torch
@@ -10,23 +11,18 @@ from centml.compiler.server_compilation import CompilationStatus
 from centml.compiler import config_instance
 
 
-def get_graph_module(name):
-    model = torch.hub.load('pytorch/vision:v0.10.0', name, pretrained=True, verbose=False).eval()
-    graph_module: GraphModule = torch.fx.symbolic_trace(model)
-    interpreter = hidet.frontend.from_torch(graph_module)
-    return graph_module, interpreter
-
-
 class TestGetModelId(TestCase):
+    def graph_module_to_flow_graph(self, gm: GraphModule):
+        interpreter = hidet.frontend.from_torch(gm)
+        return get_flow_graph(interpreter, self.inputs)[0]
+
     @patch('threading.Thread.start')
     def setUp(self, mock_thread) -> None:
         self.inputs = [torch.zeros(1, 3, 224, 224)]
-        graph_module, interpreter = get_graph_module('resnet18')
-        graph_module_34, interpreter_34 = get_graph_module('resnet34')
-        self.flow_graph, _, _ = get_flow_graph(interpreter, self.inputs)
-        self.flow_graph_34, _, _ = get_flow_graph(interpreter_34, self.inputs)
-        self.runner = Runner(graph_module, None)
-        self.runner_34 = Runner(graph_module_34, None)
+        self.model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True, verbose=False).eval()
+        self.graph_module = torch.fx.symbolic_trace(self.model)
+        self.flow_graph = self.graph_module_to_flow_graph(self.graph_module)
+        self.runner = Runner(self.graph_module, None)
 
     @patch('hidet.save_graph')
     def test_none_flow_graph(self, mock_save_graph):
@@ -45,14 +41,39 @@ class TestGetModelId(TestCase):
         self.assertIn("Getting model id: failed to save FlowGraph.", str(context.exception))
         mock_save_graph.assert_called_once()
 
-    def test_output_consistency(self):
+    # Given the same flow graph, the model id should be the same
+    def test_flow_graph_id_consistency(self):
         model_id1 = self.runner._get_model_id(self.flow_graph)
         model_id2 = self.runner._get_model_id(self.flow_graph)
         self.assertEqual(model_id1, model_id2)
 
+    # Given the same torch fx graph, the model id should be the same
+    def test_torch_fx_graph_id_consistency(self):
+        graph_module_2 = deepcopy(self.graph_module)
+        flow_graph_2 = self.graph_module_to_flow_graph(graph_module_2)
+
+        model_id_1 = self.runner._get_model_id(self.flow_graph)
+        model_id_2 = self.runner._get_model_id(flow_graph_2)
+        self.assertEqual(model_id_1, model_id_2)
+
+    # Given the same torch fx graph, the model id should be the same
+    def test_model_id_consistency(self):
+        model_2 = deepcopy(self.model)
+        graph_module_2 = torch.fx.symbolic_trace(model_2)
+        flow_graph_2 = self.graph_module_to_flow_graph(graph_module_2)
+
+        model_id_1 = self.runner._get_model_id(self.flow_graph)
+        model_id_2 = self.runner._get_model_id(flow_graph_2)
+        self.assertEqual(model_id_1, model_id_2)
+
+    # Given two different models, the model id should be different
     def test_output_uniqueness(self):
+        model_34 = torch.hub.load('pytorch/vision:v0.10.0', 'resnet34', pretrained=True, verbose=False).eval()
+        graph_module_34 = torch.fx.symbolic_trace(model_34)
+        flow_graph_34 = self.graph_module_to_flow_graph(graph_module_34)
+
         model_id1 = self.runner._get_model_id(self.flow_graph)
-        model_id2 = self.runner_34._get_model_id(self.flow_graph_34)
+        model_id2 = self.runner._get_model_id(flow_graph_34)
         self.assertNotEqual(model_id1, model_id2)
 
 
@@ -162,8 +183,9 @@ class TestWaitForStatus(TestCase):
 class TestRemoteCompilation(TestCase):
     @patch('threading.Thread.start')
     def setUp(self, mock_thread) -> None:
-        model = get_graph_module('resnet18')[0]
-        self.runner = Runner(model, [torch.zeros(1, 3, 224, 224)])
+        model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True, verbose=False).eval()
+        graph_module = torch.fx.symbolic_trace(model)
+        self.runner = Runner(graph_module, [torch.zeros(1, 3, 224, 224)])
 
     @patch('os.path.isfile')
     @patch('centml.compiler.backend.load_compiled_graph')
