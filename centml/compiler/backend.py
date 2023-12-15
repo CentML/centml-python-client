@@ -30,11 +30,10 @@ class Runner:
     def __init__(self, module: torch.fx.GraphModule, inputs: List[torch.Tensor]):
         self._module: torch.fx.GraphModule = weakref.ref(module)
         self._inputs: List[torch.Tensor] = inputs
-
         self.compiled_forward_function: Callable[[torch.Tensor], tuple] = None
-
         self.lock = th.Lock()
         self.child_thread = th.Thread(target=self.remote_compilation)
+
         try:
             self.child_thread.start()
         except:
@@ -57,7 +56,10 @@ class Runner:
     def inputs(self):
         self._inputs = None
 
-    def __get_model_id(self, flow_graph: hidet.FlowGraph) -> str:
+    def _get_model_id(self, flow_graph: hidet.FlowGraph) -> str:
+        if not flow_graph:
+            raise Exception("Getting model id: flow graph is None.")
+
         with tempfile.NamedTemporaryFile() as temp_file:
             try:
                 hidet.save_graph(flow_graph, temp_file.name)
@@ -69,7 +71,7 @@ class Runner:
 
         return flow_graph_hash
 
-    def __download_model(self, model_id: str) -> CompiledGraph:
+    def _download_model(self, model_id: str) -> CompiledGraph:
         download_response = requests.get(url=f"{server_url}/download/{model_id}", timeout=config_instance.TIMEOUT)
         if download_response.status_code != HTTPStatus.OK:
             raise Exception(
@@ -84,7 +86,7 @@ class Runner:
 
         return load_compiled_graph(download_path)
 
-    def __compile_model(self, model_id: str):
+    def _compile_model(self, model_id: str):
         compile_response = requests.post(
             url=f"{server_url}/submit/{model_id}",
             files={"model": pickle.dumps(self.module), "inputs": pickle.dumps(self.inputs)},
@@ -95,7 +97,7 @@ class Runner:
                 f"Compile model: request failed, exception from server:\n{compile_response.json().get('detail')}\n"
             )
 
-    def __wait_for_status(self, model_id: str) -> bool:
+    def _wait_for_status(self, model_id: str) -> bool:
         tries = 0
         while True:
             # get server compilation status
@@ -113,7 +115,7 @@ class Runner:
                 pass
             elif status == CompilationStatus.NOT_FOUND.value:
                 tries += 1
-                self.__compile_model(model_id)
+                self._compile_model(model_id)
             else:
                 tries += 1
 
@@ -127,15 +129,15 @@ class Runner:
         interpreter: Interpreter = hidet.frontend.from_torch(self.module)
         flow_graph, inputs, output_format = get_flow_graph(interpreter, self.inputs)
 
-        model_id = self.__get_model_id(flow_graph)
+        model_id = self._get_model_id(flow_graph)
 
         # check if cgraph is saved locally
         cgraph_path = os.path.join(base_path, model_id, "cgraph.zip")
         if os.path.isfile(cgraph_path):  # cgraph is saved locally
             cgraph = load_compiled_graph(cgraph_path)
         else:
-            self.__wait_for_status(model_id)
-            cgraph = self.__download_model(model_id)
+            self._wait_for_status(model_id)
+            cgraph = self._download_model(model_id)
 
         wrapper = get_wrapper(cgraph, inputs, output_format)
         self.compiled_forward_function = wrapper
