@@ -1,6 +1,10 @@
 # centml-python-client
 
 ### Installation
+First, ensure you meet the requirements for  [Hidet](https://github.com/hidet-org/hidet), namely:
+- CUDA Toolkit 11.6+
+- Python 3.8+
+
 Inside the project's base directory, run the following commands:
 ```bash
 pip install . 

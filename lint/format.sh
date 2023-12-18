@@ -5,5 +5,4 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 cd $SCRIPT_DIR
 
 # run black formatter
-python -m black --skip-string-normalization --skip-magic-trailing-comma --line-length 120 ../centml
-python -m black --skip-string-normalization --skip-magic-trailing-comma --line-length 120 ../tests
+python -m black --skip-string-normalization --skip-magic-trailing-comma --line-length 120 ../centml ../tests
