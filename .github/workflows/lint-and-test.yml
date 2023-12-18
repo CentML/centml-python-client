@@ -34,7 +34,7 @@ jobs:
     - name: Lint with pylint
       run: |
           echo "Running with" $(pip freeze | grep "pylint")
-          python -m pylint --rcfile ./scripts/lint/pylintrc -j $(nproc) ./python/hidet
+          python -m pylint --rcfile ./lint/pylintrc -j $(nproc) ./centml ./tests
     - name: Test with pytest
       run: |
         cd ./tests
