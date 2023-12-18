@@ -148,12 +148,16 @@ class TestBackgroundCompile(TestCase):
 class TestCompileHandler(TestCase):
     def setUp(self) -> None:
         self.model_id = "compiling_model"
-        self.model = tempfile.NamedTemporaryFile()
-        self.inputs = tempfile.NamedTemporaryFile()
+        self.model = tempfile.NamedTemporaryFile()  # pylint: disable=consider-using-with
+        self.inputs = tempfile.NamedTemporaryFile()  # pylint: disable=consider-using-with
         self.model.write(b"model")
         self.inputs.write(b"inputs")
         self.model.seek(0)
         self.inputs.seek(0)
+
+    def tearDown(self) -> None:
+        self.model.close()
+        self.inputs.close()
 
     @patch("os.path.isdir")
     def test_model_compiling(self, mock_path):

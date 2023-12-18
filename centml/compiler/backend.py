@@ -36,7 +36,7 @@ class Runner:
 
         try:
             self.child_thread.start()
-        except:
+        except Exception:
             logger.exception("Remote compilation failed with the following exception: \n")
 
     @property
