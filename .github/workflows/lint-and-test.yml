@@ -30,7 +30,7 @@ jobs:
       run: |
         # stop the build if there are Python syntax errors or undefined names
         echo "Running with" $(pip freeze | grep "black")
-        python -m black --skip-string-normalization --skip-magic-trailing-comma --line-length 120 ../centml
+        python -m black --skip-string-normalization --skip-magic-trailing-comma --line-length 120 ./centml ./tests
     - name: Lint with pylint
       run: |
           echo "Running with" $(pip freeze | grep "pylint")
