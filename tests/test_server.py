@@ -7,12 +7,13 @@ from unittest.mock import MagicMock, patch
 from http import HTTPStatus
 import pytest
 import torch
-from transformers import AutoTokenizer, BertForSequenceClassification
+from transformers import AutoTokenizer, BertForPreTraining
 from torch.fx import GraphModule
 from fastapi import UploadFile
 from fastapi.testclient import TestClient
 from centml.compiler.server import app, background_compile
-from centml.compiler.config import CompilationStatus
+from centml.compiler.server_compilation import CompilationStatus
+from .test_helpers import get_graph_module_for_llm
 
 client = TestClient(app=app)
 
@@ -116,37 +117,16 @@ class TestBackgroundCompile(TestCase):
         warnings.filterwarnings("ignore", category=UserWarning)
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-        # Use wrapper to specify to tracer that model uses input_ids and not input_embeds
-        class RobertaWrapper(torch.nn.Module):
-            def __init__(self, model):
-                super().__init__()
-                self.model = model
-
-            def forward(self, input_ids):
-                return self.model(input_ids=input_ids, attention_mask=None)
-
         # Load tokenizer and model
         tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-        model = (
-            BertForSequenceClassification.from_pretrained(
-                "bert-base-uncased", max_position_embeddings=8192, ignore_mismatched_sizes=True
-            )
-            .eval()
-            .to('cuda')
-        )
-        wrapper_model = RobertaWrapper(model)
+        model = BertForPreTraining.from_pretrained("bert-base-uncased", ignore_mismatched_sizes=True).eval().to('cuda')
 
         # Example input for tracing
-        inputs = tokenizer("Hello, my dog is cute", padding='max_length', max_length=4096, return_tensors="pt")
-        inputs = {'input_ids': inputs['input_ids'].cuda()}
+        inputs = tokenizer("Hello, my dog is cute", padding='max_length', return_tensors="pt")
+        inputs = inputs['input_ids'].cuda()
 
-        # Create the GraphModule
-        tracer = torch.fx.Tracer()
-        graph = tracer.trace(wrapper_model, concrete_args=inputs)
-        graph_module = torch.fx.GraphModule(wrapper_model, graph)
+        graph_module = get_graph_module_for_llm(model, inputs)
 
-        # Formatting for hidet
-        inputs = [i.clone().cuda() for i in inputs.values()]
         model_id = "successful_model_roberta"
 
         # Save model and inputs to files
@@ -168,12 +148,16 @@ class TestBackgroundCompile(TestCase):
 class TestCompileHandler(TestCase):
     def setUp(self) -> None:
         self.model_id = "compiling_model"
-        self.model = tempfile.NamedTemporaryFile()
-        self.inputs = tempfile.NamedTemporaryFile()
+        self.model = tempfile.NamedTemporaryFile()  # pylint: disable=consider-using-with
+        self.inputs = tempfile.NamedTemporaryFile()  # pylint: disable=consider-using-with
         self.model.write(b"model")
         self.inputs.write(b"inputs")
         self.model.seek(0)
         self.inputs.seek(0)
+
+    def tearDown(self) -> None:
+        self.model.close()
+        self.inputs.close()
 
     @patch("os.path.isdir")
     def test_model_compiling(self, mock_path):

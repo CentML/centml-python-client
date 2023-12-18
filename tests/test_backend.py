@@ -1,25 +1,55 @@
+import os
+import warnings
 from http import HTTPStatus
 from copy import deepcopy
 from unittest import TestCase
 from unittest.mock import patch, MagicMock
 import torch
+from parameterized import parameterized_class
+from transformers import BertForPreTraining, AutoTokenizer
 from torch.fx import GraphModule
 import hidet
 from hidet.graph.frontend.torch.dynamo_backends import get_flow_graph
 from centml.compiler.backend import Runner
-from centml.compiler.config import config_instance, CompilationStatus
+from centml.compiler.server_compilation import CompilationStatus
+from centml.compiler import config_instance
+from .test_helpers import get_graph_module_for_conv_model, get_graph_module_for_llm
+
+resnet_inputs = [torch.zeros(1, 3, 224, 224)]
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+bert_inputs = tokenizer("Hello, my dog is cute", padding='max_length', return_tensors="pt")['input_ids']
+
+model_suite = [
+    {
+        "model": torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True, verbose=False).eval(),
+        "inputs": resnet_inputs,
+        "get_graph_module": get_graph_module_for_conv_model,
+    },
+    {
+        "model": BertForPreTraining.from_pretrained("bert-base-uncased", ignore_mismatched_sizes=True).eval(),
+        "inputs": bert_inputs,
+        "get_graph_module": get_graph_module_for_llm,
+    },
+]
 
 
+@parameterized_class(model_suite)
 class TestGetModelId(TestCase):
     def graph_module_to_flow_graph(self, gm: GraphModule):
         interpreter = hidet.frontend.from_torch(gm)
         return get_flow_graph(interpreter, self.inputs)[0]
 
+    def assert_flow_graph_id_equal(self, flow_graph_1, flow_graph_2):
+        model_id1 = self.runner._get_model_id(flow_graph_1)
+        model_id2 = self.runner._get_model_id(flow_graph_2)
+        self.assertEqual(model_id1, model_id2)
+
     @patch('threading.Thread.start')
     def setUp(self, mock_thread) -> None:
-        self.inputs = [torch.zeros(1, 3, 224, 224)]
-        self.model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True, verbose=False).eval()
-        self.graph_module = torch.fx.symbolic_trace(self.model)
+        warnings.filterwarnings("ignore", category=UserWarning)
+        self.graph_module = self.get_graph_module(self.model, self.inputs)
         self.flow_graph = self.graph_module_to_flow_graph(self.graph_module)
         self.runner = Runner(self.graph_module, None)
 
@@ -42,37 +72,29 @@ class TestGetModelId(TestCase):
 
     # Given the same flow graph, the model id should be the same
     def test_flow_graph_id_consistency(self):
-        model_id1 = self.runner._get_model_id(self.flow_graph)
-        model_id2 = self.runner._get_model_id(self.flow_graph)
-        self.assertEqual(model_id1, model_id2)
+        self.assert_flow_graph_id_equal(self.flow_graph, self.flow_graph)
 
     # Given the same torch fx graph, the model id should be the same
     def test_torch_fx_graph_id_consistency(self):
         graph_module_2 = deepcopy(self.graph_module)
         flow_graph_2 = self.graph_module_to_flow_graph(graph_module_2)
+        self.assert_flow_graph_id_equal(self.flow_graph, flow_graph_2)
 
-        model_id_1 = self.runner._get_model_id(self.flow_graph)
-        model_id_2 = self.runner._get_model_id(flow_graph_2)
-        self.assertEqual(model_id_1, model_id_2)
-
-    # Given the same torch fx graph, the model id should be the same
+    # Given the same model graph, the model id should be the same
     def test_model_id_consistency(self):
         model_2 = deepcopy(self.model)
-        graph_module_2 = torch.fx.symbolic_trace(model_2)
+        graph_module_2 = self.get_graph_module(model_2, self.inputs)
         flow_graph_2 = self.graph_module_to_flow_graph(graph_module_2)
-
-        model_id_1 = self.runner._get_model_id(self.flow_graph)
-        model_id_2 = self.runner._get_model_id(flow_graph_2)
-        self.assertEqual(model_id_1, model_id_2)
+        self.assert_flow_graph_id_equal(self.flow_graph, flow_graph_2)
 
     # Given two different models, the model id should be different
+    # Change an operator's name to make the flow graph different
     def test_output_uniqueness(self):
-        model_34 = torch.hub.load('pytorch/vision:v0.10.0', 'resnet34', pretrained=True, verbose=False).eval()
-        graph_module_34 = torch.fx.symbolic_trace(model_34)
-        flow_graph_34 = self.graph_module_to_flow_graph(graph_module_34)
+        different_flow_graph = deepcopy(self.flow_graph)
+        different_flow_graph.outputs[0].op.name = "different_name"
 
         model_id1 = self.runner._get_model_id(self.flow_graph)
-        model_id2 = self.runner._get_model_id(flow_graph_34)
+        model_id2 = self.runner._get_model_id(different_flow_graph)
         self.assertNotEqual(model_id1, model_id2)
 
 
@@ -181,8 +203,8 @@ class TestWaitForStatus(TestCase):
 
 class TestRemoteCompilation(TestCase):
     @patch('threading.Thread.start')
-    def setUp(self, mock_thread) -> None:
-        model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True, verbose=False).eval()
+    def setUp(self, mock_thread):
+        model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet34', pretrained=True).eval()
         graph_module = torch.fx.symbolic_trace(model)
         self.runner = Runner(graph_module, [torch.zeros(1, 3, 224, 224)])
 
