@@ -19,6 +19,7 @@ from centml.compiler.config import config_instance
 from centml.compiler.server_compilation import CompilationStatus
 
 
+hidet.option.imperative(False)
 base_path = os.path.join(config_instance.CACHE_PATH, "compiler")
 os.makedirs(base_path, exist_ok=True)
 server_url = f"http://{config_instance.SERVER_IP}:{config_instance.SERVER_PORT}"
