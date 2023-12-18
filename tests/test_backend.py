@@ -8,7 +8,7 @@ import hidet
 from hidet.graph.frontend.torch.dynamo_backends import get_flow_graph
 from centml.compiler.backend import Runner
 from centml.compiler.server_compilation import CompilationStatus
-from centml.compiler import config_instance
+from centml.compiler.config import config_instance
 
 
 class TestGetModelId(TestCase):

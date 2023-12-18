@@ -9,7 +9,7 @@ from hidet.runtime.compiled_graph import save_compiled_graph
 from hidet.graph.frontend import from_torch
 from hidet.graph.frontend.torch.interpreter import Interpreter
 from hidet.graph.frontend.torch.dynamo_backends import get_flow_graph, get_compiled_graph, preprocess_inputs
-from centml.compiler import config_instance
+from centml.compiler.config import config_instance
 
 
 class CompilationStatus(Enum):

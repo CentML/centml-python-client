@@ -7,7 +7,7 @@ from fastapi import FastAPI, UploadFile, HTTPException, BackgroundTasks, Respons
 from fastapi.responses import FileResponse
 from fastapi.middleware.gzip import GZipMiddleware
 from centml.compiler.server_compilation import hidet_backend_server, storage_path, CompilationStatus, dir_cleanup
-from centml.compiler import config_instance
+from centml.compiler.config import config_instance
 
 logger = logging.getLogger(__name__)
 
