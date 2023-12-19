@@ -1,5 +1,7 @@
 -r requirements.txt
 
+black>=23.10.0
+pylint>=3.0.1
 pytest>=7.4.0
 transformers>=4.34.1
 httpx>=0.25.0
