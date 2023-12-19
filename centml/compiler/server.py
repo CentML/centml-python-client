@@ -6,8 +6,8 @@ import uvicorn
 from fastapi import FastAPI, UploadFile, HTTPException, BackgroundTasks, Response
 from fastapi.responses import FileResponse
 from fastapi.middleware.gzip import GZipMiddleware
-from centml.compiler.server_compilation import hidet_backend_server, storage_path, CompilationStatus, dir_cleanup
-from centml.compiler.config import config_instance
+from centml.compiler.server_compilation import hidet_backend_server, storage_path, dir_cleanup
+from centml.compiler.config import config_instance, CompilationStatus
 
 logger = logging.getLogger(__name__)
 

@@ -1,5 +1,10 @@
 import os
+from enum import Enum
 
+class CompilationStatus(Enum):
+    NOT_FOUND = 1
+    COMPILING = 2
+    DONE = 3
 
 class Config:
     TIMEOUT = 10

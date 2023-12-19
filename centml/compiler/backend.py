@@ -16,7 +16,7 @@ from hidet.graph.frontend.torch.interpreter import Interpreter
 from hidet.graph.frontend.torch.dynamo_backends import get_flow_graph, get_wrapper
 from hidet.runtime.compiled_graph import load_compiled_graph, CompiledGraph
 from centml.compiler.config import config_instance
-from centml.compiler.server_compilation import CompilationStatus
+from centml.compiler.config import CompilationStatus
 
 
 hidet.option.imperative(False)
