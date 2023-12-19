@@ -1,4 +1,4 @@
 #!/bin/bash -e
 
 # run pylint
-python -m pylint --rcfile ./pylintrc -j $(nproc) ./centml ./tests
+python -m pylint --rcfile ./scripts/pylintrc -j $(nproc) ./centml ./tests
