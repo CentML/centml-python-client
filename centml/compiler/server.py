@@ -3,6 +3,7 @@ import pickle
 from http import HTTPStatus
 import logging
 import uvicorn
+from pydantic import BaseModel, Field
 from fastapi import FastAPI, UploadFile, HTTPException, BackgroundTasks, Response
 from fastapi.responses import FileResponse
 from fastapi.middleware.gzip import GZipMiddleware
@@ -28,7 +29,11 @@ def get_status(model_id: str):
     return None
 
 
-@app.get("/status/{model_id}")
+class StatusModel(BaseModel):
+    status: CompilationStatus = Field(..., description="The compilation status of the model")
+
+
+@app.get("/status/{model_id}", response_model=StatusModel)
 async def status_handler(model_id: str):
     status = get_status(model_id)
     if status:
