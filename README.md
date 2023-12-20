@@ -1,4 +1,5 @@
 # centml-python-client
+![](https://github.com/CentML/centml-python-client/actions/workflows/unit_tests.yml/badge.svg)
 
 ### Installation
 First, ensure you meet the requirements for  [Hidet](https://github.com/hidet-org/hidet), namely:
