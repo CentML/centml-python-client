@@ -12,7 +12,7 @@ from torch.fx import GraphModule
 from fastapi import UploadFile
 from fastapi.testclient import TestClient
 from centml.compiler.server import app, background_compile
-from centml.compiler.server_compilation import CompilationStatus
+from centml.compiler.config import CompilationStatus
 
 client = TestClient(app=app)
 

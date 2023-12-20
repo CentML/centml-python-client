@@ -15,10 +15,10 @@ import hidet
 from hidet.graph.frontend.torch.interpreter import Interpreter
 from hidet.graph.frontend.torch.dynamo_backends import get_flow_graph, get_wrapper
 from hidet.runtime.compiled_graph import load_compiled_graph, CompiledGraph
-from centml.compiler import config_instance
-from centml.compiler.server_compilation import CompilationStatus
+from centml.compiler.config import config_instance, CompilationStatus
 
 
+hidet.option.imperative(False)
 base_path = os.path.join(config_instance.CACHE_PATH, "compiler")
 os.makedirs(base_path, exist_ok=True)
 server_url = f"http://{config_instance.SERVER_IP}:{config_instance.SERVER_PORT}"
