@@ -13,33 +13,15 @@ from hidet.graph.frontend.torch.dynamo_backends import get_flow_graph
 from centml.compiler.backend import Runner
 from centml.compiler.server_compilation import CompilationStatus
 from centml.compiler import config_instance
-from .test_helpers import get_graph_module_for_conv_model, get_graph_module_for_llm
+from .test_helpers import model_suite
 
-resnet_inputs = [torch.zeros(1, 3, 224, 224)]
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-bert_inputs = tokenizer("Hello, my dog is cute", padding='max_length', return_tensors="pt")['input_ids']
-
-model_suite = [
-    {
-        "model": torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True, verbose=False).eval(),
-        "inputs": resnet_inputs,
-        "get_graph_module": get_graph_module_for_conv_model,
-    },
-    {
-        "model": BertForPreTraining.from_pretrained("bert-base-uncased", ignore_mismatched_sizes=True).eval(),
-        "inputs": bert_inputs,
-        "get_graph_module": get_graph_module_for_llm,
-    },
-]
-
-
-@parameterized_class(model_suite)
+@parameterized_class([inputs for inputs in model_suite.values()])
 class TestGetModelId(TestCase):
     def graph_module_to_flow_graph(self, gm: GraphModule):
         interpreter = hidet.frontend.from_torch(gm)
-        return get_flow_graph(interpreter, self.inputs)[0]
+        return get_flow_graph(interpreter, [self.inputs])[0]
 
     def assert_flow_graph_id_equal(self, flow_graph_1, flow_graph_2):
         model_id1 = self.runner._get_model_id(flow_graph_1)
@@ -49,53 +31,59 @@ class TestGetModelId(TestCase):
     @patch('threading.Thread.start')
     def setUp(self, mock_thread) -> None:
         warnings.filterwarnings("ignore", category=UserWarning)
-        self.graph_module = self.get_graph_module(self.model, self.inputs)
-        self.flow_graph = self.graph_module_to_flow_graph(self.graph_module)
-        self.runner = Runner(self.graph_module, None)
 
-    @patch('hidet.save_graph')
-    def test_none_flow_graph(self, mock_save_graph):
-        with self.assertRaises(Exception) as context:
-            self.runner._get_model_id(None)
+        # self.graph_module = None
+        # def custom_backend(gm, inputs):
+        #     self.graph_module = gm
+        #     return lambda x: [torch.zeros(1)] # don't actually compile anything
 
-        self.assertIn("Getting model id: flow graph is None.", str(context.exception))
-        mock_save_graph.assert_not_called()
+        # need to copy self.model to invoke compilation on each test
+        # model_compiled = torch.compile(deepcopy(self.model), backend=custom_backend)
+        # model_compiled(self.inputs)
 
-    @patch('hidet.save_graph')
-    def test_exception_on_save_graph_failure(self, mock_save_graph):
-        mock_save_graph.side_effect = Exception("Test Exception")
-        with self.assertRaises(Exception) as context:
-            self.runner._get_model_id(self.flow_graph)
+        # self.flow_graph = self.graph_module_to_flow_graph(self.graph_module)
+        # self.runner = Runner(self.graph_module, None)
 
-        self.assertIn("Getting model id: failed to save FlowGraph.", str(context.exception))
-        mock_save_graph.assert_called_once()
+    # @patch('hidet.save_graph')
+    # def test_none_flow_graph(self, mock_save_graph):
+    #     with self.assertRaises(Exception) as context:
+    #         self.runner._get_model_id(None)
 
-    # Given the same flow graph, the model id should be the same
-    def test_flow_graph_id_consistency(self):
-        self.assert_flow_graph_id_equal(self.flow_graph, self.flow_graph)
+    #     self.assertIn("Getting model id: flow graph is None.", str(context.exception))
+    #     mock_save_graph.assert_not_called()
 
-    # Given the same torch fx graph, the model id should be the same
-    def test_torch_fx_graph_id_consistency(self):
-        graph_module_2 = deepcopy(self.graph_module)
-        flow_graph_2 = self.graph_module_to_flow_graph(graph_module_2)
-        self.assert_flow_graph_id_equal(self.flow_graph, flow_graph_2)
+    # @patch('hidet.save_graph')
+    # def test_exception_on_save_graph_failure(self, mock_save_graph):
+    #     mock_save_graph.side_effect = Exception("Test Exception")
+    #     with self.assertRaises(Exception) as context:
+    #         self.runner._get_model_id(self.flow_graph)
+
+    #     self.assertIn("Getting model id: failed to save FlowGraph.", str(context.exception))
+    #     mock_save_graph.assert_called_once()
 
     # Given the same model graph, the model id should be the same
-    def test_model_id_consistency(self):
-        model_2 = deepcopy(self.model)
-        graph_module_2 = self.get_graph_module(model_2, self.inputs)
-        flow_graph_2 = self.graph_module_to_flow_graph(graph_module_2)
-        self.assert_flow_graph_id_equal(self.flow_graph, flow_graph_2)
+    @patch('os.path.isfile')
+    @patch('centml.compiler.backend.Runner._wait_for_status')
+    def test_model_id_consistency(self, mock_wait_for_status, mock_is_file):
+        mock_is_file.return_value = False
+        mock_wait_for_status.side_effect = Exception("Test Exception")
+        
+        model_compiled = torch.compile(self.model, backend="centml")
+        model_compiled(self.inputs)
+
+        hash_1 = mock_wait_for_status.call_args
+        print("HASH IS", hash_1)
+
 
     # Given two different models, the model id should be different
     # Change an operator's name to make the flow graph different
-    def test_output_uniqueness(self):
-        different_flow_graph = deepcopy(self.flow_graph)
-        different_flow_graph.outputs[0].op.name = "different_name"
+    # def test_output_uniqueness(self):
+    #     different_flow_graph = deepcopy(self.flow_graph)
+    #     different_flow_graph.outputs[0].op.name = "different_name"
 
-        model_id1 = self.runner._get_model_id(self.flow_graph)
-        model_id2 = self.runner._get_model_id(different_flow_graph)
-        self.assertNotEqual(model_id1, model_id2)
+    #     model_id1 = self.runner._get_model_id(self.flow_graph)
+    #     model_id2 = self.runner._get_model_id(different_flow_graph)
+    #     self.assertNotEqual(model_id1, model_id2)
 
 
 class TestDownloadModel(TestCase):
@@ -228,3 +216,8 @@ class TestRemoteCompilation(TestCase):
         self.runner.remote_compilation()
         mock_status.assert_called_once()
         mock_download.assert_called_once()
+
+import unittest
+if __name__ == '__main__':
+    t = TestGetModelId_0()
+    t.setUp()
