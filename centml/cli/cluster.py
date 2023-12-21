@@ -30,7 +30,7 @@ def run(cluster_args):
         resp = requests.post(f"{Config.platformapi_url}/deployments/inference",
                 json=payload,
                 headers=headers)
-        pp.pprint(resp)
+        pp.pprint(resp.json())
     elif cluster_args.cmd == "delete":
         payload = {
             "status": "deleted"
