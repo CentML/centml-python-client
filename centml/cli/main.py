@@ -1,8 +1,5 @@
 import argparse
 
-from . import login
-from ..compiler import server
-
 
 def main():
     parser = argparse.ArgumentParser(description="CentML command line tool")
@@ -20,12 +17,18 @@ def main():
     args = parser.parse_args()
 
     if args.mode == "server":
+        from ..compiler import server
+
         server.run()
     elif args.mode == "cluster":
         print(args.mode)
     elif args.mode == "login":
+        from . import login
+
         login.login(args.token_file)
     elif args.mode == "logout":
+        from . import login
+
         login.logout()
     else:
         parser.print_help()
