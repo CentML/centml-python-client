@@ -14,7 +14,7 @@ setup(
     name='centml',
     version='0.1.0',
     packages=find_packages(),
-    scripts=['bin/ccompute'],
+    scripts=['bin/centml', 'bin/ccluster'],
     install_requires=REQUIRES
 )
 
