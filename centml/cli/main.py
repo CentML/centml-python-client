@@ -14,7 +14,11 @@ def main():
     login_parser.add_argument("token_file", help="CentML authentication token file", default=None, nargs='?')
 
     cluster_parser = subparser.add_parser("cluster", help="CCluster CLI tool")
-    cluster_parser.add_argument("cmd", help="CCluster command", choices=['ls', 'get', 'deploy', 'status'])
+    cluster_parser.add_argument("cmd", help="CCluster command", choices=['ls', 'deploy', 'delete', 'status'])
+    cluster_parser.add_argument("--id", help="Deployment id")
+    cluster_parser.add_argument("--name", help="Deployment name")
+    cluster_parser.add_argument("--image", help="Container image url")
+    cluster_parser.add_argument("--port", help="Port to expose")
 
     args = parser.parse_args()
 

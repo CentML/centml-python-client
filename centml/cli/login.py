@@ -28,8 +28,8 @@ def load_centml_cred():
 def get_centml_token():
     cred = load_centml_cred()
 
-    if cred:
-        sys.exit("CentML credentials not found!!!")
+    if not cred:
+        sys.exit("CentML credentials not found. Please login...")
 
     return cred['idToken']
 
