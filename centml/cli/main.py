@@ -7,12 +7,14 @@ def main():
 
     # pylint: disable=unused-variable
     server_parser = subparser.add_parser("server", help="Remote computation server")
-    ccompute_parser = subparser.add_parser("cluster", help="CCluster CLI tool")
-    login_parser = subparser.add_parser("login", help="Login to CentML")
     logout_parser = subparser.add_parser("logout", help="Logout from CentML")
     # pylint: enable=unused-variable
 
+    login_parser = subparser.add_parser("login", help="Login to CentML")
     login_parser.add_argument("token_file", help="CentML authentication token file", default=None, nargs='?')
+
+    cluster_parser = subparser.add_parser("cluster", help="CCluster CLI tool")
+    cluster_parser.add_argument("cmd", help="CCluster command", choices=['ls', 'get', 'deploy', 'status'])
 
     args = parser.parse_args()
 
@@ -21,7 +23,9 @@ def main():
 
         server.run()
     elif args.mode == "cluster":
-        print(args.mode)
+        from . import cluster
+
+        cluster.run(args)
     elif args.mode == "login":
         from . import login
 
