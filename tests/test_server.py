@@ -12,7 +12,7 @@ from torch.fx import GraphModule
 from fastapi import UploadFile
 from fastapi.testclient import TestClient
 from centml.compiler.server import app, background_compile
-from centml.compiler.server_compilation import CompilationStatus
+from centml.compiler.config import CompilationStatus
 from .test_helpers import get_graph_module_for_llm
 
 client = TestClient(app=app)
@@ -23,33 +23,25 @@ class TestStatusHandler(TestCase):
         response = client.get("/status/")
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
-    @patch("os.path.isdir")
-    def test_model_not_found(self, mock_dir):
+    @patch("os.path.isdir", new=lambda x: False)
+    def test_model_not_found(self):
         model_id = "nonexistent_model"
-        mock_dir.return_value = False
-
         response = client.get(f"/status/{model_id}")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.json(), {"status": CompilationStatus.NOT_FOUND.value})
 
-    @patch("os.path.isfile")
-    @patch("os.path.isdir")
-    def test_model_compiling(self, mock_dir, mock_file):
+    @patch("os.path.isfile", new=lambda x: False)
+    @patch("os.path.isdir", new=lambda x: True)
+    def test_model_compiling(self):
         model_id = "compiling_model"
-        mock_dir.return_value = True
-        mock_file.return_value = False
-
         response = client.get(f"/status/{model_id}")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.json(), {"status": CompilationStatus.COMPILING.value})
 
-    @patch("os.path.isfile")
-    @patch("os.path.isdir")
-    def test_model_done(self, mock_dir, mock_file):
+    @patch("os.path.isfile", new=lambda x: True)
+    @patch("os.path.isdir", new=lambda x: True)
+    def test_model_done(self):
         model_id = "completed_model"
-        mock_dir.return_value = True
-        mock_file.return_value = True
-
         response = client.get(f"/status/{model_id}")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.json(), {"status": CompilationStatus.DONE.value})
@@ -159,21 +151,19 @@ class TestCompileHandler(TestCase):
         self.model.close()
         self.inputs.close()
 
-    @patch("os.path.isdir")
-    def test_model_compiling(self, mock_path):
+    @patch("os.path.isdir", new=lambda x: True)
+    def test_model_compiling(self):
         model_id = "compiling_model"
-        mock_path.return_value = True
 
         response = client.post(f"/submit/{model_id}", files={"model": self.model, "inputs": self.inputs})
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
     @patch("os.makedirs")
     @patch("centml.compiler.server.background_compile")
-    @patch("os.path.isdir")
-    def test_model_not_compiled(self, mock_path, mock_compile, mock_mkdir):
+    @patch("os.path.isdir", new=lambda x: False)
+    def test_model_not_compiled(self, mock_compile, mock_mkdir):
         model_id = "compiling_model"
-        mock_path.return_value = False
-        mock_compile.return_value = None
+        mock_compile.new = lambda x, y, z: None
 
         response = client.post(f"/submit/{model_id}", files={"model": self.model, "inputs": self.inputs})
 
@@ -184,21 +174,17 @@ class TestCompileHandler(TestCase):
 
 
 class TestDownloadHandler(TestCase):
-    @patch("os.path.isfile")
-    def test_download_handler_invalid_model_id(self, mock_isfile):
+    @patch("os.path.isfile", new=lambda x: False)
+    def test_download_handler_invalid_model_id(self):
         model_id = "invalid_model_id"
-
-        mock_isfile.return_value = False
 
         response = client.get(f"/download/{model_id}")
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
-    @patch("os.path.isfile")
+    @patch("os.path.isfile", new=lambda x: True)
     @patch("centml.compiler.server.FileResponse")
-    def test_download_handler_success(self, mock_file_response, mock_isfile):
+    def test_download_handler_success(self, mock_file_response):
         model_id = "valid_model_id"
-
-        mock_isfile.return_value = True
 
         response = client.get(f"/download/{model_id}")
 
