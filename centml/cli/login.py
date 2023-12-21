@@ -26,9 +26,7 @@ def login(token_file):
     if token_file:
         store_centml_cred(token_file)
 
-    centml_cred = load_centml_cred()
-
-    if centml_cred:
+    if load_centml_cred():
         print(f"Authenticating with credentials from {Config.centml_cred_file}")
         print()
         print('Login successful')
@@ -43,8 +41,6 @@ def login(token_file):
             print("Login unsuccessful")
         else:
             webbrowser.open(f"{Config.centml_web_url}?isCliAuthenticated=true")
-
-    return centml_cred
 
 
 def logout():
