@@ -4,11 +4,11 @@ import pprint
 from . import login
 from .config import Config
 
-centml_token = login.get_centml_token()
-headers = {'Authorization': f'Bearer {centml_token}'}
-
 def run(cluster_args):
     pp = pprint.PrettyPrinter(indent=4)
+
+    centml_token = login.get_centml_token()
+    headers = {'Authorization': f'Bearer {centml_token}'}
 
     if cluster_args.cmd == "ls":
         resp = requests.get(f"{Config.platformapi_url}/deployments", headers=headers)
@@ -35,8 +35,10 @@ def run(cluster_args):
         payload = {
             "status": "deleted"
         }
-        resp = requests.put(f"{Config.platformapi_url}/deployments/status/{cluster_args.id}")
-        pp.print(resp.json())
+        resp = requests.put(f"{Config.platformapi_url}/deployments/status/{cluster_args.id}",
+                json=payload,
+                headers=headers)
+        pp.pprint(resp.json())
     elif cluster_args.cmd == "status":
         resp = requests.get(f"{Config.platformapi_url}/deployments/status/{cluster_args.id}", headers=headers)
         pp.pprint(resp.json())
