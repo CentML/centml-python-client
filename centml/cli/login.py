@@ -1,3 +1,4 @@
+import sys
 import os
 import webbrowser
 import json
@@ -7,19 +8,30 @@ from .config import Config
 
 def store_centml_cred(token_file):
     with open(token_file, 'r') as f:
+        os.makedirs(Config.centml_config_dir, exist_ok=True)
         data = json.load(f)
-        if 'refreshToken' in data:
-            os.makedirs(Config.centml_config_dir, exist_ok=True)
-            with open(Config.centml_cred_file, 'w') as f:
-                f.write(data['refreshToken'])
+
+        with open(Config.centml_cred_file, 'w') as f:
+            json.dump(data, f)
 
 
 def load_centml_cred():
     cred = None
+
     if os.path.exists(Config.centml_cred_file):
         with open(Config.centml_cred_file, 'r') as f:
-            cred = f.read()
+            cred = json.load(f)
+
     return cred
+
+
+def get_centml_token():
+    cred = load_centml_cred()
+
+    if cred:
+        sys.exit("CentML credentials not found!!!")
+
+    return cred['idToken']
 
 
 def login(token_file):
