@@ -1,5 +1,4 @@
 import os
-import warnings
 from http import HTTPStatus
 from copy import deepcopy
 from unittest import TestCase
@@ -8,7 +7,6 @@ import torch
 from parameterized import parameterized_class
 from torch.fx import GraphModule
 import hidet
-from hidet.graph.frontend.torch.dynamo_backends import get_flow_graph
 from centml.compiler.backend import Runner
 from centml.compiler.config import CompilationStatus, config_instance
 from .test_helpers import model_suite
@@ -16,22 +14,16 @@ from .test_helpers import model_suite
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-@parameterized_class([inputs for inputs in model_suite.values()])
+@parameterized_class(list(model_suite.values()))
 class TestGetModelId(TestCase):
-    def graph_module_to_flow_graph(self, gm: GraphModule):
-        interpreter = hidet.frontend.from_torch(gm)
-        return get_flow_graph(interpreter, [self.inputs])[0]
-
-    def assert_flow_graph_id_equal(self, flow_graph_1, flow_graph_2):
-        model_id1 = self.runner._get_model_id(flow_graph_1)
-        model_id2 = self.runner._get_model_id(flow_graph_2)
-        self.assertEqual(model_id1, model_id2)
-
-    @patch('threading.Thread.start')
-    def setUp(self, mock_thread) -> None:
+    @patch('threading.Thread.start', new=lambda x: None)
+    def setUp(self) -> None:
         model = MagicMock(spec=GraphModule)
-        self.flowgraph = MagicMock(spec=hidet.FlowGraph)
         self.runner = Runner(model, None)
+
+    # Reset the dynamo cache to force recompilation
+    def tearDown(self) -> None:
+        torch._dynamo.reset()
 
     @patch('hidet.save_graph')
     def test_none_flow_graph(self, mock_save_graph):
@@ -44,8 +36,10 @@ class TestGetModelId(TestCase):
     @patch('hidet.save_graph')
     def test_exception_on_save_graph_failure(self, mock_save_graph):
         mock_save_graph.side_effect = Exception("Test Exception")
+        flowgraph = MagicMock(spec=hidet.FlowGraph)
+
         with self.assertRaises(Exception) as context:
-            self.runner._get_model_id(self.flowgraph)
+            self.runner._get_model_id(flowgraph)
 
         self.assertIn("Getting model id: failed to save FlowGraph.", str(context.exception))
         mock_save_graph.assert_called_once()
@@ -55,11 +49,8 @@ class TestGetModelId(TestCase):
         raise Exception("Exiting early")
 
     # Don't run remote_compile in a seperate thread
-    def start_func(thread_self):
-        thread_self._target()
-
-    def tearDown(self) -> None:
-        torch._dynamo.reset()
+    def start_func(self):
+        self._target()
 
     # Given the same model graph, the model id should be the same
     # Check this by grabbing the model_id passed to _wait_for_status
@@ -93,12 +84,11 @@ class TestGetModelId(TestCase):
                 break
             return modified
 
-        model_2 = get_modified_model(self.model)
-
         model_compiled_1 = torch.compile(self.model, backend="centml")
         model_compiled_1(self.inputs)
         hash_1 = mock_wait.call_args[0][0]
 
+        model_2 = get_modified_model(self.model)
         model_compiled_2 = torch.compile(model_2, backend="centml")
         model_compiled_2(self.inputs)
         hash_2 = mock_wait.call_args[0][0]
@@ -107,8 +97,8 @@ class TestGetModelId(TestCase):
 
 
 class TestDownloadModel(TestCase):
-    @patch("threading.Thread.start")
-    def setUp(self, mock_thread) -> None:
+    @patch("threading.Thread.start", new=lambda x: None)
+    def setUp(self) -> None:
         model = MagicMock(spec=GraphModule)
         self.runner = Runner(model, None)
 
@@ -150,8 +140,8 @@ class TestDownloadModel(TestCase):
 
 
 class TestWaitForStatus(TestCase):
-    @patch("threading.Thread.start")
-    def setUp(self, mock_thread) -> None:
+    @patch("threading.Thread.start", new=lambda x: None)
+    def setUp(self) -> None:
         model = MagicMock(spec=GraphModule)
         self.runner = Runner(model, None)
 
@@ -209,19 +199,31 @@ class TestWaitForStatus(TestCase):
         self.runner._wait_for_status(model_id)
 
 
+@parameterized_class(list(model_suite.values()))
 class TestRemoteCompilation(TestCase):
-    @patch("threading.Thread.start")
-    def setUp(self, mock_thread):
-        model = torch.hub.load("pytorch/vision:v0.10.0", "resnet34", pretrained=True).eval()
-        graph_module = torch.fx.symbolic_trace(model)
-        self.runner = Runner(graph_module, [torch.zeros(1, 3, 224, 224)])
+    def call_remote_compilation(self):
+        # Ensure remote_compilation is called in the same thread
+        def start_func(thread_self):
+            thread_self._target()
+
+        # Ensure the default forward function is called
+        def call_default_forward(_self, *args, **kwargs):
+            return self.model.forward(*args, **kwargs)
+
+        with patch("threading.Thread.start", new=start_func), patch(
+            "centml.compiler.backend.Runner.__call__", new=call_default_forward
+        ):
+            compiled_model = torch.compile(self.model, backend="centml")
+            compiled_model(self.inputs)
+
+        torch._dynamo.reset()
 
     @patch("os.path.isfile", new=lambda x: True)
     @patch("centml.compiler.backend.load_compiled_graph")
     def test_cgraph_saved(self, mock_load):
         mock_load.return_value = MagicMock()
 
-        self.runner.remote_compilation()
+        self.call_remote_compilation()
         mock_load.assert_called_once()
 
     @patch('os.path.isfile', new=lambda x: False)
@@ -231,12 +233,6 @@ class TestRemoteCompilation(TestCase):
         mock_status.return_value = True
         mock_download.return_value = MagicMock()
 
-        self.runner.remote_compilation()
+        self.call_remote_compilation()
         mock_status.assert_called_once()
         mock_download.assert_called_once()
-
-
-import unittest
-
-if __name__ == "__main__":
-    unittest.main()
