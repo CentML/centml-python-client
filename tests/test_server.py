@@ -7,13 +7,13 @@ from unittest.mock import MagicMock, patch
 from http import HTTPStatus
 import pytest
 import torch
-from transformers import AutoTokenizer, BertForPreTraining
-from torch.fx import GraphModule
+import hidet
 from fastapi import UploadFile
 from fastapi.testclient import TestClient
+from parameterized import parameterized_class
 from centml.compiler.server import app, background_compile
 from centml.compiler.config import CompilationStatus
-from .test_helpers import get_graph_module_for_llm
+from .test_helpers import model_suite
 
 client = TestClient(app=app)
 
@@ -47,6 +47,7 @@ class TestStatusHandler(TestCase):
         self.assertEqual(response.json(), {"status": CompilationStatus.DONE.value})
 
 
+@parameterized_class(list(model_suite.values()))
 class TestBackgroundCompile(TestCase):
     @patch("logging.Logger.exception")
     def test_mock_cant_read(self, mock_logger):
@@ -80,54 +81,33 @@ class TestBackgroundCompile(TestCase):
     @pytest.mark.gpu
     @patch("centml.compiler.server_compilation.save_compiled_graph")
     @patch("logging.Logger.exception")
-    def test_successful_compilation_resnet(self, mock_logger, mock_save_cgraph):
-        model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True, verbose=False).eval().cuda()
-        graph_module: GraphModule = torch.fx.symbolic_trace(model)
-
-        inputs = [torch.zeros(1, 3, 224, 224).cuda()]
-        model_id = "successful_model_resnet"
-
-        with tempfile.NamedTemporaryFile() as model_file, tempfile.NamedTemporaryFile() as input_file:
-            # testFxGraph is a saved torch.fx.GraphModule representation of resnet18
-            pickle.dump(graph_module, model_file)
-            model_file.flush()
-            model_file.seek(0)
-
-            pickle.dump(inputs, input_file)
-            input_file.flush()
-            input_file.seek(0)
-
-            background_compile(model_id, model_file, input_file)
-
-        mock_logger.assert_not_called()
-        mock_save_cgraph.assert_called_once()
-
-    @pytest.mark.gpu
-    @patch("centml.compiler.server_compilation.save_compiled_graph")
-    @patch("logging.Logger.exception")
-    def test_successful_compilation_roberta(self, mock_logger, mock_save_cgraph):
+    @patch("threading.Thread.start", new=lambda x: None)
+    def test_successful_compilation(self, mock_logger, mock_save_cgraph):
+        # For some reason there is a deadlock with parallel builds
+        hidet.option.parallel_build(False)
         warnings.filterwarnings("ignore", category=UserWarning)
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-        # Load tokenizer and model
-        tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-        model = BertForPreTraining.from_pretrained("bert-base-uncased", ignore_mismatched_sizes=True).eval().to('cuda')
+        model = self.model.cuda()
+        inputs = self.inputs.cuda()
 
-        # Example input for tracing
-        inputs = tokenizer("Hello, my dog is cute", padding='max_length', return_tensors="pt")
-        inputs = inputs['input_ids'].cuda()
+        def call_default_forward(_self, *args, **kwargs):
+            return model.forward(*args, **kwargs)
 
-        graph_module = get_graph_module_for_llm(model, inputs)
+        with patch('centml.compiler.backend.Runner.__init__', return_value=None) as mock_init, patch(
+            'centml.compiler.backend.Runner.__call__', new=call_default_forward
+        ):
+            model_compiled = torch.compile(model, backend="centml")
+            model_compiled(inputs)
+            gm = mock_init.call_args[0][0]
 
-        model_id = "successful_model_roberta"
-
-        # Save model and inputs to files
+        model_id = "successful_model"
         with tempfile.NamedTemporaryFile() as model_file, tempfile.NamedTemporaryFile() as input_file:
-            pickle.dump(graph_module, model_file)
+            pickle.dump(gm, model_file)
             model_file.flush()
             model_file.seek(0)
 
-            pickle.dump(inputs, input_file)
+            pickle.dump([inputs], input_file)
             input_file.flush()
             input_file.seek(0)
 
