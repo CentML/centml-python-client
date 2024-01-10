@@ -1,4 +1,7 @@
+import os
 import pytest
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def pytest_addoption(parser):
