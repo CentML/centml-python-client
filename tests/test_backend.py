@@ -204,7 +204,8 @@ class TestRemoteCompilation(TestCase):
             thread_self._target()
 
         # Ensure the default forward function is called
-        def call_default_forward(_self, *args, **kwargs):
+        @staticmethod
+        def call_default_forward(*args, **kwargs):
             return self.model.forward(*args, **kwargs)
 
         with patch("threading.Thread.start", new=start_func), patch(
