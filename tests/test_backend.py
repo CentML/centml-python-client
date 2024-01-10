@@ -1,4 +1,3 @@
-import os
 from http import HTTPStatus
 from copy import deepcopy
 from unittest import TestCase
@@ -9,12 +8,10 @@ from torch.fx import GraphModule
 import hidet
 from centml.compiler.backend import Runner
 from centml.compiler.config import CompilationStatus, config_instance
-from .test_helpers import model_suite
-
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
+from .test_helpers import MODEL_SUITE
 
 
-@parameterized_class(list(model_suite.values()))
+@parameterized_class(list(MODEL_SUITE.values()))
 class TestGetModelId(TestCase):
     @patch('threading.Thread.start', new=lambda x: None)
     def setUp(self) -> None:
@@ -199,7 +196,7 @@ class TestWaitForStatus(TestCase):
         self.runner._wait_for_status(model_id)
 
 
-@parameterized_class(list(model_suite.values()))
+@parameterized_class(list(MODEL_SUITE.values()))
 class TestRemoteCompilation(TestCase):
     def call_remote_compilation(self):
         # Ensure remote_compilation is called in the same thread

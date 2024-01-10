@@ -1,4 +1,3 @@
-import os
 import tempfile
 import pickle
 import warnings
@@ -13,7 +12,7 @@ from fastapi.testclient import TestClient
 from parameterized import parameterized_class
 from centml.compiler.server import app, background_compile
 from centml.compiler.config import CompilationStatus
-from .test_helpers import model_suite
+from .test_helpers import MODEL_SUITE
 
 client = TestClient(app=app)
 
@@ -47,7 +46,7 @@ class TestStatusHandler(TestCase):
         self.assertEqual(response.json(), {"status": CompilationStatus.DONE.value})
 
 
-@parameterized_class(list(model_suite.values()))
+@parameterized_class(list(MODEL_SUITE.values()))
 class TestBackgroundCompile(TestCase):
     @patch("logging.Logger.exception")
     def test_mock_cant_read(self, mock_logger):
@@ -86,7 +85,6 @@ class TestBackgroundCompile(TestCase):
         # For some reason there is a deadlock with parallel builds
         hidet.option.parallel_build(False)
         warnings.filterwarnings("ignore", category=UserWarning)
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
         model = self.model.cuda()
         inputs = self.inputs.cuda()
