@@ -170,7 +170,8 @@ class TestWaitForStatus(SetUpGraphModule):
         mock_requests.get.return_value = mock_response
 
         model_id = "compilation_done"
-        self.runner._wait_for_status(model_id)
+        # _wait_for_status should return True when compilation DONE
+        assert self.runner._wait_for_status(model_id)
 
     @patch("centml.compiler.backend.requests")
     def test_compilation_done(self, mock_requests):
@@ -180,7 +181,8 @@ class TestWaitForStatus(SetUpGraphModule):
         mock_requests.get.return_value = mock_response
 
         model_id = "compilation_done"
-        self.runner._wait_for_status(model_id)
+        # _wait_for_status should return True when compilation DONE
+        assert self.runner._wait_for_status(model_id)
 
 
 @parameterized_class(list(MODEL_SUITE.values()))
