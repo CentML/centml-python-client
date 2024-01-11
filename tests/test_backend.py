@@ -41,10 +41,6 @@ class TestGetModelId(TestCase):
         self.assertIn("Getting model id: failed to save FlowGraph.", str(context.exception))
         mock_save_graph.assert_called_once()
 
-    # Stop remote_compilation after grabbing model_id from _wait_for_status
-    def exit_early(self, *args):
-        raise Exception("Exiting early")
-
     # Don't run remote_compile in a seperate thread
     def start_func(self):
         self._target()
@@ -53,7 +49,7 @@ class TestGetModelId(TestCase):
     # Check this by grabbing the model_id passed to _wait_for_status
     @patch("os.path.isfile", new=lambda x: False)
     @patch("threading.Thread.start", new=start_func)
-    @patch("centml.compiler.backend.Runner._wait_for_status", side_effect=exit_early)
+    @patch("centml.compiler.backend.Runner._wait_for_status", side_effect=Exception("Exiting early"))
     def test_model_id_consistency(self, mock_wait):
         model_compiled_1 = torch.compile(self.model, backend="centml")
         model_compiled_1(self.inputs)
@@ -72,13 +68,11 @@ class TestGetModelId(TestCase):
     # Given two different models, the model ids should be different
     @patch("os.path.isfile", new=lambda x: False)
     @patch("threading.Thread.start", new=start_func)
-    @patch("centml.compiler.backend.Runner._wait_for_status", side_effect=exit_early)
+    @patch("centml.compiler.backend.Runner._wait_for_status", side_effect=Exception("Exiting early"))
     def test_model_id_uniqueness(self, mock_wait):
         def get_modified_model(model):
             modified = deepcopy(model)
-            for param in modified.parameters():
-                param.data.add_(1)
-                break
+            next(modified.parameters()).data.add_(1)
             return modified
 
         model_compiled_1 = torch.compile(self.model, backend="centml")
