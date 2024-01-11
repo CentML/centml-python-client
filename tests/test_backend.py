@@ -11,13 +11,15 @@ from centml.compiler.config import CompilationStatus, config_instance
 from .test_helpers import MODEL_SUITE
 
 
-@parameterized_class(list(MODEL_SUITE.values()))
-class TestGetModelId(TestCase):
+class SetUpGraphModule(TestCase):
     @patch('threading.Thread.start', new=lambda x: None)
     def setUp(self) -> None:
         model = MagicMock(spec=GraphModule)
         self.runner = Runner(model, None)
 
+
+@parameterized_class(list(MODEL_SUITE.values()))
+class TestGetModelId(SetUpGraphModule):
     # Reset the dynamo cache to force recompilation
     def tearDown(self) -> None:
         torch._dynamo.reset()
@@ -87,12 +89,7 @@ class TestGetModelId(TestCase):
         self.assertNotEqual(hash_1, hash_2)
 
 
-class TestDownloadModel(TestCase):
-    @patch("threading.Thread.start", new=lambda x: None)
-    def setUp(self) -> None:
-        model = MagicMock(spec=GraphModule)
-        self.runner = Runner(model, None)
-
+class TestDownloadModel(SetUpGraphModule):
     @patch("os.makedirs")
     @patch("centml.compiler.backend.requests")
     def test_failed_download(self, mock_requests, mock_makedirs):
@@ -130,12 +127,7 @@ class TestDownloadModel(TestCase):
         mock_makedirs.assert_called_once()
 
 
-class TestWaitForStatus(TestCase):
-    @patch("threading.Thread.start", new=lambda x: None)
-    def setUp(self) -> None:
-        model = MagicMock(spec=GraphModule)
-        self.runner = Runner(model, None)
-
+class TestWaitForStatus(SetUpGraphModule):
     @patch("centml.compiler.backend.requests")
     def test_invalid_status(self, mock_requests):
         mock_response = MagicMock()
