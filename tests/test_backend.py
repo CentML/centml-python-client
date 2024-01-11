@@ -10,13 +10,15 @@ from centml.compiler.backend import Runner
 from centml.compiler.config import CompilationStatus, config_instance
 from .test_helpers import MODEL_SUITE
 
+# Ensure remote_compilation is called in the same thread
+def start_func(thread_self):
+    thread_self._target()
 
 class SetUpGraphModule(TestCase):
     @patch('threading.Thread.start', new=lambda x: None)
     def setUp(self) -> None:
         model = MagicMock(spec=GraphModule)
         self.runner = Runner(model, None)
-
 
 @parameterized_class(list(MODEL_SUITE.values()))
 class TestGetModelId(SetUpGraphModule):
@@ -42,10 +44,6 @@ class TestGetModelId(SetUpGraphModule):
 
         self.assertIn("Getting model id: failed to save FlowGraph.", str(context.exception))
         mock_save_graph.assert_called_once()
-
-    # Don't run remote_compile in a seperate thread
-    def start_func(self):
-        self._target()
 
     # Given the same model graph, the model id should be the same
     # Check this by grabbing the model_id passed to _wait_for_status
@@ -185,17 +183,9 @@ class TestWaitForStatus(SetUpGraphModule):
 @parameterized_class(list(MODEL_SUITE.values()))
 class TestRemoteCompilation(TestCase):
     def call_remote_compilation(self):
-        # Ensure remote_compilation is called in the same thread
-        def start_func(thread_self):
-            thread_self._target()
-
-        # Ensure the default forward function is called
-        @staticmethod
-        def call_default_forward(*args, **kwargs):
-            return self.model.forward(*args, **kwargs)
 
         with patch("threading.Thread.start", new=start_func), patch(
-            "centml.compiler.backend.Runner.__call__", new=call_default_forward
+            "centml.compiler.backend.Runner.__call__", new=self.model.forward
         ):
             compiled_model = torch.compile(self.model, backend="centml")
             compiled_model(self.inputs)

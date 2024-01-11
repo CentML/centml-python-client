@@ -89,13 +89,8 @@ class TestBackgroundCompile(TestCase):
         model = self.model.cuda()
         inputs = self.inputs.cuda()
 
-        # Ensure the default forward function is called
-        @staticmethod
-        def call_default_forward(*args, **kwargs):
-            return model.forward(*args, **kwargs)
-
         with patch('centml.compiler.backend.Runner.__init__', return_value=None) as mock_init, patch(
-            'centml.compiler.backend.Runner.__call__', new=call_default_forward
+            'centml.compiler.backend.Runner.__call__', new=model.forward
         ):
             model_compiled = torch.compile(model, backend="centml")
             model_compiled(inputs)
