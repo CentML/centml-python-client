@@ -10,15 +10,18 @@ from centml.compiler.backend import Runner
 from centml.compiler.config import CompilationStatus, config_instance
 from .test_helpers import MODEL_SUITE
 
+
 # Ensure remote_compilation is called in the same thread
 def start_func(thread_self):
     thread_self._target()
+
 
 class SetUpGraphModule(TestCase):
     @patch('threading.Thread.start', new=lambda x: None)
     def setUp(self) -> None:
         model = MagicMock(spec=GraphModule)
         self.runner = Runner(model, None)
+
 
 @parameterized_class(list(MODEL_SUITE.values()))
 class TestGetModelId(SetUpGraphModule):
@@ -183,7 +186,6 @@ class TestWaitForStatus(SetUpGraphModule):
 @parameterized_class(list(MODEL_SUITE.values()))
 class TestRemoteCompilation(TestCase):
     def call_remote_compilation(self):
-
         with patch("threading.Thread.start", new=start_func), patch(
             "centml.compiler.backend.Runner.__call__", new=self.model.forward
         ):
