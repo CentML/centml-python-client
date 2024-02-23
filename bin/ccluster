@@ -1,3 +1,11 @@
-#!/bin/bash
+#!/usr/bin/env python
 
-centml cluster $*
+import sys
+
+from centml import cli
+
+def main():
+    return cli.ccluster()
+
+if __name__ == '__main__':
+    sys.exit(main())

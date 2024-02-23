@@ -1,44 +1,59 @@
-import requests
-import pprint
+import click
+import contextlib
+import platform_api_client
+from tabulate import tabulate
 
 from . import login
 from .config import Config
 
-def run(cluster_args):
-    pp = pprint.PrettyPrinter(indent=4)
 
-    centml_token = login.get_centml_token()
-    headers = {'Authorization': f'Bearer {centml_token}'}
+@contextlib.contextmanager
+def get_api():
+    configuration = platform_api_client.Configuration(
+        host = Config.platformapi_url,
+        access_token = login.get_centml_token(),
+    )
 
-    if cluster_args.cmd == "ls":
-        resp = requests.get(f"{Config.platformapi_url}/deployments", headers=headers)
-        pp.pprint(resp.json()['results'])
-    elif cluster_args.cmd == "deploy":
-        payload = {
-            "name": cluster_args.name,
-            "image_url": cluster_args.image,
-            "type": "inference",
-            "port": cluster_args.port,
-            "hardware_instance_id": "e5a5c06b-2f1c-4d41-baf2-783ffa7723dc",
-            "min_replicas": 1,
-            "max_replicas": 1,
-            "timeout": 0,
-            "healthcheck": "/",
-            "env_vars": {},
-            "secrets": {},
-        }
-        resp = requests.post(f"{Config.platformapi_url}/deployments/inference",
-                json=payload,
-                headers=headers)
-        pp.pprint(resp.json())
-    elif cluster_args.cmd == "delete":
-        payload = {
-            "status": "deleted"
-        }
-        resp = requests.put(f"{Config.platformapi_url}/deployments/status/{cluster_args.id}",
-                json=payload,
-                headers=headers)
-        pp.pprint(resp.json())
-    elif cluster_args.cmd == "status":
-        resp = requests.get(f"{Config.platformapi_url}/deployments/status/{cluster_args.id}", headers=headers)
-        pp.pprint(resp.json())
+    with platform_api_client.ApiClient(configuration) as api_client:
+        api_instance = platform_api_client.EXTERNALApi(api_client)
+
+        yield api_instance
+
+
+@click.command()
+def ls():
+    with get_api() as api:
+        deployments = sorted(api.get_deployments_deployments_get().results,
+            reverse = True, key = lambda d: d.created_at,
+        )
+
+        rows = [[
+            d.id,
+            d.name,
+            d.type.value,
+            d.status.value,
+            d.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            d.hardware_instance_id,
+        ] for d in deployments]
+
+        click.echo(tabulate(
+            rows,
+            headers=["ID", "Name", "Type", "Status", "Created at", "Hardware"],
+            tablefmt="rounded_outline",
+            disable_numparse=True,
+        ))
+
+
+@click.command()
+def deploy():
+    click.echo("deploy")
+
+
+@click.command()
+def delete():
+    click.echo("delete")
+
+
+@click.command()
+def status():
+    click.echo("status")

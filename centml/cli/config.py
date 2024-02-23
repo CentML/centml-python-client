@@ -6,4 +6,4 @@ class Config:
     centml_config_dir = os.getenv("CENTML_CONFIG_PATH", default=os.path.expanduser("~/.centml"))
     centml_cred_file = centml_config_dir + "/" + os.getenv("CENTML_CRED_FILE", default="credential")
 
-    platformapi_url = "https://api.centml.org/"
+    platformapi_url = "https://api.centml.org"
