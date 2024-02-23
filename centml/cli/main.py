@@ -1,4 +1,15 @@
 import argparse
+import click
+
+from .login import login, logout
+
+@click.group()
+def cli():
+    pass
+
+
+cli.add_command(login)
+cli.add_command(logout)
 
 
 def main():

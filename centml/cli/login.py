@@ -1,7 +1,7 @@
 import sys
 import os
-import webbrowser
 import json
+import click
 
 from .config import Config
 
@@ -34,28 +34,28 @@ def get_centml_token():
     return cred['idToken']
 
 
+@click.command()
+@click.argument("token_file", required=False)
 def login(token_file):
     if token_file:
         store_centml_cred(token_file)
 
     if load_centml_cred():
-        print(f"Authenticating with credentials from {Config.centml_cred_file}")
-        print()
-        print('Login successful')
+        click.echo(f"Authenticating with credentials from {Config.centml_cred_file}\n")
+        click.echo("Login successful")
     else:
-        print("Login with CentML authentication token")
-        print("Usage: centml login <token_file>")
-        print()
-        print("Do you want to download the token? (Y/n) ", end="")
+        click.echo("Login with CentML authentication token")
+        click.echo("Usage: centml login TOKEN_FILE\n")
+        choice = click.confirm("Do you want to download the token?")
 
-        cmd_input = input()
-        if cmd_input in ('n', 'N'):
-            print("Login unsuccessful")
+        if choice:
+            click.launch(f"{Config.centml_web_url}?isCliAuthenticated=true")
         else:
-            webbrowser.open(f"{Config.centml_web_url}?isCliAuthenticated=true")
+            click.echo("Login unsuccessful")
 
 
+@click.command()
 def logout():
     if os.path.exists(Config.centml_cred_file):
         os.remove(Config.centml_cred_file)
-    print("Logout successful")
+    click.echo("Logout successful")
