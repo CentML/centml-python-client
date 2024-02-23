@@ -33,12 +33,11 @@ def ls():
             d.type.value,
             d.status.value,
             d.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-            d.hardware_instance_id,
         ] for d in deployments]
 
         click.echo(tabulate(
             rows,
-            headers=["ID", "Name", "Type", "Status", "Created at", "Hardware"],
+            headers=["ID", "Name", "Type", "Status", "Created at"],
             tablefmt="rounded_outline",
             disable_numparse=True,
         ))
