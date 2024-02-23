@@ -1,10 +1,20 @@
 import click
 import contextlib
-import platform_api_client
 from tabulate import tabulate
+import platform_api_client
 
 from . import login
 from .config import Config
+
+
+def get_hw(id):
+    match id:
+        case 1000:
+            return "small"
+        case 1001:
+            return "medium"
+        case 1002:
+            return "large"
 
 
 @contextlib.contextmanager
@@ -42,6 +52,42 @@ def ls():
             disable_numparse=True,
         ))
 
+
+@click.command()
+@click.argument("type",
+    type=click.Choice(["inference", "compute"], case_sensitive=False))
+@click.argument("id", type=int)
+def get(type, id):
+    with get_api() as api:
+        if type == "inference":
+            deployment = api.get_inference_deployment_deployments_inference_deployment_id_get(id)
+
+            click.echo(f"Inference deployment #{id} is {deployment.status.value}")
+            click.echo(tabulate([
+                    ("Name", deployment.name),
+                    ("Image", deployment.image_url),
+                    ("Endpoint", deployment.endpoint_url),
+                    ("Created at", deployment.created_at),
+                    ("Hardware", get_hw(deployment.hardware_instance_id)),
+                ],
+                tablefmt="rounded_outline",
+                disable_numparse=True,
+            ))
+
+            click.echo(f"Additional deployment configurations:")
+            click.echo(tabulate([
+                    ("Is private?", deployment.secrets is not None),
+                    ("Hardware", get_hw(deployment.hardware_instance_id)),
+                    ("Port", deployment.port),
+                    ("Healthcheck", deployment.healthcheck or "/"),
+                    ("Replicas", {"min": deployment.min_replicas, "max": deployment.max_replicas}),
+                    ("Timeout", deployment.timeout),
+                    ("Environment variables", deployment.env_vars or "None"),
+                ],
+                tablefmt="rounded_outline",
+                disable_numparse=True,
+            ))
+ 
 
 @click.command()
 def deploy():
