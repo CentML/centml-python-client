@@ -34,7 +34,7 @@ def get_centml_token():
     return cred['idToken']
 
 
-@click.command()
+@click.command(help="Login to CentML")
 @click.argument("token_file", required=False)
 def login(token_file):
     if token_file:
@@ -54,7 +54,7 @@ def login(token_file):
             click.echo("Login unsuccessful")
 
 
-@click.command()
+@click.command(help="Logout from CentML")
 def logout():
     if os.path.exists(Config.centml_cred_file):
         os.remove(Config.centml_cred_file)
