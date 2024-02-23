@@ -8,6 +8,13 @@ def cli():
     pass
 
 
+@cli.command(help="Start remote compilation server")
+def server():
+    from .. import compiler
+
+    compiler.server.run()
+
+
 cli.add_command(login)
 cli.add_command(logout)
 
