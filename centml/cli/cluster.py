@@ -69,46 +69,44 @@ def ls():
 
 
 @click.command(help="Get deployment details")
-@click.argument("type", type=click.Choice(["inference", "compute"], case_sensitive=False))
 @click.argument("id", type=int)
-def get(type, id):
+def get(id):
     with get_api() as api:
-        if type == "inference":
-            deployment = api.get_inference_deployment_deployments_inference_deployment_id_get(id)
-            state = api.get_deployment_status_deployments_status_deployment_id_get(id)
-            ready_status = get_ready_status(deployment.status, state.service_status)
+        deployment = api.get_inference_deployment_deployments_inference_deployment_id_get(id)
+        state = api.get_deployment_status_deployments_status_deployment_id_get(id)
+        ready_status = get_ready_status(deployment.status, state.service_status)
 
-            click.echo(f"Inference deployment #{id} is {ready_status}")
-            click.echo(
-                tabulate(
-                    [
-                        ("Name", deployment.name),
-                        ("Image", deployment.image_url),
-                        ("Endpoint", deployment.endpoint_url),
-                        ("Created at", deployment.created_at),
-                        ("Hardware", get_hw(deployment.hardware_instance_id)),
-                    ],
-                    tablefmt="rounded_outline",
-                    disable_numparse=True,
-                )
+        click.echo(f"Inference deployment #{id} is {ready_status}")
+        click.echo(
+            tabulate(
+                [
+                    ("Name", deployment.name),
+                    ("Image", deployment.image_url),
+                    ("Endpoint", deployment.endpoint_url),
+                    ("Created at", deployment.created_at),
+                    ("Hardware", get_hw(deployment.hardware_instance_id)),
+                ],
+                tablefmt="rounded_outline",
+                disable_numparse=True,
             )
+        )
 
-            click.echo("Additional deployment configurations:")
-            click.echo(
-                tabulate(
-                    [
-                        ("Is private?", deployment.secrets is not None),
-                        ("Hardware", get_hw(deployment.hardware_instance_id)),
-                        ("Port", deployment.port),
-                        ("Healthcheck", deployment.healthcheck or "/"),
-                        ("Replicas", {"min": deployment.min_replicas, "max": deployment.max_replicas}),
-                        ("Timeout", deployment.timeout),
-                        ("Environment variables", deployment.env_vars or "None"),
-                    ],
-                    tablefmt="rounded_outline",
-                    disable_numparse=True,
-                )
+        click.echo("Additional deployment configurations:")
+        click.echo(
+            tabulate(
+                [
+                    ("Is private?", deployment.secrets is not None),
+                    ("Hardware", get_hw(deployment.hardware_instance_id)),
+                    ("Port", deployment.port),
+                    ("Healthcheck", deployment.healthcheck or "/"),
+                    ("Replicas", {"min": deployment.min_replicas, "max": deployment.max_replicas}),
+                    ("Timeout", deployment.timeout),
+                    ("Environment variables", deployment.env_vars or "None"),
+                ],
+                tablefmt="rounded_outline",
+                disable_numparse=True,
             )
+        )
 
 
 @click.command(help="Create a new deployment")
@@ -116,6 +114,24 @@ def create():
     click.echo("deploy")
 
 
+def update_status(id, new_status):
+    with get_api() as api:
+        status_req = platform_api_client.DeploymentStatusRequest(status=new_status)
+        api.update_deployment_status_deployments_status_deployment_id_put(id, status_req)
+
 @click.command(help="Delete a deployment")
-def delete():
-    click.echo("delete")
+@click.argument("id", type=int)
+def delete(id):
+    update_status(id, DeploymentStatus.DELETED)
+
+
+@click.command(help="Pause a deployment")
+@click.argument("id", type=int)
+def pause(id):
+    update_status(id, DeploymentStatus.PAUSED)
+
+
+@click.command(help="Resume a deployment")
+@click.argument("id", type=int)
+def resume(id):
+    update_status(id, DeploymentStatus.ACTIVE)

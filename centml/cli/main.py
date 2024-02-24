@@ -1,7 +1,7 @@
 import click
 
 from .login import login, logout
-from .cluster import ls, get, create, delete
+from .cluster import ls, get, create, delete, pause, resume
 
 
 @click.group()
@@ -29,6 +29,8 @@ ccluster.add_command(ls)
 ccluster.add_command(get)
 ccluster.add_command(create)
 ccluster.add_command(delete)
+ccluster.add_command(pause)
+ccluster.add_command(resume)
 
 
 cli.add_command(ccluster, name="cluster")
