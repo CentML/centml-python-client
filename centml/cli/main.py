@@ -2,7 +2,7 @@ import argparse
 import click
 
 from .login import login, logout
-from .cluster import ls, get, deploy, delete, status
+from .cluster import ls, get, create, delete
 
 @click.group()
 def cli():
@@ -27,9 +27,8 @@ def ccluster():
 
 ccluster.add_command(ls)
 ccluster.add_command(get)
-ccluster.add_command(deploy)
+ccluster.add_command(create)
 ccluster.add_command(delete)
-ccluster.add_command(status)
 
 
 cli.add_command(ccluster, name="cluster")

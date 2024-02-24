@@ -30,7 +30,7 @@ def get_api():
         yield api_instance
 
 
-@click.command()
+@click.command(help="List all deployments")
 def ls():
     with get_api() as api:
         deployments = sorted(api.get_deployments_deployments_get().results,
@@ -53,7 +53,7 @@ def ls():
         ))
 
 
-@click.command()
+@click.command(help="Get deployment details")
 @click.argument("type",
     type=click.Choice(["inference", "compute"], case_sensitive=False))
 @click.argument("id", type=int)
@@ -89,16 +89,11 @@ def get(type, id):
             ))
  
 
-@click.command()
-def deploy():
+@click.command(help="Create a new deployment")
+def create():
     click.echo("deploy")
 
 
-@click.command()
+@click.command(help="Delete a deployment")
 def delete():
     click.echo("delete")
-
-
-@click.command()
-def status():
-    click.echo("status")
