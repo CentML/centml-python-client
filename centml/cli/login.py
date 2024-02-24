@@ -12,11 +12,12 @@ from .config import Config
 def refresh_centml_token(refresh_token):
     api_key = Config.firebase_api_key
 
-    request_ref = f"https://securetoken.googleapis.com/v1/token?key={api_key}"
-    headers = {"content-type": "application/json; charset=UTF-8"}
-    data = json.dumps({"grantType": "refresh_token", "refreshToken": refresh_token})
-
-    cred = requests.post(request_ref, headers=headers, data=data).json()
+    cred = requests.post(
+        f"https://securetoken.googleapis.com/v1/token?key={api_key}",
+        headers={"content-type": "application/json; charset=UTF-8"},
+        data=json.dumps({"grantType": "refresh_token", "refreshToken": refresh_token}),
+        timeout=3,
+    ).json()
 
     with open(Config.centml_cred_file, 'w') as f:
         json.dump(cred, f)

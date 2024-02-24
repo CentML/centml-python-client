@@ -1,8 +1,8 @@
-import argparse
 import click
 
 from .login import login, logout
 from .cluster import ls, get, create, delete
+
 
 @click.group()
 def cli():
