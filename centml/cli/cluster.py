@@ -9,14 +9,12 @@ from . import login
 from .config import Config
 
 
-def get_hw(id):
-    match id:
-        case 1000:
-            return "small"
-        case 1001:
-            return "medium"
-        case 1002:
-            return "large"
+hw_to_id_map = {
+    "small": 1000,
+    "medium": 1001,
+    "large": 1002,
+}
+id_to_hw_map = {v: k for k, v in hw_to_id_map.items()}
 
 
 def get_ready_status(api_status, service_status):
@@ -46,6 +44,12 @@ def get_api():
 
         yield api_instance
 
+
+@click.command()
+def test():
+    with get_api() as api:
+        resp = api.get_hardware_instances_hardware_instances_get()
+        print(resp)
 
 @click.command(help="List all deployments")
 def ls():
@@ -84,7 +88,7 @@ def get(id):
                     ("Image", deployment.image_url),
                     ("Endpoint", deployment.endpoint_url),
                     ("Created at", deployment.created_at),
-                    ("Hardware", get_hw(deployment.hardware_instance_id)),
+                    ("Hardware", id_to_hw_map[deployment.hardware_instance_id]),
                 ],
                 tablefmt="rounded_outline",
                 disable_numparse=True,
@@ -96,7 +100,7 @@ def get(id):
             tabulate(
                 [
                     ("Is private?", deployment.secrets is not None),
-                    ("Hardware", get_hw(deployment.hardware_instance_id)),
+                    ("Hardware", id_to_hw_map[deployment.hardware_instance_id]),
                     ("Port", deployment.port),
                     ("Healthcheck", deployment.healthcheck or "/"),
                     ("Replicas", {"min": deployment.min_replicas, "max": deployment.max_replicas}),
@@ -110,14 +114,46 @@ def get(id):
 
 
 @click.command(help="Create a new deployment")
-def create():
-    click.echo("deploy")
+@click.option("--name", "-n", prompt="Name", help="Name of the deployment")
+@click.option("--image", "-i", prompt="Image", help="Container image")
+@click.option("--port", "-p", prompt="Port", type=int, help="Port to expose")
+@click.option("--hardware", "-h", prompt="Hardware", type=click.Choice(hw_to_id_map.keys()),
+    help="Hardware instance type")
+@click.option("--health", default="/", prompt="Health check", help="Health check endpoint")
+@click.option("--min_replicas", default="1", prompt="Min replicas", type=click.IntRange(1, 10))
+@click.option("--max_replicas", default="1", prompt="Max replicas", type=click.IntRange(1, 10))
+@click.option("--username", prompt=True, default="",
+    help="Username for HTTP authentication")
+@click.option("--password", prompt=True, default="", hide_input=True,
+    help="Password for HTTP authentication")
+@click.option("--env", "-e", required=False, type=str, multiple=True,
+    help="Environment variables (KEY=VALUE)")
+def create(name, image, port, hardware, health, min_replicas, max_replicas, username, password, env):
+    with get_api() as api:
+        req = platform_api_client.CreateInferenceDeploymentRequest(
+            name=name,
+            image_url=image,
+            hardware_instance_id=hw_to_id_map[hardware],
+            env_vars={k:v for (k,v) in env},
+            secrets=platform_api_client.AuthSecret(
+                username=username,
+                password=password,
+            ) if not username and not password else None,
+            port=port,
+            min_replicas=min_replicas,
+            max_replicas=max_replicas,
+            timeout=0,
+            healthcheck=health,
+        )
+        resp = api.create_inference_deployment_deployments_inference_post(req)
+        click.echo(resp)
 
 
 def update_status(id, new_status):
     with get_api() as api:
         status_req = platform_api_client.DeploymentStatusRequest(status=new_status)
         api.update_deployment_status_deployments_status_deployment_id_put(id, status_req)
+
 
 @click.command(help="Delete a deployment")
 @click.argument("id", type=int)
