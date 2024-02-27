@@ -18,19 +18,18 @@ id_to_hw_map = {v: k for k, v in hw_to_id_map.items()}
 
 
 def get_ready_status(api_status, service_status):
-    match (api_status, service_status):
-        case (DeploymentStatus.PAUSED, _):
-            return click.style("paused", fg="yellow")
-        case (DeploymentStatus.DELETED, _):
-            return click.style("deleted", fg="white")
-        case (DeploymentStatus.FAILED, _):
-            return click.style("failed", fg="red")
-        case (DeploymentStatus.ACTIVE, EndpointReadyState.NUMBER_1):
-            return click.style("ready", fg="green")
-        case (DeploymentStatus.ACTIVE, EndpointReadyState.NUMBER_2):
-            return click.style("starting", fg="cyan")
-        case (_, _):
-            return click.style("unknown", fg="black", bg="white")
+    if api_status == DeploymentStatus.PAUSED:
+        return click.style("paused", fg="yellow")
+    elif api_status == DeploymentStatus.DELETED:
+        return click.style("deleted", fg="white")
+    elif api_status == DeploymentStatus.FAILED:
+        return click.style("failed", fg="red")
+    elif api_status == DeploymentStatus.ACTIVE and service_status == EndpointReadyState.NUMBER_1:
+        return click.style("ready", fg="green")
+    elif api_status == DeploymentStatus.ACTIVE and service_status == EndpointReadyState.NUMBER_2:
+        return click.style("starting", fg="cyan")
+    else:
+        return click.style("unknown", fg="black", bg="white")
 
 
 @contextlib.contextmanager
