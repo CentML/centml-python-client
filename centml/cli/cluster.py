@@ -17,6 +17,12 @@ hw_to_id_map = {
 id_to_hw_map = {v: k for k, v in hw_to_id_map.items()}
 
 
+depl_type_map = {
+    "inference": platform_api_client.DeploymentType.INFERENCE,
+    "compute": platform_api_client.DeploymentType.COMPUTE,
+}
+
+
 def get_ready_status(api_status, service_status):
     if api_status == DeploymentStatus.PAUSED:
         return click.style("paused", fg="yellow")
@@ -44,16 +50,12 @@ def get_api():
         yield api_instance
 
 
-@click.command()
-def test():
-    with get_api() as api:
-        resp = api.get_hardware_instances_hardware_instances_get()
-        print(resp)
-
 @click.command(help="List all deployments")
-def ls():
+@click.argument("type", default="all")
+def ls(type):
     with get_api() as api:
-        results = api.get_deployments_deployments_get().results
+        depl_type = depl_type_map[type] if type in depl_type_map else None
+        results = api.get_deployments_deployments_get(type=depl_type).results
         deployments = sorted(results, reverse=True, key=lambda d: d.created_at)
 
         rows = [
@@ -112,6 +114,7 @@ def get(id):
 
 
 @click.command(help="Create a new deployment")
+@click.argument("type", type=click.Choice(depl_type_map.keys()))
 @click.option("--name", "-n", prompt="Name", help="Name of the deployment")
 @click.option("--image", "-i", prompt="Image", help="Container image")
 @click.option("--port", "-p", prompt="Port", type=int, help="Port to expose")
@@ -126,7 +129,7 @@ def get(id):
     help="Password for HTTP authentication")
 @click.option("--env", "-e", required=False, type=str, multiple=True,
     help="Environment variables (KEY=VALUE)")
-def create(name, image, port, hardware, health, min_replicas, max_replicas, username, password, env):
+def create(type, name, image, port, hardware, health, min_replicas, max_replicas, username, password, env):
     with get_api() as api:
         req = platform_api_client.CreateInferenceDeploymentRequest(
             name=name,
