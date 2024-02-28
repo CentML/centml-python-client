@@ -85,8 +85,8 @@ def get(id):
                 [
                     ("Name", deployment.name),
                     ("Image", deployment.image_url),
-                    ("Endpoint", deployment.endpoint_url),
-                    ("Created at", deployment.created_at),
+                    ("Endpoint", f"https://{deployment.endpoint_url}/"),
+                    ("Created at", deployment.created_at.strftime("%Y-%m-%d %H:%M:%S")),
                     ("Hardware", id_to_hw_map[deployment.hardware_instance_id]),
                 ],
                 tablefmt="rounded_outline",
@@ -103,7 +103,6 @@ def get(id):
                     ("Port", deployment.port),
                     ("Healthcheck", deployment.healthcheck or "/"),
                     ("Replicas", {"min": deployment.min_replicas, "max": deployment.max_replicas}),
-                    ("Timeout", deployment.timeout),
                     ("Environment variables", deployment.env_vars or "None"),
                 ],
                 tablefmt="rounded_outline",
@@ -137,7 +136,7 @@ def create(name, image, port, hardware, health, min_replicas, max_replicas, user
             secrets=platform_api_client.AuthSecret(
                 username=username,
                 password=password,
-            ) if not username and not password else None,
+            ) if username and password else None,
             port=port,
             min_replicas=min_replicas,
             max_replicas=max_replicas,
@@ -145,7 +144,7 @@ def create(name, image, port, hardware, health, min_replicas, max_replicas, user
             healthcheck=health,
         )
         resp = api.create_inference_deployment_deployments_inference_post(req)
-        click.echo(resp)
+        click.echo(f"Inference deployment #{resp.id} created at https://{resp.endpoint_url}/")
 
 
 def update_status(id, new_status):
