@@ -8,9 +8,7 @@ from .config import Config
 
 @contextlib.contextmanager
 def get_api():
-    configuration = platform_api_client.Configuration(
-        host=Config.platformapi_url, access_token=auth.get_centml_token()
-    )
+    configuration = platform_api_client.Configuration(host=Config.platformapi_url, access_token=auth.get_centml_token())
 
     with platform_api_client.ApiClient(configuration) as api_client:
         api_instance = platform_api_client.EXTERNALApi(api_client)
@@ -46,27 +44,16 @@ def get_compute(id):
         return api.get_compute_deployment_deployments_compute_deployment_id_get(id)
 
 
-def create_inference(
-    name,
-    image,
-    port,
-    hw_id,
-    health,
-    min_replicas,
-    max_replicas,
-    username,
-    password,
-    env):
+def create_inference(name, image, port, hw_id, health, min_replicas, max_replicas, username, password, env):
     with get_api() as api:
         req = platform_api_client.CreateInferenceDeploymentRequest(
             name=name,
             image_url=image,
             hardware_instance_id=hw_id,
-            env_vars={k:v for (k,v) in env},
-            secrets=platform_api_client.AuthSecret(
-                username=username,
-                password=password,
-            ) if username and password else None,
+            env_vars={k: v for (k, v) in env},
+            secrets=(
+                platform_api_client.AuthSecret(username=username, password=password) if username and password else None
+            ),
             port=port,
             min_replicas=min_replicas,
             max_replicas=max_replicas,

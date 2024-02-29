@@ -7,11 +7,7 @@ from platform_api_client.models.deployment_status import DeploymentStatus
 from ..sdk import api
 
 
-hw_to_id_map = {
-    "small": 1000,
-    "medium": 1001,
-    "large": 1002,
-}
+hw_to_id_map = {"small": 1000, "medium": 1001, "large": 1002}
 id_to_hw_map = {v: k for k, v in hw_to_id_map.items()}
 
 
@@ -96,27 +92,18 @@ def get(id):
 @click.option("--name", "-n", prompt="Name", help="Name of the deployment")
 @click.option("--image", "-i", prompt="Image", help="Container image")
 @click.option("--port", "-p", prompt="Port", type=int, help="Port to expose")
-@click.option("--hardware", "-h", prompt="Hardware", type=click.Choice(hw_to_id_map.keys()),
-    help="Hardware instance type")
+@click.option(
+    "--hardware", "-h", prompt="Hardware", type=click.Choice(hw_to_id_map.keys()), help="Hardware instance type"
+)
 @click.option("--health", default="/", prompt="Health check", help="Health check endpoint")
 @click.option("--min_replicas", default="1", prompt="Min replicas", type=click.IntRange(1, 10))
 @click.option("--max_replicas", default="1", prompt="Max replicas", type=click.IntRange(1, 10))
-@click.option("--username", prompt=True, default="",
-    help="Username for HTTP authentication")
-@click.option("--password", prompt=True, default="", hide_input=True,
-    help="Password for HTTP authentication")
-@click.option("--env", "-e", required=False, type=str, multiple=True,
-    help="Environment variables (KEY=VALUE)")
+@click.option("--username", prompt=True, default="", help="Username for HTTP authentication")
+@click.option("--password", prompt=True, default="", hide_input=True, help="Password for HTTP authentication")
+@click.option("--env", "-e", required=False, type=str, multiple=True, help="Environment variables (KEY=VALUE)")
 def create(type, name, image, port, hardware, health, min_replicas, max_replicas, username, password, env):
     resp = api.create_inference(
-        name,
-        image,
-        port,
-        hw_to_id_map[hardware],
-        health,
-        min_replicas, max_replicas,
-        username, password,
-        env
+        name, image, port, hw_to_id_map[hardware], health, min_replicas, max_replicas, username, password, env
     )
     click.echo(f"Inference deployment #{resp.id} created at https://{resp.endpoint_url}/")
 
