@@ -28,8 +28,8 @@ logger = logging.getLogger(__name__)
 
 
 class Runner:
-    def __init__(self, module: torch.fx.GraphModule, inputs: List[torch.Tensor]):
-        self._module: torch.fx.GraphModule = weakref.ref(module)
+    def __init__(self, module: GraphModule, inputs: List[torch.Tensor]):
+        self._module: GraphModule = weakref.ref(module)
         self._inputs: List[torch.Tensor] = inputs
         self.compiled_forward_function: Callable[[torch.Tensor], tuple] = None
         self.lock = th.Lock()
@@ -78,13 +78,11 @@ class Runner:
             raise Exception(
                 f"Download: request failed, exception from server:\n{download_response.json().get('detail')}"
             )
-
         download_dir = os.path.join(base_path, model_id)
         os.makedirs(download_dir, exist_ok=True)
         download_path = os.path.join(download_dir, "graph_module.zip")
         with open(download_path, "wb") as f:
             f.write(download_response.content)
-
         return torch.load(download_path)
 
     def _compile_model(self, model_id: str):
@@ -152,12 +150,9 @@ class Runner:
 
     def __call__(self, *args, **kwargs):
         # # If model is currently compiling, return the uncompiled forward function
-        while not self.compiled_forward_function:
-            pass
-
-        # with self.lock:
-        #     if not self.compiled_forward_function:
-        #         return self.module.forward(*args, **kwargs)
+        with self.lock:
+            if not self.compiled_forward_function:
+                return self.module.forward(*args, **kwargs)
 
         return self.compiled_forward_function(*args)
 
