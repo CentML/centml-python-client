@@ -19,10 +19,10 @@ def get_status(model_id: str):
     if not os.path.isdir(os.path.join(storage_path, model_id)):
         return CompilationStatus.NOT_FOUND
 
-    if not os.path.isfile(os.path.join(storage_path, model_id, "cgraph.zip")):
+    if not os.path.isfile(os.path.join(storage_path, model_id, "graph_module.zip")):
         return CompilationStatus.COMPILING
 
-    if os.path.isfile(os.path.join(storage_path, model_id, "cgraph.zip")):
+    if os.path.isfile(os.path.join(storage_path, model_id, "graph_module.zip")):
         return CompilationStatus.DONE
 
     return None
@@ -92,7 +92,7 @@ async def compile_model_handler(model_id: str, model: UploadFile, inputs: Upload
 
 @app.get("/download/{model_id}")
 async def download_handler(model_id: str):
-    compiled_forward_path = os.path.join(storage_path, model_id, "cgraph.zip")
+    compiled_forward_path = os.path.join(storage_path, model_id, "graph_module.zip")
     if not os.path.isfile(compiled_forward_path):
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Download: compiled file not found")
     return FileResponse(compiled_forward_path)

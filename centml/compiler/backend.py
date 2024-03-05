@@ -11,10 +11,11 @@ from http import HTTPStatus
 from typing import List, Callable
 import requests
 import torch
+from torch.fx import GraphModule
 import hidet
 from hidet.graph.frontend.torch.interpreter import Interpreter
-from hidet.graph.frontend.torch.dynamo_backends import get_flow_graph, get_wrapper
-from hidet.runtime.compiled_graph import load_compiled_graph, CompiledGraph
+from hidet.graph.frontend.torch.dynamo_backends import get_flow_graph
+from hidet.runtime.compiled_graph import CompiledGraph
 from centml.compiler.config import config_instance, CompilationStatus
 
 
@@ -80,11 +81,11 @@ class Runner:
 
         download_dir = os.path.join(base_path, model_id)
         os.makedirs(download_dir, exist_ok=True)
-        download_path = os.path.join(download_dir, "cgraph.zip")
+        download_path = os.path.join(download_dir, "graph_module.zip")
         with open(download_path, "wb") as f:
             f.write(download_response.content)
 
-        return load_compiled_graph(download_path)
+        return torch.load(download_path)
 
     def _compile_model(self, model_id: str):
         compile_response = requests.post(
@@ -127,22 +128,21 @@ class Runner:
     def remote_compilation(self):
         # start by getting the model_id
         interpreter: Interpreter = hidet.frontend.from_torch(self.module)
-        flow_graph, inputs, output_format = get_flow_graph(interpreter, self.inputs)
+        flow_graph, _, _ = get_flow_graph(interpreter, self.inputs)
 
         model_id = self._get_model_id(flow_graph)
 
         # check if cgraph is saved locally
-        cgraph_path = os.path.join(base_path, model_id, "cgraph.zip")
-        if os.path.isfile(cgraph_path):  # cgraph is saved locally
-            cgraph = load_compiled_graph(cgraph_path)
+        graph_module_path = os.path.join(base_path, model_id, "graph_module.zip")
+        if os.path.isfile(graph_module_path):  # cgraph is saved locally
+            graph_module = torch.load(graph_module_path)
         else:
             self._wait_for_status(model_id)
-            cgraph = self._download_model(model_id)
+            graph_module = self._download_model(model_id)
 
-        wrapper = get_wrapper(cgraph, inputs, output_format)
-        self.compiled_forward_function = wrapper
+        self.compiled_forward_function = graph_module
 
-        # Let gc free the memory used by the uncompiled model
+        # Let garbage collector free the memory used by the uncompiled model
         with self.lock:
             interpreter = None
             del self.inputs
@@ -151,13 +151,16 @@ class Runner:
             torch.cuda.empty_cache()
 
     def __call__(self, *args, **kwargs):
-        # If model is currently compiling, return the uncompiled forward function
-        with self.lock:
-            if not self.compiled_forward_function:
-                return self.module.forward(*args, **kwargs)
+        # # If model is currently compiling, return the uncompiled forward function
+        while not self.compiled_forward_function:
+            pass
+
+        # with self.lock:
+        #     if not self.compiled_forward_function:
+        #         return self.module.forward(*args, **kwargs)
 
         return self.compiled_forward_function(*args)
 
 
-def centml_dynamo_backend(gm: torch.fx.GraphModule, example_inputs: List[torch.Tensor]):
+def centml_dynamo_backend(gm: GraphModule, example_inputs: List[torch.Tensor]):
     return Runner(gm, example_inputs)
