@@ -25,11 +25,14 @@ def refresh_centml_token(refresh_token):
 
 
 def store_centml_cred(token_file):
-    with open(token_file, 'r') as f:
-        os.makedirs(Config.centml_config_dir, exist_ok=True)
-        refresh_token = json.load(f)["refreshToken"]
+    try:
+        with open(token_file, 'r') as f:
+            os.makedirs(Config.centml_config_dir, exist_ok=True)
+            refresh_token = json.load(f)["refreshToken"]
 
-        refresh_centml_token(refresh_token)
+            refresh_centml_token(refresh_token)
+    except:
+        sys.exit(f"Invalid auth token file: {token_file}")
 
 
 def load_centml_cred():
