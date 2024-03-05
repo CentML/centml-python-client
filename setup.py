@@ -14,7 +14,12 @@ setup(
     name='centml',
     version='0.1.0',
     packages=find_packages(),
-    scripts=['bin/centml', 'bin/ccluster'],
+    entry_points={
+        "console_scripts": [
+            "centml = centml.cli:cli",
+            "ccluster = centml.cli:ccluster",
+        ],
+    },
     install_requires=REQUIRES
 )
 

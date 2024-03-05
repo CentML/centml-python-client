@@ -1,35 +1,36 @@
-import argparse
+import click
+
+from .login import login, logout
+from .cluster import ls, get, create, delete, pause, resume
 
 
-def main():
-    parser = argparse.ArgumentParser(description="CentML command line tool")
-    subparser = parser.add_subparsers(help="sub-command help", dest="mode")
+@click.group()
+def cli():
+    pass
 
-    # pylint: disable=unused-variable
-    server_parser = subparser.add_parser("server", help="Remote computation server")
-    ccompute_parser = subparser.add_parser("cluster", help="CCluster CLI tool")
-    login_parser = subparser.add_parser("login", help="Login to CentML")
-    logout_parser = subparser.add_parser("logout", help="Logout from CentML")
-    # pylint: enable=unused-variable
 
-    login_parser.add_argument("token_file", help="CentML authentication token file", default=None, nargs='?')
+cli.add_command(login)
+cli.add_command(logout)
 
-    args = parser.parse_args()
 
-    if args.mode == "server":
-        from ..compiler import server
+@cli.command(help="Start remote compilation server")
+def server():
+    from .. import compiler
 
-        server.run()
-    elif args.mode == "cluster":
-        print(args.mode)
-    elif args.mode == "login":
-        from . import login
+    compiler.server.run()
 
-        login.login(args.token_file)
-    elif args.mode == "logout":
-        from . import login
 
-        login.logout()
-    else:
-        parser.print_help()
-        parser.exit()
+@click.group(help="CentML cluster CLI tool")
+def ccluster():
+    pass
+
+
+ccluster.add_command(ls)
+ccluster.add_command(get)
+ccluster.add_command(create)
+ccluster.add_command(delete)
+ccluster.add_command(pause)
+ccluster.add_command(resume)
+
+
+cli.add_command(ccluster, name="cluster")
