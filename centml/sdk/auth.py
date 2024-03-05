@@ -31,7 +31,7 @@ def store_centml_cred(token_file):
             refresh_token = json.load(f)["refreshToken"]
 
             refresh_centml_token(refresh_token)
-    except:
+    except Exception:
         sys.exit(f"Invalid auth token file: {token_file}")
 
 
