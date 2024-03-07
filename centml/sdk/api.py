@@ -1,4 +1,6 @@
+import sys
 import contextlib
+import urllib3
 import platform_api_client
 from platform_api_client.models.deployment_status import DeploymentStatus
 
@@ -9,6 +11,7 @@ from .config import Config
 @contextlib.contextmanager
 def get_api():
     configuration = platform_api_client.Configuration(host=Config.platformapi_url, access_token=auth.get_centml_token())
+    configuration.retries = urllib3.util.Retry(connect=3, status=3, status_forcelist=[404, 503])
 
     with platform_api_client.ApiClient(configuration) as api_client:
         api_instance = platform_api_client.EXTERNALApi(api_client)
@@ -36,12 +39,18 @@ def get_status(id):
 
 def get_inference(id):
     with get_api() as api:
-        return api.get_inference_deployment_deployments_inference_deployment_id_get(id)
+        try:
+            return api.get_inference_deployment_deployments_inference_deployment_id_get(id)
+        except urllib3.exceptions.MaxRetryError as e:
+            sys.exit(f"Deployment id #{id} not found")
 
 
 def get_compute(id):
     with get_api() as api:
-        return api.get_compute_deployment_deployments_compute_deployment_id_get(id)
+        try:
+            return api.get_compute_deployment_deployments_compute_deployment_id_get(id)
+        except urllib3.exceptions.MaxRetryError as e:
+            sys.exit(f"Deployment id #{id} not found")
 
 
 def create_inference(name, image, port, hw_id, health, min_replicas, max_replicas, username, password, env):
@@ -65,8 +74,11 @@ def create_inference(name, image, port, hw_id, health, min_replicas, max_replica
 
 def update_status(id, new_status):
     with get_api() as api:
-        status_req = platform_api_client.DeploymentStatusRequest(status=new_status)
-        api.update_deployment_status_deployments_status_deployment_id_put(id, status_req)
+        try:
+            status_req = platform_api_client.DeploymentStatusRequest(status=new_status)
+            api.update_deployment_status_deployments_status_deployment_id_put(id, status_req)
+        except urllib3.exceptions.MaxRetryError as e:
+            sys.exit(f"Deployment id #{id} not found")
 
 
 def delete(id):
