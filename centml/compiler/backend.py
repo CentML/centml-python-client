@@ -83,7 +83,7 @@ class Runner:
         download_path = os.path.join(download_dir, "graph_module.zip")
         with open(download_path, "wb") as f:
             f.write(download_response.content)
-        return torch.load(download_path)
+            return pickle.loads(download_response.content)
 
     def _compile_model(self, model_id: str):
         compile_response = requests.post(
@@ -133,7 +133,8 @@ class Runner:
         # check if cgraph is saved locally
         graph_module_path = os.path.join(base_path, model_id, "graph_module.zip")
         if os.path.isfile(graph_module_path):  # cgraph is saved locally
-            graph_module = torch.load(graph_module_path)
+            with open(graph_module_path, "rb") as f:
+                graph_module = pickle.load(f)
         else:
             self._wait_for_status(model_id)
             graph_module = self._download_model(model_id)
@@ -149,7 +150,7 @@ class Runner:
             torch.cuda.empty_cache()
 
     def __call__(self, *args, **kwargs):
-        # # If model is currently compiling, return the uncompiled forward function
+        # If model is currently compiling, return the uncompiled forward function
         with self.lock:
             if not self.compiled_forward_function:
                 return self.module.forward(*args, **kwargs)

@@ -13,6 +13,7 @@ from hidet.graph.frontend.torch.dynamo_backends import (
     CompiledForwardFunction,
 )
 from centml.compiler.config import config_instance
+import pickle
 
 storage_path = os.path.join(config_instance.CACHE_PATH, "server")
 os.makedirs(storage_path, exist_ok=True)
@@ -73,9 +74,10 @@ def hidet_backend_server(graph_module: GraphModule, example_inputs: List[torch.T
 
     # Wrap the forward function in a torch.fx.GraphModule
     graph_module = get_graph_module(wrapper, example_inputs)
-
+    
     try:
         # This uses pickle to serialize to disk
-        torch.save(graph_module, os.path.join(storage_path, model_id, "graph_module.zip"))
+        with open(os.path.join(storage_path, model_id, "graph_module.zip"), "wb") as f:
+            pickle.dump(graph_module, f)
     except Exception as e:
         raise Exception("Saving graph module failed") from e
