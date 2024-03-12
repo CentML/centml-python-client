@@ -29,12 +29,19 @@ def get_graph_module(callable, example_inputs):
     input_nodes = [
         graph.create_node(op='placeholder', target=f'input_{i}', args=(), kwargs={}) for i in range(len(example_inputs))
     ]
+    
+    # Create a `get_attr` node that refers to `callable`
+    callable_node = graph.create_node(op='get_attr', target='callable')
 
     # This should call "__call__" method of `callable` (the root)
-    function_node = graph.create_node(op='call_module', target="__call__", args=tuple(input_nodes), kwargs={})
+    function_node = graph.create_node(op='call_method', target="__call__", args=(callable_node, *input_nodes), kwargs={})
     graph.output(function_node)
+    
+    # Make `callable` an attribute of a new parent module
+    parent_module = torch.nn.Module()
+    parent_module.callable = callable
 
-    graph_module = GraphModule(callable, graph)
+    graph_module = GraphModule(parent_module, graph)
 
     return graph_module
 
@@ -74,6 +81,8 @@ def hidet_backend_server(graph_module: GraphModule, example_inputs: List[torch.T
 
     # Wrap the forward function in a torch.fx.GraphModule
     graph_module = get_graph_module(wrapper, example_inputs)
+    
+    graph_module.graph.print_tabular()
     
     try:
         # This uses pickle to serialize to disk
