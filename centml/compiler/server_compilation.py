@@ -1,9 +1,10 @@
 import os
 import shutil
 import logging
+import pickle
 from typing import List
 import torch
-from torch.fx import GraphModule, Graph, Tracer
+from torch.fx import GraphModule
 from hidet.graph.frontend import from_torch
 from hidet.graph.frontend.torch.interpreter import Interpreter
 from hidet.graph.frontend.torch.dynamo_backends import (
@@ -13,32 +14,28 @@ from hidet.graph.frontend.torch.dynamo_backends import (
     CompiledForwardFunction,
 )
 from centml.compiler.config import config_instance
-import types
-import pickle
 
 storage_path = os.path.join(config_instance.CACHE_PATH, "server")
 os.makedirs(storage_path, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 
+
 class CustomTracer(torch.fx.Tracer):
-#     # def __init__(self, root):
-#     #     super().__init__()
-#     #     self.root = root
-    
     def is_leaf_module(self, m, module_qualified_name):
-        print("CALLED")
         if isinstance(m, CompiledForwardFunction):
             return True
         return super().is_leaf_module(m, module_qualified_name)
+
 
 class MyModule(torch.nn.Module):
     def __init__(self, cff):
         super().__init__()
         self.leaf_module = cff
-    
+
     def forward(self, x):
         return self.leaf_module(x)
+
 
 # Create a torch.fx.GraphModule that wraps around `callable`
 # graph_module(*inputs) will call callable.__call__(*inputs)
@@ -66,6 +63,7 @@ def dir_cleanup(model_id: str):
     except Exception as e:
         raise Exception("Failed to delete the directory") from e
 
+
 def hidet_backend_server(graph_module: GraphModule, example_inputs: List[torch.Tensor], model_id: str):
     assert isinstance(graph_module, GraphModule)
 
@@ -83,14 +81,11 @@ def hidet_backend_server(graph_module: GraphModule, example_inputs: List[torch.T
 
     # Get compiled forward function
     wrapper = CompiledForwardFunction(cgraph, hidet_inputs, output_format)
-    
+
     # Wrap the forward function in a torch.fx.GraphModule
     graph_module = get_graph_module(wrapper, example_inputs)
 
-    graph_module.graph.print_tabular()
-
     try:
-        # This uses pickle to serialize to disk
         with open(os.path.join(storage_path, model_id, "graph_module.zip"), "wb") as f:
             pickle.dump(graph_module, f)
     except Exception as e:
