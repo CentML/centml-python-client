@@ -23,9 +23,9 @@ logger = logging.getLogger(__name__)
 
 # Custom tracer that doesn't trace the callable (it treats it as a leaf module)
 class CustomTracer(torch.fx.Tracer):
-    def __init__(self, callable):
-        super().__init__()
+    def __init__(self, callable=CompiledForwardFunction):
         self.callable_type = type(callable)
+        super().__init__()
 
     def is_leaf_module(self, m, module_qualified_name):
         if isinstance(m, self.callable_type):
