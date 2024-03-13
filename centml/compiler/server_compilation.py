@@ -21,32 +21,35 @@ os.makedirs(storage_path, exist_ok=True)
 logger = logging.getLogger(__name__)
 
 
+# Custom tracer that doesn't trace the callable (it treats it as a leaf module)
 class CustomTracer(torch.fx.Tracer):
+    def __init__(self, callable):
+        super().__init__()
+        self.callable_type = type(callable)
+
     def is_leaf_module(self, m, module_qualified_name):
-        if isinstance(m, CompiledForwardFunction):
+        if isinstance(m, self.callable_type):
             return True
         return super().is_leaf_module(m, module_qualified_name)
 
 
-class MyModule(torch.nn.Module):
-    def __init__(self, cff):
+# In order to avoid tracing the callable class, we have to set it as a root module
+class RootModule(torch.nn.Module):
+    def __init__(self, callable):
         super().__init__()
-        self.leaf_module = cff
+        self.leaf_module = callable
 
     def forward(self, x):
         return self.leaf_module(x)
 
 
-# Create a torch.fx.GraphModule that wraps around `callable`
-# graph_module(*inputs) will call callable.__call__(*inputs)
-# In this function, `example_inputs`` is only used to determine the number of input nodes
-def get_graph_module(callable, example_inputs):
-    module = MyModule(callable)
-    tracer = CustomTracer()
-    graph = tracer.trace(module, example_inputs)
-    graph_module = GraphModule(module, graph)
-
-    return graph_module
+# Create a torch.fx.GraphModule that wraps around `callable`.
+# `callable` is a class whose forward function gets called when we call the GraphModule's forward function
+def get_graph_module(callable):
+    root = RootModule(callable)
+    tracer = CustomTracer(callable)
+    graph = tracer.trace(root)
+    return GraphModule(root, graph)
 
 
 # This function will delete the storage_path/{model_id} directory
@@ -83,7 +86,7 @@ def hidet_backend_server(graph_module: GraphModule, example_inputs: List[torch.T
     wrapper = CompiledForwardFunction(cgraph, hidet_inputs, output_format)
 
     # Wrap the forward function in a torch.fx.GraphModule
-    graph_module = get_graph_module(wrapper, example_inputs)
+    graph_module = get_graph_module(wrapper)
 
     try:
         with open(os.path.join(storage_path, model_id, "graph_module.zip"), "wb") as f:
