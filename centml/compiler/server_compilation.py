@@ -11,7 +11,7 @@ from hidet.graph.frontend.torch.dynamo_backends import (
     get_flow_graph,
     get_compiled_graph,
     preprocess_inputs,
-    CompiledForwardFunction,
+    HidetCompiledModel,
 )
 from centml.compiler.config import config_instance
 
@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 # Custom tracer that doesn't trace the callable (it treats it as a leaf module)
 class CustomTracer(torch.fx.Tracer):
-    def __init__(self, callable=CompiledForwardFunction):
-        self.callable_type = type(callable)
+    def __init__(self, callable=None):
+        self.callable_type = type(callable) if callable is not None else HidetCompiledModel
         super().__init__()
 
     def is_leaf_module(self, m, module_qualified_name):
@@ -83,7 +83,7 @@ def hidet_backend_server(graph_module: GraphModule, example_inputs: List[torch.T
     cgraph.run_async(hidet_inputs)
 
     # Get compiled forward function
-    wrapper = CompiledForwardFunction(cgraph, hidet_inputs, output_format)
+    wrapper = HidetCompiledModel(cgraph, hidet_inputs, output_format)
 
     # Wrap the forward function in a torch.fx.GraphModule
     graph_module = get_graph_module(wrapper)
