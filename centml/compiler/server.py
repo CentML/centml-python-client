@@ -39,7 +39,7 @@ async def status_handler(model_id: str):
 
 def background_compile(model_id: str, tfx_graph, example_inputs):
     try:
-        # This will save the cgraph to {storage_path}/{model_id}/cgraph.zip
+        # This will save the compiled torch.fx.GraphModule to {storage_path}/{model_id}/graph_module.zip
         hidet_backend_server(tfx_graph, example_inputs, model_id)
     except Exception as e:
         logger.exception(f"Compilation: error compiling model. {e}")
