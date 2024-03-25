@@ -199,7 +199,7 @@ class TestRemoteCompilation(TestCase):
     @patch("os.path.isfile", new=lambda x: True)
     @patch("builtins.open")
     @patch("centml.compiler.backend.pickle.load")
-    def test_cgraph_saved(self, mock_load, mock_open):
+    def test_graph_module_saved(self, mock_load, mock_open):
         mock_load.return_value = MagicMock()
 
         # Don't calculate the model_id since that saves a temp file. Just return "1234"
@@ -212,7 +212,7 @@ class TestRemoteCompilation(TestCase):
     @patch('os.path.isfile', new=lambda x: False)
     @patch('centml.compiler.backend.Runner._download_model')
     @patch('centml.compiler.backend.Runner._wait_for_status')
-    def test_cgraph_not_saved(self, mock_status, mock_download):
+    def test_graph_module_not_saved(self, mock_status, mock_download):
         mock_status.return_value = True
         mock_download.return_value = MagicMock()
 

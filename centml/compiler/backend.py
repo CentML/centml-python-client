@@ -130,9 +130,9 @@ class Runner:
 
         model_id = self._get_model_id(flow_graph)
 
-        # check if cgraph is saved locally
+        # check if graph module is saved locally
         graph_module_path = os.path.join(base_path, model_id, "graph_module.zip")
-        if os.path.isfile(graph_module_path):  # cgraph is saved locally
+        if os.path.isfile(graph_module_path):
             with open(graph_module_path, "rb") as f:
                 graph_module = pickle.load(f)
         else:
