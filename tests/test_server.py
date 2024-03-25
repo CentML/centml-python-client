@@ -78,10 +78,10 @@ class TestBackgroundCompile(TestCase):
             self.assertIn("error loading pickled content", log_message)
 
     @pytest.mark.gpu
-    @patch("centml.compiler.server_compilation.save_compiled_graph")
+    @patch("centml.compiler.server_compilation.open")
     @patch("logging.Logger.exception")
     @patch("threading.Thread.start", new=lambda x: None)
-    def test_successful_compilation(self, mock_logger, mock_save_cgraph):
+    def test_successful_compilation(self, mock_logger, mock_open):
         # For some reason there is a deadlock with parallel builds
         hidet.option.parallel_build(False)
         warnings.filterwarnings("ignore", category=UserWarning)
@@ -108,8 +108,8 @@ class TestBackgroundCompile(TestCase):
 
             background_compile(model_id, model_file, input_file)
 
+        mock_open.assert_called_once()
         mock_logger.assert_not_called()
-        mock_save_cgraph.assert_called_once()
 
 
 class TestCompileHandler(TestCase):

@@ -19,10 +19,10 @@ def get_status(model_id: str):
     if not os.path.isdir(os.path.join(storage_path, model_id)):
         return CompilationStatus.NOT_FOUND
 
-    if not os.path.isfile(os.path.join(storage_path, model_id, "cgraph.zip")):
+    if not os.path.isfile(os.path.join(storage_path, model_id, "graph_module.zip")):
         return CompilationStatus.COMPILING
 
-    if os.path.isfile(os.path.join(storage_path, model_id, "cgraph.zip")):
+    if os.path.isfile(os.path.join(storage_path, model_id, "graph_module.zip")):
         return CompilationStatus.DONE
 
     return None
@@ -37,28 +37,9 @@ async def status_handler(model_id: str):
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Status check: invalid status state.")
 
 
-def background_compile(model_id: str, model: UploadFile, inputs: UploadFile):
+def background_compile(model_id: str, tfx_graph, example_inputs):
     try:
-        tfx_contents = model.file.read()
-        ei_contents = inputs.file.read()
-    except Exception as e:
-        logger.exception(f"Compilation: error reading serialized content. {e}")
-        dir_cleanup(model_id)
-        return
-    finally:
-        model.file.close()
-        inputs.file.close()
-
-    try:
-        tfx_graph = pickle.loads(tfx_contents)
-        example_inputs = pickle.loads(ei_contents)
-    except Exception as e:
-        logger.exception(f"Compilation: error loading pickled content. {e}")
-        dir_cleanup(model_id)
-        return
-
-    try:
-        # This will save the cgraph to {storage_path}/{model_id}/cgraph.zip
+        # This will save the compiled torch.fx.GraphModule to {storage_path}/{model_id}/graph_module.zip
         hidet_backend_server(tfx_graph, example_inputs, model_id)
     except Exception as e:
         logger.exception(f"Compilation: error compiling model. {e}")
@@ -78,13 +59,32 @@ async def compile_model_handler(model_id: str, model: UploadFile, inputs: Upload
     # This effectively sets the model's status to COMPILING
     os.makedirs(os.path.join(storage_path, model_id))
 
+    try:
+        tfx_contents = model.file.read()
+        ei_contents = inputs.file.read()
+    except Exception as e:
+        logger.exception(f"Compilation: error reading serialized content. {e}")
+        dir_cleanup(model_id)
+        return
+    finally:
+        model.file.close()
+        inputs.file.close()
+
+    try:
+        tfx_graph = pickle.loads(tfx_contents)
+        example_inputs = pickle.loads(ei_contents)
+    except Exception as e:
+        logger.exception(f"Compilation: error loading pickled content. {e}")
+        dir_cleanup(model_id)
+        return
+
     # perform the compilation in the background and return HTTP.OK to client
-    background_task.add_task(background_compile, model_id, model, inputs)
+    background_task.add_task(background_compile, model_id, tfx_graph, example_inputs)
 
 
 @app.get("/download/{model_id}")
 async def download_handler(model_id: str):
-    compiled_forward_path = os.path.join(storage_path, model_id, "cgraph.zip")
+    compiled_forward_path = os.path.join(storage_path, model_id, "graph_module.zip")
     if not os.path.isfile(compiled_forward_path):
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Download: compiled file not found")
     return FileResponse(compiled_forward_path)

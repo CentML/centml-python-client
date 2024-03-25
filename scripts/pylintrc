@@ -447,6 +447,7 @@ disable=raw-checker-failed,
         import-error,
         bad-option-value,
         protected-access,
+        broad-except,
         broad-exception-raised,
         broad-exception-caught,
         no-member,                          # too many false positives
