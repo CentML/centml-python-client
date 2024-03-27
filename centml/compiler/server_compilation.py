@@ -1,7 +1,6 @@
 import os
 import shutil
 import logging
-import pickle
 from typing import List
 import torch
 from torch.fx import GraphModule
@@ -20,11 +19,32 @@ os.makedirs(storage_path, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 
+# Calling the torch.fx.GraphModule will call RootModule.forward
+# Note that due to torch.fx.Tracer limitations, RootModule.forward can't have *args (or **kwargs) in its signature
+# Therefore, args are 
+class RootModule(torch.nn.Module):
+    def __init__(self, callable):
+        super().__init__()
+        self.leaf_module = callable
 
+    def forward(self, args):
+        return self.leaf_module(args)
+
+# We wrap the callable in a torch.nn.Module so that it can be a leaf module in the graph
+# Leaf modules avoid being traced by the torch.fx.Tracer and are treated like black boxes
+class ModuleWrapper(torch.nn.Module):
+    def __init__(self, callable):
+        super().__init__()
+        self.callable = callable
+
+    def forward(self, args):
+        return self.callable(*args)
+    
 # Custom tracer that doesn't trace the callable (it treats it as a leaf module)
+# However, the callable needs to be of class nn.Module for this to work
 class CustomTracer(torch.fx.Tracer):
     def __init__(self, callable=None):
-        self.callable_type = type(callable) if callable is not None else HidetCompiledModel
+        self.callable_type = type(callable) if callable is not None else RootModule
         super().__init__()
 
     def is_leaf_module(self, m, module_qualified_name):
@@ -32,22 +52,12 @@ class CustomTracer(torch.fx.Tracer):
             return True
         return super().is_leaf_module(m, module_qualified_name)
 
-
-# In order to avoid tracing the callable class, we have to set it as a root module
-class RootModule(torch.nn.Module):
-    def __init__(self, callable):
-        super().__init__()
-        self.leaf_module = callable
-
-    def forward(self, x):
-        return self.leaf_module(x)
-
-
 # Create a torch.fx.GraphModule that wraps around `callable`.
 # `callable` is a class whose forward function gets called when we call the GraphModule's forward function
 def get_graph_module(callable):
-    root = RootModule(callable)
-    tracer = CustomTracer(callable)
+    module = ModuleWrapper(callable)
+    root = RootModule(module)
+    tracer = CustomTracer(module)
     graph = tracer.trace(root)
     return GraphModule(root, graph)
 
@@ -67,14 +77,11 @@ def dir_cleanup(model_id: str):
         raise Exception("Failed to delete the directory") from e
 
 
-def hidet_backend_server(graph_module: GraphModule, example_inputs: List[torch.Tensor], model_id: str):
-    assert isinstance(graph_module, GraphModule)
-
-    logger.info("received a subgraph with %d nodes to optimize", len(graph_module.graph.nodes))
-    logger.debug("graph: %s", graph_module.graph)
+def hidet_backend_server(input_graph_module: GraphModule, example_inputs: List[torch.Tensor]):
+    assert isinstance(input_graph_module, GraphModule)
 
     # Create hidet compiled graph
-    interpreter: Interpreter = from_torch(graph_module)
+    interpreter: Interpreter = from_torch(input_graph_module)
     flow_graph, _, output_format = get_flow_graph(interpreter, example_inputs)
     cgraph = get_compiled_graph(flow_graph)
 
@@ -86,10 +93,6 @@ def hidet_backend_server(graph_module: GraphModule, example_inputs: List[torch.T
     wrapper = HidetCompiledModel(cgraph, hidet_inputs, output_format)
 
     # Wrap the forward function in a torch.fx.GraphModule
-    graph_module = get_graph_module(wrapper)
+    compiled_graph_module = get_graph_module(wrapper)
 
-    try:
-        with open(os.path.join(storage_path, model_id, "graph_module.zip"), "wb") as f:
-            pickle.dump(graph_module, f)
-    except Exception as e:
-        raise Exception("Saving graph module failed") from e
+    return compiled_graph_module
