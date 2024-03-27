@@ -19,9 +19,10 @@ os.makedirs(storage_path, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 
+
 # Calling the torch.fx.GraphModule will call RootModule.forward
 # Note that due to torch.fx.Tracer limitations, RootModule.forward can't have *args (or **kwargs) in its signature
-# Therefore, args are 
+# Therefore, args are passed as a tuple and later unpacked
 class RootModule(torch.nn.Module):
     def __init__(self, callable):
         super().__init__()
@@ -29,6 +30,7 @@ class RootModule(torch.nn.Module):
 
     def forward(self, args):
         return self.leaf_module(args)
+
 
 # We wrap the callable in a torch.nn.Module so that it can be a leaf module in the graph
 # Leaf modules avoid being traced by the torch.fx.Tracer and are treated like black boxes
@@ -39,8 +41,9 @@ class ModuleWrapper(torch.nn.Module):
 
     def forward(self, args):
         return self.callable(*args)
-    
-# Custom tracer that doesn't trace the callable (it treats it as a leaf module)
+
+
+# CustomTracer doesn't trace the callable (it treats it as a leaf module)
 # However, the callable needs to be of class nn.Module for this to work
 class CustomTracer(torch.fx.Tracer):
     def __init__(self, callable=None):
@@ -51,6 +54,7 @@ class CustomTracer(torch.fx.Tracer):
         if isinstance(m, self.callable_type):
             return True
         return super().is_leaf_module(m, module_qualified_name)
+
 
 # Create a torch.fx.GraphModule that wraps around `callable`.
 # `callable` is a class whose forward function gets called when we call the GraphModule's forward function
