@@ -3,6 +3,7 @@ import shutil
 import logging
 from typing import List
 import torch
+import pickle
 from torch.fx import GraphModule
 from hidet.graph.frontend import from_torch
 from hidet.graph.frontend.torch.interpreter import Interpreter
@@ -21,8 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 # Calling the torch.fx.GraphModule will call RootModule.forward
-# Note that due to torch.fx.Tracer limitations, RootModule.forward can't have *args (or **kwargs) in its signature
-# Therefore, args are passed as a tuple and later unpacked
+# Due to limitations on how the GraphModule is constructed, args are passed as a tuple and later unpacked
 class RootModule(torch.nn.Module):
     def __init__(self, callable):
         super().__init__()
@@ -43,15 +43,12 @@ class ModuleWrapper(torch.nn.Module):
         return self.callable(*args)
 
 
-# CustomTracer doesn't trace the callable (it treats it as a leaf module)
-# However, the callable needs to be of class nn.Module for this to work
+# Note: pickling a GraphModule won't save its Graph.
+# Instead, it stores the Tracer and re-traces to recreate the Graph when deserializing.
 class CustomTracer(torch.fx.Tracer):
-    def __init__(self, callable=None):
-        self.callable_type = type(callable) if callable is not None else RootModule
-        super().__init__()
-
+    # Don't trace the ModuleWrapper
     def is_leaf_module(self, m, module_qualified_name):
-        if isinstance(m, self.callable_type):
+        if isinstance(m, ModuleWrapper):
             return True
         return super().is_leaf_module(m, module_qualified_name)
 
@@ -61,7 +58,7 @@ class CustomTracer(torch.fx.Tracer):
 def get_graph_module(callable):
     module = ModuleWrapper(callable)
     root = RootModule(module)
-    tracer = CustomTracer(module)
+    tracer = CustomTracer()
     graph = tracer.trace(root)
     return GraphModule(root, graph)
 
@@ -81,7 +78,7 @@ def dir_cleanup(model_id: str):
         raise Exception("Failed to delete the directory") from e
 
 
-def hidet_backend_server(input_graph_module: GraphModule, example_inputs: List[torch.Tensor]):
+def hidet_backend_server(input_graph_module: GraphModule, example_inputs: List[torch.Tensor], model_id: str):
     assert isinstance(input_graph_module, GraphModule)
 
     # Create hidet compiled graph
@@ -99,4 +96,8 @@ def hidet_backend_server(input_graph_module: GraphModule, example_inputs: List[t
     # Wrap the forward function in a torch.fx.GraphModule
     compiled_graph_module = get_graph_module(wrapper)
 
-    return compiled_graph_module
+    try:
+        with open(os.path.join(storage_path, model_id, "graph_module.zip"), "wb") as f:
+            pickle.dump(compiled_graph_module, f)
+    except Exception as e:
+        raise Exception("Saving graph module failed") from e
