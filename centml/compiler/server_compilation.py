@@ -2,8 +2,8 @@ import os
 import shutil
 import logging
 from typing import List
-import torch
 import pickle
+import torch
 from torch.fx import GraphModule
 from hidet.graph.frontend import from_torch
 from hidet.graph.frontend.torch.interpreter import Interpreter

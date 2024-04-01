@@ -37,6 +37,31 @@ async def status_handler(model_id: str):
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Status check: invalid status state.")
 
 
+async def read_upload_files(model_id, model: UploadFile, inputs: UploadFile):
+    try:
+        tfx_contents = await model.read()
+        ei_contents = await inputs.read()
+    except Exception as e:
+        dir_cleanup(model_id)
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST, detail="Compilation: error reading serialized content."
+        ) from e
+    finally:
+        model.file.close()
+        inputs.file.close()
+
+    try:
+        tfx_graph = pickle.loads(tfx_contents)
+        example_inputs = pickle.loads(ei_contents)
+    except Exception as e:
+        dir_cleanup(model_id)
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST, detail="Compilation: error loading pickled content."
+        ) from e
+
+    return tfx_graph, example_inputs
+
+
 def background_compile(model_id: str, tfx_graph, example_inputs):
     try:
         # This will save the compiled torch.fx.GraphModule to {storage_path}/{model_id}/graph_module.zip
