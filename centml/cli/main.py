@@ -15,9 +15,9 @@ cli.add_command(logout)
 
 @cli.command(help="Start remote compilation server")
 def server():
-    from ..compiler import server
+    from ..compiler.server import run
 
-    server.run()
+    run()
 
 
 @click.group(help="CentML cluster CLI tool")
