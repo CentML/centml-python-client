@@ -36,11 +36,16 @@ async def status_handler(model_id: str):
 
 def background_compile(model_id: str, tfx_graph, example_inputs):
     try:
-        # This will save the compiled return object to the server cache
-        hidet_backend_server(tfx_graph, example_inputs, model_id)
+        compiled_graph_module = hidet_backend_server(tfx_graph, example_inputs)
     except Exception as e:
         logging.getLogger(__name__).exception(f"Compilation: error compiling model. {e}")
         dir_cleanup(model_id)
+
+    try:
+        with open(os.path.join(storage_path, model_id, "graph_module.zip"), "wb") as f:
+            pickle.dump(compiled_graph_module, f)
+    except Exception as e:
+        raise Exception("Saving graph module failed") from e
 
 
 def read_upload_files(model_id: str, model: UploadFile, inputs: UploadFile):
