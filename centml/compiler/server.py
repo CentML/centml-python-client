@@ -65,11 +65,11 @@ def read_upload_files(model_id: str, model: UploadFile, inputs: UploadFile):
     except Exception as e:
         dir_cleanup(model_id)
         raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST, detail="Compilation: error reading serialized content."
+            status_code=HTTPStatus.BAD_REQUEST, detail="Compilation: error loading pickled content."
         ) from e
-    
+
     return tfx_graph, example_inputs
-    
+
 
 @app.post("/submit/{model_id}")
 async def compile_model_handler(model_id: str, model: UploadFile, inputs: UploadFile, background_task: BackgroundTasks):
