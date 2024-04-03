@@ -1,16 +1,16 @@
-import tempfile
 import pickle
 import warnings
+from io import BytesIO
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
 from http import HTTPStatus
 import pytest
 import torch
 import hidet
-from fastapi import UploadFile
+from fastapi import UploadFile, HTTPException
 from fastapi.testclient import TestClient
 from parameterized import parameterized_class
-from centml.compiler.server import app, background_compile
+from centml.compiler.server import app, background_compile, read_upload_files
 from centml.compiler.config import CompilationStatus
 from .test_helpers import MODEL_SUITE
 
@@ -48,35 +48,6 @@ class TestStatusHandler(TestCase):
 
 @parameterized_class(list(MODEL_SUITE.values()))
 class TestBackgroundCompile(TestCase):
-    @patch("logging.Logger.exception")
-    def test_mock_cant_read(self, mock_logger):
-        model_id = "file_cant_be_read"
-
-        mock_file_content = MagicMock()
-        mock_file_content.read.side_effect = Exception("an exception occurred")
-
-        mock_upload_file = MagicMock(spec=UploadFile)
-        mock_upload_file.file = mock_file_content
-
-        background_compile(model_id, mock_upload_file, mock_upload_file)
-
-        mock_logger.assert_called_once()
-        log_message = mock_logger.call_args[0][0]
-
-        self.assertIn("error reading serialized content", log_message)
-
-    @patch("logging.Logger.exception")
-    def test_model_empty_file(self, mock_logger):
-        model_id = "empty_model"
-
-        with tempfile.NamedTemporaryFile() as zero_byte_file:
-            background_compile(model_id, zero_byte_file, zero_byte_file)
-
-            mock_logger.assert_called_once()
-            log_message = mock_logger.call_args[0][0]
-
-            self.assertIn("error loading pickled content", log_message)
-
     @pytest.mark.gpu
     @patch("centml.compiler.server_compilation.save_compiled_graph")
     @patch("logging.Logger.exception")
@@ -94,37 +65,73 @@ class TestBackgroundCompile(TestCase):
         ):
             model_compiled = torch.compile(model, backend="centml")
             model_compiled(inputs)
-            gm = mock_init.call_args[0][0]
+            graph_module = mock_init.call_args[0][0]
+            example_inputs = mock_init.call_args[0][1]
 
         model_id = "successful_model"
-        with tempfile.NamedTemporaryFile() as model_file, tempfile.NamedTemporaryFile() as input_file:
-            pickle.dump(gm, model_file)
-            model_file.flush()
-            model_file.seek(0)
-
-            pickle.dump([inputs], input_file)
-            input_file.flush()
-            input_file.seek(0)
-
-            background_compile(model_id, model_file, input_file)
+        background_compile(model_id, graph_module, example_inputs)
 
         mock_logger.assert_not_called()
         mock_save_cgraph.assert_called_once()
 
 
+class TestReadUploadFiles(TestCase):
+    def test_mock_cant_read(self):
+        model_id = "file_cant_be_read"
+
+        mock_file = MagicMock()
+        mock_file.file.read.side_effect = Exception("an exception occurred")
+
+        with self.assertRaises(HTTPException) as excinfo:
+            read_upload_files(model_id, mock_file, mock_file)
+
+        self.assertEqual(excinfo.exception.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Compilation: error reading serialized content", str(excinfo.exception))
+
+    @patch("pickle.loads", side_effect=Exception("an exception occurred"))
+    def test_cant_unpickle(self, mock_pickle_loads):
+        model_id = "file_cant_be_unpickled"
+
+        model_data = "model"
+        inputs_data = "inputs"
+
+        # Create file-like objects with any data
+        model_file = BytesIO(pickle.dumps(model_data))
+        inputs_file = BytesIO(pickle.dumps(inputs_data))
+
+        model = UploadFile(filename="model", file=model_file)
+        inputs = UploadFile(filename="inputs", file=inputs_file)
+
+        with self.assertRaises(HTTPException) as excinfo:
+            read_upload_files(model_id, model, inputs)
+
+        mock_pickle_loads.assert_called_once()
+        self.assertEqual(excinfo.exception.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("error loading pickled content", str(excinfo.exception))
+
+    def test_proper_read(self):
+        model_id = "test_model_id"
+
+        # Create file-like objects with pickleable data
+        model_data = "model"
+        inputs_data = "inputs"
+
+        model_file = BytesIO(pickle.dumps(model_data))
+        inputs_file = BytesIO(pickle.dumps(inputs_data))
+
+        model = UploadFile(filename="model", file=model_file)
+        inputs = UploadFile(filename="inputs", file=inputs_file)
+
+        tfx_graph, example_inputs = read_upload_files(model_id, model, inputs)
+
+        self.assertEqual(tfx_graph, model_data)
+        self.assertEqual(example_inputs, inputs_data)
+
+
 class TestCompileHandler(TestCase):
     def setUp(self) -> None:
-        self.model_id = "compiling_model"
-        self.model = tempfile.NamedTemporaryFile()  # pylint: disable=consider-using-with
-        self.inputs = tempfile.NamedTemporaryFile()  # pylint: disable=consider-using-with
-        self.model.write(b"model")
-        self.inputs.write(b"inputs")
-        self.model.seek(0)
-        self.inputs.seek(0)
-
-    def tearDown(self) -> None:
-        self.model.close()
-        self.inputs.close()
+        self.model = pickle.dumps("model")
+        self.inputs = pickle.dumps("inputs")
 
     @patch("os.path.isdir", new=lambda x: True)
     def test_model_compiling(self):

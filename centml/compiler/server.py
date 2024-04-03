@@ -37,14 +37,24 @@ async def status_handler(model_id: str):
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Status check: invalid status state.")
 
 
-def background_compile(model_id: str, model: UploadFile, inputs: UploadFile):
+def background_compile(model_id: str, tfx_graph, example_inputs):
+    try:
+        # This will save the cgraph to {storage_path}/{model_id}/cgraph.zip
+        hidet_backend_server(tfx_graph, example_inputs, model_id)
+    except Exception as e:
+        logger.exception(f"Compilation: error compiling model. {e}")
+        dir_cleanup(model_id)
+
+
+def read_upload_files(model_id: str, model: UploadFile, inputs: UploadFile):
     try:
         tfx_contents = model.file.read()
         ei_contents = inputs.file.read()
     except Exception as e:
-        logger.exception(f"Compilation: error reading serialized content. {e}")
         dir_cleanup(model_id)
-        return
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST, detail="Compilation: error reading serialized content."
+        ) from e
     finally:
         model.file.close()
         inputs.file.close()
@@ -53,16 +63,12 @@ def background_compile(model_id: str, model: UploadFile, inputs: UploadFile):
         tfx_graph = pickle.loads(tfx_contents)
         example_inputs = pickle.loads(ei_contents)
     except Exception as e:
-        logger.exception(f"Compilation: error loading pickled content. {e}")
         dir_cleanup(model_id)
-        return
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST, detail="Compilation: error loading pickled content."
+        ) from e
 
-    try:
-        # This will save the cgraph to {storage_path}/{model_id}/cgraph.zip
-        hidet_backend_server(tfx_graph, example_inputs, model_id)
-    except Exception as e:
-        logger.exception(f"Compilation: error compiling model. {e}")
-        dir_cleanup(model_id)
+    return tfx_graph, example_inputs
 
 
 @app.post("/submit/{model_id}")
@@ -78,8 +84,10 @@ async def compile_model_handler(model_id: str, model: UploadFile, inputs: Upload
     # This effectively sets the model's status to COMPILING
     os.makedirs(os.path.join(storage_path, model_id))
 
+    tfx_graph, example_inputs = read_upload_files(model_id, model, inputs)
+
     # perform the compilation in the background and return HTTP.OK to client
-    background_task.add_task(background_compile, model_id, model, inputs)
+    background_task.add_task(background_compile, model_id, tfx_graph, example_inputs)
 
 
 @app.get("/download/{model_id}")
