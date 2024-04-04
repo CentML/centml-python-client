@@ -9,7 +9,6 @@ First, ensure you meet the requirements for  [Hidet](https://github.com/hidet-or
 Inside the project's base directory, run the following commands:
 ```bash
 pip install . 
-pip install --pre --extra-index-url https://download.hidet.org/whl hidet
 ```
 
 ### Tests
