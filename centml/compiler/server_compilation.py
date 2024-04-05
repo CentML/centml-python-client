@@ -41,7 +41,7 @@ class CompilerType(Enum):
     HIDET = "hidet"
 
 
-class RootRCModule(Callable):
+class BaseRCReturn(Callable):
     def __init__(self, compiler_name: CompilerType):
         self.compiler_name = compiler_name
 
@@ -50,7 +50,7 @@ class RootRCModule(Callable):
         pass
 
 
-class HidetRCModule(RootRCModule):
+class HidetRCReturn(BaseRCReturn):
     def __init__(self, hidet_compiled_model):
         super().__init__(CompilerType.HIDET)
         self.compiled_model_forward = hidet_compiled_model
@@ -72,13 +72,11 @@ def hidet_backend_server(input_graph_module: GraphModule, example_inputs: List[t
     cgraph.run_async(hidet_inputs)
 
     # Get compiled forward function
-    wrapper = HidetCompiledModel(cgraph, hidet_inputs, output_format)
-
-    # Wrap the forward function in a torch.fx.GraphModule
-    compiled_graph_module = HidetRCModule(wrapper)
+    compiled_forward_function = HidetCompiledModel(cgraph, hidet_inputs, output_format)
+    return_class = HidetRCReturn(compiled_forward_function)
 
     try:
         with open(os.path.join(storage_path, model_id, "graph_module.zip"), "wb") as f:
-            pickle.dump(compiled_graph_module, f)
+            pickle.dump(return_class, f)
     except Exception as e:
         raise Exception("Saving graph module failed") from e

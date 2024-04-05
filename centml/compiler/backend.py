@@ -155,8 +155,7 @@ class Runner:
             if not self.compiled_forward_function:
                 return self.module.forward(*args, **kwargs)
 
-        # The torch.fx.GraphModule compiled forward function expects arguments to be passed as a tuple
-        return self.compiled_forward_function(args)
+        return self.compiled_forward_function(*args)
 
 
 def centml_dynamo_backend(gm: GraphModule, example_inputs: List[torch.Tensor]):
