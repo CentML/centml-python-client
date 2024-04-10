@@ -109,7 +109,7 @@ class TestDownloadModel(SetUpGraphModule):
 
     @patch("os.makedirs")
     @patch("builtins.open")
-    @patch("centml.compiler.backend.load_compiled_graph")
+    @patch("centml.compiler.backend.pickle.loads")
     @patch("centml.compiler.backend.requests")
     def test_successful_download(self, mock_requests, mock_load, mock_open, mock_makedirs):
         # Mock the response from the requests library
@@ -197,20 +197,26 @@ class TestRemoteCompilation(TestCase):
         torch._dynamo.reset()
 
     @patch("os.path.isfile", new=lambda x: True)
-    @patch("centml.compiler.backend.load_compiled_graph")
-    def test_cgraph_saved(self, mock_load):
+    @patch("builtins.open")
+    @patch("centml.compiler.backend.pickle.load")
+    @patch("centml.compiler.backend.Runner._get_model_id", new=lambda x, y: "1234")
+    def test_compiled_return_saved(self, mock_load, mock_open):
         mock_load.return_value = MagicMock()
 
         self.call_remote_compilation()
+
+        mock_open.assert_called_once()
         mock_load.assert_called_once()
 
     @patch('os.path.isfile', new=lambda x: False)
     @patch('centml.compiler.backend.Runner._download_model')
     @patch('centml.compiler.backend.Runner._wait_for_status')
-    def test_cgraph_not_saved(self, mock_status, mock_download):
+    @patch("centml.compiler.backend.Runner._get_model_id", new=lambda x, y: "1234")
+    def test_compiled_return_not_saved(self, mock_status, mock_download):
         mock_status.return_value = True
         mock_download.return_value = MagicMock()
 
         self.call_remote_compilation()
+
         mock_status.assert_called_once()
         mock_download.assert_called_once()

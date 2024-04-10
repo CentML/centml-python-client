@@ -6,26 +6,23 @@ import uvicorn
 from fastapi import FastAPI, UploadFile, HTTPException, BackgroundTasks, Response
 from fastapi.responses import FileResponse
 from fastapi.middleware.gzip import GZipMiddleware
-from centml.compiler.server_compilation import hidet_backend_server, storage_path, dir_cleanup
+from centml.compiler.server_compilation import hidet_backend_server
+from centml.compiler.utils import dir_cleanup
 from centml.compiler.config import config_instance, CompilationStatus
-
-logger = logging.getLogger(__name__)
+from centml.compiler.utils import get_server_compiled_forward_path
 
 app = FastAPI()
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 def get_status(model_id: str):
-    if not os.path.isdir(os.path.join(storage_path, model_id)):
+    if not os.path.isdir(os.path.join(config_instance.SERVER_BASE_PATH, model_id)):
         return CompilationStatus.NOT_FOUND
 
-    if not os.path.isfile(os.path.join(storage_path, model_id, "cgraph.zip")):
+    if not os.path.isfile(get_server_compiled_forward_path(model_id)):
         return CompilationStatus.COMPILING
 
-    if os.path.isfile(os.path.join(storage_path, model_id, "cgraph.zip")):
-        return CompilationStatus.DONE
-
-    return None
+    return CompilationStatus.DONE
 
 
 @app.get("/status/{model_id}")
@@ -39,10 +36,10 @@ async def status_handler(model_id: str):
 
 def background_compile(model_id: str, tfx_graph, example_inputs):
     try:
-        # This will save the cgraph to {storage_path}/{model_id}/cgraph.zip
+        # This will save the compiled return object to the server cache
         hidet_backend_server(tfx_graph, example_inputs, model_id)
     except Exception as e:
-        logger.exception(f"Compilation: error compiling model. {e}")
+        logging.getLogger(__name__).exception(f"Compilation: error compiling model. {e}")
         dir_cleanup(model_id)
 
 
@@ -82,7 +79,7 @@ async def compile_model_handler(model_id: str, model: UploadFile, inputs: Upload
         return Response(status_code=200)
 
     # This effectively sets the model's status to COMPILING
-    os.makedirs(os.path.join(storage_path, model_id))
+    os.makedirs(os.path.join(config_instance.SERVER_BASE_PATH, model_id))
 
     tfx_graph, example_inputs = read_upload_files(model_id, model, inputs)
 
@@ -92,7 +89,7 @@ async def compile_model_handler(model_id: str, model: UploadFile, inputs: Upload
 
 @app.get("/download/{model_id}")
 async def download_handler(model_id: str):
-    compiled_forward_path = os.path.join(storage_path, model_id, "cgraph.zip")
+    compiled_forward_path = get_server_compiled_forward_path(model_id)
     if not os.path.isfile(compiled_forward_path):
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Download: compiled file not found")
     return FileResponse(compiled_forward_path)
