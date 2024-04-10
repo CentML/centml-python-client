@@ -2,6 +2,8 @@ import os
 from enum import Enum
 import hidet
 
+hidet.option.imperative(False)
+
 
 class CompilationStatus(Enum):
     NOT_FOUND = "not_found"
@@ -24,4 +26,3 @@ class Config:
 
 
 config_instance = Config()
-hidet.option.imperative(False)

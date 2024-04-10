@@ -20,9 +20,6 @@ from centml.compiler.config import config_instance, CompilationStatus
 from centml.compiler.utils import get_backend_compiled_forward_path
 
 
-hidet.option.imperative(False)
-
-
 class Runner:
     def __init__(self, module: GraphModule, inputs: List[torch.Tensor]):
         self._module: GraphModule = weakref.ref(module)
