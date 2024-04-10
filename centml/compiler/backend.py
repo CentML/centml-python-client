@@ -33,7 +33,6 @@ class Runner:
 
         try:
             self.child_thread.start()
-            raise Exception("Remote compilation failed to start in a separate thread.")
         except Exception:
             logging.getLogger(__name__).exception("Remote compilation failed with the following exception: \n")
 
