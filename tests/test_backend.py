@@ -125,7 +125,7 @@ class TestDownloadModel(SetUpGraphModule):
         mock_requests.get.assert_called_once()
         mock_load.assert_called_once()
         mock_open.assert_called_once()
-        mock_makedirs.assert_called_once()
+        self.assertEqual(mock_makedirs.call_count, 2)
 
 
 class TestWaitForStatus(SetUpGraphModule):
@@ -199,12 +199,11 @@ class TestRemoteCompilation(TestCase):
     @patch("os.path.isfile", new=lambda x: True)
     @patch("builtins.open")
     @patch("centml.compiler.backend.pickle.load")
-    def test_graph_module_saved(self, mock_load, mock_open):
+    @patch("centml.compiler.backend.Runner._get_model_id", new=lambda x, y: "1234")
+    def test_compiled_return_saved(self, mock_load, mock_open):
         mock_load.return_value = MagicMock()
 
-        # Don't calculate the model_id since that saves a temp file. Just return "1234"
-        with patch("centml.compiler.backend.Runner._get_model_id", new=lambda x, y: "1234"):
-            self.call_remote_compilation()
+        self.call_remote_compilation()
 
         mock_open.assert_called_once()
         mock_load.assert_called_once()
@@ -212,13 +211,12 @@ class TestRemoteCompilation(TestCase):
     @patch('os.path.isfile', new=lambda x: False)
     @patch('centml.compiler.backend.Runner._download_model')
     @patch('centml.compiler.backend.Runner._wait_for_status')
-    def test_graph_module_not_saved(self, mock_status, mock_download):
+    @patch("centml.compiler.backend.Runner._get_model_id", new=lambda x, y: "1234")
+    def test_compiled_return_not_saved(self, mock_status, mock_download):
         mock_status.return_value = True
         mock_download.return_value = MagicMock()
 
-        # Don't calculate the model_id since that saves a temp file. Just return "1234"
-        with patch("centml.compiler.backend.Runner._get_model_id", new=lambda x, y: "1234"):
-            self.call_remote_compilation()
+        self.call_remote_compilation()
 
         mock_status.assert_called_once()
         mock_download.assert_called_once()
