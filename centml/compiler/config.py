@@ -2,6 +2,7 @@ import os
 from enum import Enum
 import hidet
 
+
 class CompilationStatus(Enum):
     NOT_FOUND = "not_found"
     COMPILING = "compiling"
@@ -20,6 +21,7 @@ class Config:
 
     BACKEND_BASE_PATH = os.path.join(CACHE_PATH, "backend")
     SERVER_BASE_PATH = os.path.join(CACHE_PATH, "server")
+
 
 config_instance = Config()
 hidet.option.imperative(False)
