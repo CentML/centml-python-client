@@ -14,40 +14,19 @@ from hidet.graph.frontend.torch.dynamo_backends import (
     preprocess_inputs,
     HidetCompiledModel,
 )
-from centml.compiler.config import config_instance
-
-storage_path = os.path.join(config_instance.CACHE_PATH, "server")
-os.makedirs(storage_path, exist_ok=True)
-
-logger = logging.getLogger(__name__)
-
-
-# This function will delete the storage_path/{model_id} directory
-def dir_cleanup(model_id: str):
-    dir_path = os.path.join(storage_path, model_id)
-    if not os.path.exists(dir_path):
-        return  # Directory does not exist, return
-
-    if not os.path.isdir(dir_path):
-        raise Exception(f"'{dir_path}' is not a directory")
-
-    try:
-        shutil.rmtree(dir_path)
-    except Exception as e:
-        raise Exception("Failed to delete the directory") from e
-
+from centml.compiler.utils import get_server_compiled_forward_path
 
 class CompilerType(Enum):
     HIDET = "hidet"
 
 
 class BaseRCReturn(Callable):
-    def __init__(self, compiler_name: CompilerType):
-        self.compiler_name = compiler_name
+    def __init__(self, compiler_type: CompilerType):
+        self.compiler_type = compiler_type
 
     # Implement in child class
     def __call__(self, *args, **kwargs):
-        pass
+        raise NotImplementedError
 
 
 class HidetRCReturn(BaseRCReturn):
@@ -76,7 +55,8 @@ def hidet_backend_server(input_graph_module: GraphModule, example_inputs: List[t
     return_class = HidetRCReturn(compiled_forward_function)
 
     try:
-        with open(os.path.join(storage_path, model_id, "graph_module.zip"), "wb") as f:
+        save_path = get_server_compiled_forward_path(model_id)
+        with open(save_path, "wb") as f:
             pickle.dump(return_class, f)
     except Exception as e:
         raise Exception("Saving graph module failed") from e

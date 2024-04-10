@@ -17,14 +17,10 @@ from hidet.graph.frontend.torch.interpreter import Interpreter
 from hidet.graph.frontend.torch.dynamo_backends import get_flow_graph
 from hidet.runtime.compiled_graph import CompiledGraph
 from centml.compiler.config import config_instance, CompilationStatus
+from centml.compiler.utils import get_backend_compiled_forward_path
 
 
 hidet.option.imperative(False)
-base_path = os.path.join(config_instance.CACHE_PATH, "compiler")
-os.makedirs(base_path, exist_ok=True)
-server_url = f"http://{config_instance.SERVER_IP}:{config_instance.SERVER_PORT}"
-
-logger = logging.getLogger(__name__)
 
 
 class Runner:
@@ -37,8 +33,9 @@ class Runner:
 
         try:
             self.child_thread.start()
+            raise Exception("Remote compilation failed to start in a separate thread.")
         except Exception:
-            logger.exception("Remote compilation failed with the following exception: \n")
+            logging.getLogger(__name__).exception("Remote compilation failed with the following exception: \n")
 
     @property
     def module(self):
@@ -73,21 +70,22 @@ class Runner:
         return flow_graph_hash
 
     def _download_model(self, model_id: str) -> CompiledGraph:
-        download_response = requests.get(url=f"{server_url}/download/{model_id}", timeout=config_instance.TIMEOUT)
+        download_response = requests.get(
+            url=f"{config_instance.SERVER_URL}/download/{model_id}", timeout=config_instance.TIMEOUT
+        )
         if download_response.status_code != HTTPStatus.OK:
             raise Exception(
                 f"Download: request failed, exception from server:\n{download_response.json().get('detail')}"
             )
-        download_dir = os.path.join(base_path, model_id)
-        os.makedirs(download_dir, exist_ok=True)
-        download_path = os.path.join(download_dir, "graph_module.zip")
+        download_path = get_backend_compiled_forward_path(model_id)
+        os.makedirs(os.path.dirname(download_path), exist_ok=True)
         with open(download_path, "wb") as f:
             f.write(download_response.content)
             return pickle.loads(download_response.content)
 
     def _compile_model(self, model_id: str):
         compile_response = requests.post(
-            url=f"{server_url}/submit/{model_id}",
+            url=f"{config_instance.SERVER_URL}/submit/{model_id}",
             files={"model": pickle.dumps(self.module), "inputs": pickle.dumps(self.inputs)},
             timeout=config_instance.TIMEOUT,
         )
@@ -100,7 +98,9 @@ class Runner:
         tries = 0
         while True:
             # get server compilation status
-            status_response = requests.get(f"{server_url}/status/{model_id}", timeout=config_instance.TIMEOUT)
+            status_response = requests.get(
+                f"{config_instance.SERVER_URL}/status/{model_id}", timeout=config_instance.TIMEOUT
+            )
             if status_response.status_code != HTTPStatus.OK:
                 raise Exception(
                     f"Status check: request failed, exception from server:\n{status_response.json().get('detail')}"
@@ -130,16 +130,16 @@ class Runner:
 
         model_id = self._get_model_id(flow_graph)
 
-        # check if graph module is saved locally
-        graph_module_path = os.path.join(base_path, model_id, "graph_module.zip")
-        if os.path.isfile(graph_module_path):
-            with open(graph_module_path, "rb") as f:
-                graph_module = pickle.load(f)
+        # check if compiled forward is saved locally
+        compiled_forward_path = get_backend_compiled_forward_path(model_id)
+        if os.path.isfile(compiled_forward_path):
+            with open(compiled_forward_path, "rb") as f:
+                compiled_forward = pickle.load(f)
         else:
             self._wait_for_status(model_id)
-            graph_module = self._download_model(model_id)
+            compiled_forward = self._download_model(model_id)
 
-        self.compiled_forward_function = graph_module
+        self.compiled_forward_function = compiled_forward
 
         # Let garbage collector free the memory used by the uncompiled model
         with self.lock:
@@ -149,7 +149,7 @@ class Runner:
             gc.collect()
             torch.cuda.empty_cache()
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs):  
         # If model is currently compiling, return the uncompiled forward function
         with self.lock:
             if not self.compiled_forward_function:
