@@ -3,7 +3,6 @@ from typing import List, Callable
 import torch
 from torch.fx import GraphModule
 from hidet.graph.frontend import from_torch
-from hidet.runtime.compiled_graph import CompiledGraph
 from hidet.graph.frontend.torch.interpreter import Interpreter
 from hidet.graph.frontend.torch.dynamo_backends import (
     get_flow_graph,
