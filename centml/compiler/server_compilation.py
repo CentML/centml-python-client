@@ -35,7 +35,7 @@ class HidetRCReturn(BaseRCReturn):
         return self.compiled_model_forward(*args)
 
 
-def hidet_backend_server(input_graph_module: GraphModule, example_inputs: List[torch.Tensor]) -> CompiledGraph:
+def hidet_backend_server(input_graph_module: GraphModule, example_inputs: List[torch.Tensor]):
     assert isinstance(input_graph_module, GraphModule)
 
     # Create hidet compiled graph
