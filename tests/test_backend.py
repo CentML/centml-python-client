@@ -125,7 +125,7 @@ class TestDownloadModel(SetUpGraphModule):
         mock_requests.get.assert_called_once()
         mock_load.assert_called_once()
         mock_open.assert_called_once()
-        self.assertEqual(mock_makedirs.call_count, 2)
+        mock_makedirs.assert_called_once()
 
 
 class TestWaitForStatus(SetUpGraphModule):

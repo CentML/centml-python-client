@@ -4,12 +4,12 @@ from centml.compiler.config import config_instance
 
 
 def get_backend_compiled_forward_path(model_id: str):
-    os.makedirs(config_instance.BACKEND_BASE_PATH, exist_ok=True)
+    os.makedirs(os.path.join(config_instance.BACKEND_BASE_PATH, model_id), exist_ok=True)
     return os.path.join(config_instance.BACKEND_BASE_PATH, model_id, "compilation_return.pkl")
 
 
 def get_server_compiled_forward_path(model_id: str):
-    os.makedirs(config_instance.SERVER_BASE_PATH, exist_ok=True)
+    os.makedirs(os.path.join(config_instance.SERVER_BASE_PATH, model_id), exist_ok=True)
     return os.path.join(config_instance.SERVER_BASE_PATH, model_id, "compilation_return.pkl")
 
 

@@ -74,7 +74,6 @@ class Runner:
                 f"Download: request failed, exception from server:\n{download_response.json().get('detail')}"
             )
         download_path = get_backend_compiled_forward_path(model_id)
-        os.makedirs(os.path.dirname(download_path), exist_ok=True)
         with open(download_path, "wb") as f:
             f.write(download_response.content)
             return pickle.loads(download_response.content)
