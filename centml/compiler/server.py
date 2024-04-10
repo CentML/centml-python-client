@@ -42,10 +42,11 @@ def background_compile(model_id: str, tfx_graph, example_inputs):
         dir_cleanup(model_id)
 
     try:
-        with open(os.path.join(storage_path, model_id, "graph_module.zip"), "wb") as f:
+        save_path = get_server_compiled_forward_path(model_id)
+        with open(save_path, "wb") as f:
             pickle.dump(compiled_graph_module, f)
     except Exception as e:
-        raise Exception("Saving graph module failed") from e
+        raise Exception(f"Saving graph module failed: {e}") from e
 
 
 def read_upload_files(model_id: str, model: UploadFile, inputs: UploadFile):

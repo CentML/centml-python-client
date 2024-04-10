@@ -11,7 +11,6 @@ from hidet.graph.frontend.torch.dynamo_backends import (
     preprocess_inputs,
     HidetCompiledModel,
 )
-from centml.compiler.utils import get_server_compiled_forward_path
 
 
 class CompilerType(Enum):
