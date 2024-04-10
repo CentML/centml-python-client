@@ -1,4 +1,3 @@
-import pickle
 from enum import Enum
 from typing import List, Callable
 import torch
@@ -11,7 +10,6 @@ from hidet.graph.frontend.torch.dynamo_backends import (
     preprocess_inputs,
     HidetCompiledModel,
 )
-from centml.compiler.utils import get_server_compiled_forward_path
 
 
 class CompilerType(Enum):
@@ -36,7 +34,7 @@ class HidetRCReturn(BaseRCReturn):
         return self.compiled_model_forward(*args)
 
 
-def hidet_backend_server(input_graph_module: GraphModule, example_inputs: List[torch.Tensor], model_id: str):
+def hidet_backend_server(input_graph_module: GraphModule, example_inputs: List[torch.Tensor]):
     assert isinstance(input_graph_module, GraphModule)
 
     # Create hidet compiled graph
@@ -50,11 +48,4 @@ def hidet_backend_server(input_graph_module: GraphModule, example_inputs: List[t
 
     # Get compiled forward function
     compiled_forward_function = HidetCompiledModel(cgraph, hidet_inputs, output_format)
-    return_class = HidetRCReturn(compiled_forward_function)
-
-    try:
-        save_path = get_server_compiled_forward_path(model_id)
-        with open(save_path, "wb") as f:
-            pickle.dump(return_class, f)
-    except Exception as e:
-        raise Exception("Saving graph module failed") from e
+    return HidetRCReturn(compiled_forward_function)

@@ -49,7 +49,7 @@ class TestStatusHandler(TestCase):
 @parameterized_class(list(MODEL_SUITE.values()))
 class TestBackgroundCompile(TestCase):
     @pytest.mark.gpu
-    @patch("centml.compiler.server_compilation.open")
+    @patch("centml.compiler.server.open")
     @patch("logging.Logger.exception")
     @patch("threading.Thread.start", new=lambda x: None)
     def test_successful_compilation(self, mock_logger, mock_open):
