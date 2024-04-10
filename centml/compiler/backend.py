@@ -149,7 +149,7 @@ class Runner:
             gc.collect()
             torch.cuda.empty_cache()
 
-    def __call__(self, *args, **kwargs):  
+    def __call__(self, *args, **kwargs):
         # If model is currently compiling, return the uncompiled forward function
         with self.lock:
             if not self.compiled_forward_function:
