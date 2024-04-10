@@ -16,12 +16,10 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 def get_status(model_id: str):
-    path = get_server_compiled_forward_path(model_id)
-
-    if not os.path.isdir(os.path.dirname(path)):
+    if not os.path.isdir(os.path.join(config_instance.SERVER_BASE_PATH, model_id)):
         return CompilationStatus.NOT_FOUND
 
-    if not os.path.isfile(path):
+    if not os.path.isfile(get_server_compiled_forward_path(model_id)):
         return CompilationStatus.COMPILING
 
     return CompilationStatus.DONE
