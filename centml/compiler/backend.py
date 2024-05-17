@@ -6,6 +6,7 @@ import time
 import tempfile
 import logging
 import weakref
+import shutil
 import threading as th
 from http import HTTPStatus
 from typing import List, Callable
@@ -34,11 +35,11 @@ class Runner:
             logging.getLogger(__name__).exception("Remote compilation failed with the following exception: \n")
 
     @property
-    def module(self):
+    def module(self) -> GraphModule:
         return self._module()
 
     @property
-    def inputs(self):
+    def inputs(self) -> List[torch.Tensor]:
         return self._inputs
 
     @module.deleter
@@ -50,20 +51,41 @@ class Runner:
     def inputs(self):
         self._inputs = None
 
-    def _get_model_id(self, flow_graph: hidet.FlowGraph) -> str:
-        if not flow_graph:
-            raise Exception("Getting model id: flow graph is None.")
+    def _get_model_id(self) -> str:
+        # tempdir = tempfile.mkdtemp() # Replace this with TemporaryDirectory() to delete
+        with tempfile.TemporaryDirectory() as tempdir:
 
-        with tempfile.NamedTemporaryFile() as temp_file:
-            try:
-                hidet.save_graph(flow_graph, temp_file.name)
-            except Exception as e:
-                raise Exception(f"Getting model id: failed to save FlowGraph. {e}\n") from e
+            # This saves the GraphModule's:
+            # - the state dict (weights and more) in pickled form (using torch.save)
+            # - the submodules (layers, activation functions, etc.), usally as pickled files 
+            # - other info like parameters and buffers
+            # the GraphModule's Graph is not saved since the code generated from it is
+            self.module.to_folder(tempdir)
 
-            with open(temp_file.name, "rb") as f:
-                flow_graph_hash = hashlib.md5(f.read()).hexdigest()
+            # The module.py file will contain the tempdir's path. Since tempfile's name change, 
+            # we remove occurances to this path string to keep the hash consistent
+            module_file = os.path.join(tempdir, "module.py")
+            with open(module_file, 'r') as file:
+                file_data = file.read()
+            
+            tempfile_name = tempdir.split("/")[-1]
+            file_data = file_data.replace(tempfile_name, 'path')
+            
+            with open(module_file, 'w') as file:
+                file.write(file_data)
 
-        return flow_graph_hash
+            sha_hash = hashlib.sha256()
+            
+            for root, _, files in os.walk(tempdir):
+                files.sort() # Enforce consistent order of files
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    with open(file_path, 'rb') as f:
+                        # Read in chunks to avoid loading too much into memory
+                        for block in iter(lambda: f.read(4096), b""):
+                            sha_hash.update(block)
+
+        return sha_hash.hexdigest()
 
     def _download_model(self, model_id: str) -> CompiledGraph:
         download_response = requests.get(
@@ -119,11 +141,8 @@ class Runner:
             time.sleep(config_instance.COMPILING_SLEEP_TIME)
 
     def remote_compilation(self):
-        # start by getting the model_id
-        interpreter: Interpreter = hidet.frontend.from_torch(self.module)
-        flow_graph, _, _ = get_flow_graph(interpreter, self.inputs)
-
-        model_id = self._get_model_id(flow_graph)
+        model_id = self._get_model_id()
+        print(model_id)
 
         # check if compiled forward is saved locally
         compiled_forward_path = get_backend_compiled_forward_path(model_id)
@@ -138,7 +157,6 @@ class Runner:
 
         # Let garbage collector free the memory used by the uncompiled model
         with self.lock:
-            interpreter = None
             del self.inputs
             del self.module
             gc.collect()
