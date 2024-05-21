@@ -52,6 +52,7 @@ class Runner:
         self._inputs = None
 
     def _get_model_id(self) -> str:
+
         # We use to_folder to save the GraphModule's:
         # - state dict (weights and more) in pickled form (using torch.save)
         # - submodules (layers, activation functions, etc.), usally as pickled files 
@@ -89,7 +90,10 @@ class Runner:
 
             # Hash the metadata since it's not saved with to_folder
             if self.module.meta:
-                json_metadata: str = json.dumps(self.module.meta, sort_keys=True)
+                try:
+                    json_metadata: str = json.dumps(self.module.meta, sort_keys=True)
+                except Exception as e:
+                    raise Exception(f"Failed to hash metadata: {e}")
                 sha_hash.update(json_metadata.encode())
 
         return sha_hash.hexdigest()
@@ -149,7 +153,6 @@ class Runner:
 
     def remote_compilation(self):
         model_id = self._get_model_id()
-        print(model_id)
 
         # check if compiled forward is saved locally
         compiled_forward_path = get_backend_compiled_forward_path(model_id)
