@@ -32,7 +32,7 @@ class TestGetModelId(SetUpGraphModule):
     @patch('hidet.save_graph')
     def test_none_flow_graph(self, mock_save_graph):
         with self.assertRaises(Exception) as context:
-            self.runner._get_model_id(None)
+            self.runner._get_model_id()
 
         self.assertIn("Getting model id: flow graph is None.", str(context.exception))
         mock_save_graph.assert_not_called()
@@ -43,7 +43,7 @@ class TestGetModelId(SetUpGraphModule):
         flowgraph = MagicMock(spec=hidet.FlowGraph)
 
         with self.assertRaises(Exception) as context:
-            self.runner._get_model_id(flowgraph)
+            self.runner._get_model_id()
 
         self.assertIn("Getting model id: failed to save FlowGraph.", str(context.exception))
         mock_save_graph.assert_called_once()

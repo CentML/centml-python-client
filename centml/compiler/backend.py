@@ -8,18 +8,16 @@ import logging
 import weakref
 import warnings
 import tempfile
-import requests
 import threading as th
 from http import HTTPStatus
 from typing import List, Callable
+import requests
 from torch.fx import GraphModule
 import torch
-from torch._dynamo.output_graph import GraphCompileReason
-from hidet.graph.frontend.torch.interpreter import Interpreter
-from hidet.graph.frontend.torch.dynamo_backends import get_flow_graph
 from hidet.runtime.compiled_graph import CompiledGraph
 from centml.compiler.config import config_instance, CompilationStatus
 from centml.compiler.utils import get_backend_compiled_forward_path
+
 
 class Runner:
     def __init__(self, module: GraphModule, inputs: List[torch.Tensor]):
@@ -52,10 +50,9 @@ class Runner:
         self._inputs = None
 
     def _get_model_id(self) -> str:
-
         # We use to_folder to save the GraphModule's:
         # - state dict (weights and more) in pickled form (using torch.save)
-        # - submodules (layers, activation functions, etc.), usally as pickled files 
+        # - submodules (layers, activation functions, etc.), usally as pickled files
         # - parameters and buffers (in the state dict)
         # the GraphModule's Graph is not saved since the code generated from it is
 
@@ -63,24 +60,31 @@ class Runner:
             with warnings.catch_warnings():
                 # to_folder gives a ignorable warning when it needs to pickle submodules
                 warnings.filterwarnings("ignore")
-                self.module.to_folder(tempdir)
 
-            # The module.py file will contain the tempdir's path. Since tempfile's name change, 
-            # we remove occurances to this path string to keep the hash consistent
+                try:
+                    self.module.to_folder(tempdir)
+                except Exception as e:
+                    raise Exception(f"Failed to get model id when calling to_folder: {e}") from e
+
             module_file = os.path.join(tempdir, "module.py")
+            if not os.path.isfile(module_file):
+                raise Exception("Failed to find module.py in tempdir.")
+
+            # The module.py file will contain the tempdir's path. Since tempfile's name change,
+            # we remove occurances to this path string to keep the hash consistent
             with open(module_file, 'r') as file:
                 file_data = file.read()
-            
+
             tempdir_name = tempdir.split("/")[-1]
             file_data = file_data.replace(tempdir_name, 'path')
-            
+
             with open(module_file, 'w') as file:
                 file.write(file_data)
 
             sha_hash = hashlib.sha256()
-            
+
             for root, _, files in os.walk(tempdir):
-                files.sort() # Enforce consistent order of files
+                files.sort()  # Enforce consistent order of files
                 for file in files:
                     file_path = os.path.join(root, file)
                     with open(file_path, 'rb') as f:
@@ -93,7 +97,7 @@ class Runner:
                 try:
                     json_metadata: str = json.dumps(self.module.meta, sort_keys=True)
                 except Exception as e:
-                    raise Exception(f"Failed to hash metadata: {e}")
+                    raise Exception(f"Failed to dump metadata to json: {e}") from e
                 sha_hash.update(json_metadata.encode())
 
         return sha_hash.hexdigest()
