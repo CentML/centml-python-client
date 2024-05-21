@@ -1,25 +1,25 @@
 import os
 import gc
+import json
+import time
 import pickle
 import hashlib
-import time
-import tempfile
 import logging
 import weakref
-import shutil
+import warnings
+import tempfile
+import requests
 import threading as th
 from http import HTTPStatus
 from typing import List, Callable
-import requests
-import torch
 from torch.fx import GraphModule
-import hidet
+import torch
+from torch._dynamo.output_graph import GraphCompileReason
 from hidet.graph.frontend.torch.interpreter import Interpreter
 from hidet.graph.frontend.torch.dynamo_backends import get_flow_graph
 from hidet.runtime.compiled_graph import CompiledGraph
 from centml.compiler.config import config_instance, CompilationStatus
 from centml.compiler.utils import get_backend_compiled_forward_path
-
 
 class Runner:
     def __init__(self, module: GraphModule, inputs: List[torch.Tensor]):
@@ -52,15 +52,17 @@ class Runner:
         self._inputs = None
 
     def _get_model_id(self) -> str:
-        # tempdir = tempfile.mkdtemp() # Replace this with TemporaryDirectory() to delete
-        with tempfile.TemporaryDirectory() as tempdir:
+        # We use to_folder to save the GraphModule's:
+        # - state dict (weights and more) in pickled form (using torch.save)
+        # - submodules (layers, activation functions, etc.), usally as pickled files 
+        # - parameters and buffers (in the state dict)
+        # the GraphModule's Graph is not saved since the code generated from it is
 
-            # This saves the GraphModule's:
-            # - the state dict (weights and more) in pickled form (using torch.save)
-            # - the submodules (layers, activation functions, etc.), usally as pickled files 
-            # - other info like parameters and buffers
-            # the GraphModule's Graph is not saved since the code generated from it is
-            self.module.to_folder(tempdir)
+        with tempfile.TemporaryDirectory() as tempdir:
+            with warnings.catch_warnings():
+                # to_folder gives a ignorable warning when it needs to pickle submodules
+                warnings.filterwarnings("ignore")
+                self.module.to_folder(tempdir)
 
             # The module.py file will contain the tempdir's path. Since tempfile's name change, 
             # we remove occurances to this path string to keep the hash consistent
@@ -68,8 +70,8 @@ class Runner:
             with open(module_file, 'r') as file:
                 file_data = file.read()
             
-            tempfile_name = tempdir.split("/")[-1]
-            file_data = file_data.replace(tempfile_name, 'path')
+            tempdir_name = tempdir.split("/")[-1]
+            file_data = file_data.replace(tempdir_name, 'path')
             
             with open(module_file, 'w') as file:
                 file.write(file_data)
@@ -84,6 +86,11 @@ class Runner:
                         # Read in chunks to avoid loading too much into memory
                         for block in iter(lambda: f.read(4096), b""):
                             sha_hash.update(block)
+
+            # Hash the metadata since it's not saved with to_folder
+            if self.module.meta:
+                json_metadata: str = json.dumps(self.module.meta, sort_keys=True)
+                sha_hash.update(json_metadata.encode())
 
         return sha_hash.hexdigest()
 
