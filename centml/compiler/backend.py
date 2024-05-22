@@ -53,7 +53,7 @@ class Runner:
         # We use to_folder to save the GraphModule's:
         # - state dict (weights and more) in pickled form (using torch.save)
         # - submodules (layers, activation functions, etc.), usally as pickled files
-        # - parameters and buffers (in the state dict)
+        # - parameters and buffers (shape + type in module.py, data in the state dict)
         # the GraphModule's Graph is not saved since the code generated from it is
 
         with tempfile.TemporaryDirectory() as tempdir:
@@ -91,14 +91,6 @@ class Runner:
                         # Read in chunks to avoid loading too much into memory
                         for block in iter(lambda: f.read(4096), b""):
                             sha_hash.update(block)
-
-            # Hash the metadata since it's not saved with to_folder
-            if self.module.meta:
-                try:
-                    json_metadata: str = json.dumps(self.module.meta, sort_keys=True)
-                except Exception as e:
-                    raise Exception(f"Failed to dump metadata to json: {e}") from e
-                sha_hash.update(json_metadata.encode())
 
         return sha_hash.hexdigest()
 
