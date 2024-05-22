@@ -1,3 +1,4 @@
+import io
 import os
 import gc
 import json
@@ -6,8 +7,6 @@ import pickle
 import hashlib
 import logging
 import weakref
-import warnings
-import tempfile
 import threading as th
 from http import HTTPStatus
 from typing import List, Callable
@@ -18,7 +17,6 @@ from hidet.runtime.compiled_graph import CompiledGraph
 from centml.compiler.config import config_instance, CompilationStatus
 from centml.compiler.utils import get_backend_compiled_forward_path
 
-
 class Runner:
     def __init__(self, module: GraphModule, inputs: List[torch.Tensor]):
         self._module: GraphModule = weakref.ref(module)
@@ -26,6 +24,10 @@ class Runner:
         self.compiled_forward_function: Callable[[torch.Tensor], tuple] = None
         self.lock = th.Lock()
         self.child_thread = th.Thread(target=self.remote_compilation)
+
+        # Use a constant path since torch.save uses the given file name in it's zipfile.
+        # Thus, a different path would result in a different hash.
+        self.serialized_model_path = config_instance.SERIALIZED_MODEL_PATH
 
         try:
             self.child_thread.start()
@@ -49,48 +51,19 @@ class Runner:
     def inputs(self):
         self._inputs = None
 
+    def __del__(self):
+        os.remove(self.serialized_model_path)
+
     def _get_model_id(self) -> str:
-        # We use to_folder to save the GraphModule's:
-        # - state dict (weights and more) in pickled form (using torch.save)
-        # - submodules (layers, activation functions, etc.), usally as pickled files
-        # - parameters and buffers (shape + type in module.py, data in the state dict)
-        # the GraphModule's Graph is not saved since the code generated from it is
+        sha_hash = hashlib.sha256()
 
-        with tempfile.TemporaryDirectory() as tempdir:
-            with warnings.catch_warnings():
-                # to_folder gives a ignorable warning when it needs to pickle submodules
-                warnings.filterwarnings("ignore")
+        # The GraphModule can be large, so lets serialize it to disk
+        torch.save(self.module, self.serialized_model_path, pickle_protocol=4)
 
-                try:
-                    self.module.to_folder(tempdir)
-                except Exception as e:
-                    raise Exception(f"Failed to get model id when calling to_folder: {e}") from e
-
-            module_file = os.path.join(tempdir, "module.py")
-            if not os.path.isfile(module_file):
-                raise Exception("Failed to find module.py in tempdir.")
-
-            # The module.py file will contain the tempdir's path. Since tempfile's name change,
-            # we remove occurances to this path string to keep the hash consistent
-            with open(module_file, 'r') as file:
-                file_data = file.read()
-
-            tempdir_name = tempdir.split("/")[-1]
-            file_data = file_data.replace(tempdir_name, 'path')
-
-            with open(module_file, 'w') as file:
-                file.write(file_data)
-
-            sha_hash = hashlib.sha256()
-
-            for root, _, files in os.walk(tempdir):
-                files.sort()  # Enforce consistent order of files
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    with open(file_path, 'rb') as f:
-                        # Read in chunks to avoid loading too much into memory
-                        for block in iter(lambda: f.read(4096), b""):
-                            sha_hash.update(block)
+        with open(self.serialized_model_path, "rb") as serialized_model_file:
+            # Read in chunks to not load too much into memory
+            for block in iter(lambda: serialized_model_file.read(4096), b""):
+                sha_hash.update(block)
 
         return sha_hash.hexdigest()
 
@@ -108,11 +81,21 @@ class Runner:
             return pickle.loads(download_response.content)
 
     def _compile_model(self, model_id: str):
-        compile_response = requests.post(
-            url=f"{config_instance.SERVER_URL}/submit/{model_id}",
-            files={"model": pickle.dumps(self.module), "inputs": pickle.dumps(self.inputs)},
-            timeout=config_instance.TIMEOUT,
-        )
+        # The model should have been saved using torch.save when we found the model_id
+        if not os.path.isfile(self.serialized_model_path):
+            raise Exception(f"Model not saved at path {self.serialized_model_path}")
+
+        with open(self.serialized_model_path, 'rb') as model_file:
+            # Inputs should not be too large, so we can serialize it in memory
+            serialized_inputs = io.BytesIO()
+            torch.save(self.inputs, serialized_inputs, pickle_protocol=4)
+
+            compile_response = requests.post(
+                url=f"{config_instance.SERVER_URL}/submit/{model_id}",
+                files={"model": model_file.read(), "inputs": serialized_inputs.getvalue()},
+                timeout=config_instance.TIMEOUT,
+            )
+
         if compile_response.status_code != HTTPStatus.OK:
             raise Exception(
                 f"Compile model: request failed, exception from server:\n{compile_response.json().get('detail')}\n"

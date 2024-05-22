@@ -1,8 +1,10 @@
+import io
 import os
 import pickle
 from http import HTTPStatus
 import logging
 import uvicorn
+import torch
 from fastapi import FastAPI, UploadFile, HTTPException, BackgroundTasks, Response
 from fastapi.responses import FileResponse
 from fastapi.middleware.gzip import GZipMiddleware
@@ -51,24 +53,25 @@ def background_compile(model_id: str, tfx_graph, example_inputs):
 
 def read_upload_files(model_id: str, model: UploadFile, inputs: UploadFile):
     try:
-        tfx_contents = model.file.read()
-        ei_contents = inputs.file.read()
+        tfx_contents = io.BytesIO(model.file.read())
+        ei_contents = io.BytesIO(inputs.file.read())
     except Exception as e:
         dir_cleanup(model_id)
         raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST, detail="Compilation: error reading serialized content."
+            status_code=HTTPStatus.BAD_REQUEST, detail=f"Compilation: error reading serialized content. {e}"
         ) from e
     finally:
         model.file.close()
         inputs.file.close()
 
     try:
-        tfx_graph = pickle.loads(tfx_contents)
-        example_inputs = pickle.loads(ei_contents)
+        tfx_graph = torch.load(tfx_contents)
+        example_inputs = torch.load(ei_contents)
+        print("HERE")
     except Exception as e:
         dir_cleanup(model_id)
         raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST, detail="Compilation: error loading pickled content."
+            status_code=HTTPStatus.BAD_REQUEST, detail=f"Compilation: error loading pickled content. {e}"
         ) from e
 
     return tfx_graph, example_inputs

@@ -24,5 +24,7 @@ class Config:
     BACKEND_BASE_PATH = os.path.join(CACHE_PATH, "backend")
     SERVER_BASE_PATH = os.path.join(CACHE_PATH, "server")
 
+    SERIALIZED_MODEL_PATH = "/tmp/centml_serialized_model.pkl" 
+
 
 config_instance = Config()
