@@ -58,7 +58,7 @@ class Runner:
         sha_hash = hashlib.sha256()
 
         # The GraphModule can be large, so lets serialize it to disk
-        torch.save(self.module, self.serialized_model_path, pickle_protocol=4)
+        torch.save(self.module, self.serialized_model_path, pickle_protocol=config_instance.PICKLE_PROTOCOL)
 
         with open(self.serialized_model_path, "rb") as serialized_model_file:
             # Read in chunks to not load too much into memory
@@ -88,7 +88,7 @@ class Runner:
         with open(self.serialized_model_path, 'rb') as model_file:
             # Inputs should not be too large, so we can serialize it in memory
             serialized_inputs = io.BytesIO()
-            torch.save(self.inputs, serialized_inputs, pickle_protocol=4)
+            torch.save(self.inputs, serialized_inputs, pickle_protocol=config_instance.PICKLE_PROTOCOL)
 
             compile_response = requests.post(
                 url=f"{config_instance.SERVER_URL}/submit/{model_id}",

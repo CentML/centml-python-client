@@ -67,7 +67,6 @@ def read_upload_files(model_id: str, model: UploadFile, inputs: UploadFile):
     try:
         tfx_graph = torch.load(tfx_contents)
         example_inputs = torch.load(ei_contents)
-        print("HERE")
     except Exception as e:
         dir_cleanup(model_id)
         raise HTTPException(
