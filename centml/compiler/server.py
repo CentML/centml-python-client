@@ -44,8 +44,7 @@ def background_compile(model_id: str, tfx_graph, example_inputs):
 
     try:
         save_path = get_server_compiled_forward_path(model_id)
-        with open(save_path, "wb") as f:
-            torch.save(compiled_graph_module, f, pickle_protocol=config_instance.PICKLE_PROTOCOL)
+        torch.save(compiled_graph_module, save_path, pickle_protocol=config_instance.PICKLE_PROTOCOL)
     except Exception as e:
         raise Exception(f"Saving graph module failed: {e}") from e
 

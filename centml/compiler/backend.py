@@ -95,12 +95,12 @@ class Runner:
         # Inputs should not be too large, so we can serialize them in memory
         serialized_inputs = io.BytesIO()
         torch.save(self.inputs, serialized_inputs, pickle_protocol=config_instance.PICKLE_PROTOCOL)
-        serialized_inputs_content = serialized_inputs.getvalue()
+        serialized_inputs.seek(0) # seek since serialized_inputs is still in memory
 
         with open(self.seralized_model_path, 'rb') as model_file:
             compile_response = requests.post(
                 url=f"{config_instance.SERVER_URL}/submit/{model_id}",
-                files={"model": model_file, "inputs": serialized_inputs_content},
+                files={"model": model_file, "inputs": serialized_inputs},
                 timeout=config_instance.TIMEOUT,
             )
 
