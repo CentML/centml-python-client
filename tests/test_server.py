@@ -1,5 +1,3 @@
-import shutil
-import tempfile
 import warnings
 from io import BytesIO
 from unittest import TestCase
@@ -185,7 +183,3 @@ class TestDownloadHandler(TestCase):
         response = client.get(f"/download/{model_id}")
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-
-# if __name__ == "__main__":
-#     t = TestBackgroundCompile_0()
-#     t.test_successful_compilation()
