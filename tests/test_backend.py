@@ -29,24 +29,15 @@ class TestGetModelId(SetUpGraphModule):
     def tearDown(self) -> None:
         torch._dynamo.reset()
 
-    @patch('hidet.save_graph')
-    def test_none_flow_graph(self, mock_save_graph):
-        with self.assertRaises(Exception) as context:
-            self.runner._get_model_id()
-
-        self.assertIn("Getting model id: flow graph is None.", str(context.exception))
-        mock_save_graph.assert_not_called()
-
-    @patch('hidet.save_graph')
-    def test_exception_on_save_graph_failure(self, mock_save_graph):
-        mock_save_graph.side_effect = Exception("Test Exception")
-        flowgraph = MagicMock(spec=hidet.FlowGraph)
+    @patch('centml.compiler.backend.torch.save')
+    def test_exception_on_save_graph_failure(self, mock_save):
+        mock_save.side_effect = Exception("Test Exception")
 
         with self.assertRaises(Exception) as context:
             self.runner._get_model_id()
 
-        self.assertIn("Getting model id: failed to save FlowGraph.", str(context.exception))
-        mock_save_graph.assert_called_once()
+        self.assertIn("Failed to save module with torch.save:", str(context.exception))
+        mock_save.assert_called_once()
 
     # Given the same model graph, the model id should be the same
     # Check this by grabbing the model_id passed to _wait_for_status
@@ -54,6 +45,7 @@ class TestGetModelId(SetUpGraphModule):
     @patch("threading.Thread.start", new=start_func)
     @patch("centml.compiler.backend.Runner._wait_for_status", side_effect=Exception("Exiting early"))
     def test_model_id_consistency(self, mock_wait):
+        # self.model and self.inputs come from @parameterized_class
         model_compiled_1 = torch.compile(self.model, backend="centml")
         model_compiled_1(self.inputs)
         hash_1 = mock_wait.call_args[0][0]
@@ -69,15 +61,19 @@ class TestGetModelId(SetUpGraphModule):
         torch._dynamo.reset()
 
     # Given two different models, the model ids should be different
+    # We made the models different by adding 1 to the first value in some layer's
     @patch("os.path.isfile", new=lambda x: False)
     @patch("threading.Thread.start", new=start_func)
     @patch("centml.compiler.backend.Runner._wait_for_status", side_effect=Exception("Exiting early"))
     def test_model_id_uniqueness(self, mock_wait):
         def get_modified_model(model):
             modified = deepcopy(model)
-            next(modified.parameters()).data.add_(1)
+            state_dict = modified.state_dict()
+            some_layer = list(state_dict.values())[0]
+            some_layer.view(-1)[0] += 1
             return modified
 
+        # self.model and self.inputs come from @parameterized_class
         model_compiled_1 = torch.compile(self.model, backend="centml")
         model_compiled_1(self.inputs)
         hash_1 = mock_wait.call_args[0][0]
@@ -109,7 +105,7 @@ class TestDownloadModel(SetUpGraphModule):
 
     @patch("os.makedirs")
     @patch("builtins.open")
-    @patch("centml.compiler.backend.pickle.loads")
+    @patch("centml.compiler.backend.torch.load")
     @patch("centml.compiler.backend.requests")
     def test_successful_download(self, mock_requests, mock_load, mock_open, mock_makedirs):
         # Mock the response from the requests library
@@ -197,22 +193,18 @@ class TestRemoteCompilation(TestCase):
         torch._dynamo.reset()
 
     @patch("os.path.isfile", new=lambda x: True)
-    @patch("builtins.open")
-    @patch("centml.compiler.backend.pickle.load")
-    @patch("centml.compiler.backend.Runner._get_model_id", new=lambda x, y: "1234")
-    def test_compiled_return_saved(self, mock_load, mock_open):
+    @patch("centml.compiler.backend.Runner._get_model_id", new=lambda x: "1234")
+    @patch("centml.compiler.backend.torch.load")
+    def test_compiled_cached(self, mock_load):
         mock_load.return_value = MagicMock()
-
         self.call_remote_compilation()
-
-        mock_open.assert_called_once()
         mock_load.assert_called_once()
 
     @patch('os.path.isfile', new=lambda x: False)
+    @patch("centml.compiler.backend.Runner._get_model_id", new=lambda x: "1234")
     @patch('centml.compiler.backend.Runner._download_model')
     @patch('centml.compiler.backend.Runner._wait_for_status')
-    @patch("centml.compiler.backend.Runner._get_model_id", new=lambda x, y: "1234")
-    def test_compiled_return_not_saved(self, mock_status, mock_download):
+    def test_compiled_return_not_cached(self, mock_status, mock_download):
         mock_status.return_value = True
         mock_download.return_value = MagicMock()
 

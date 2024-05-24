@@ -20,6 +20,9 @@ from centml.compiler.utils import get_backend_compiled_forward_path
 
 class Runner:
     def __init__(self, module: GraphModule, inputs: List[torch.Tensor]):
+        if not module:
+            raise Exception("No module provided")
+        
         self._module: GraphModule = weakref.ref(module)
         self._inputs: List[torch.Tensor] = inputs
         self.compiled_forward_function: Callable[[torch.Tensor], tuple] = None
@@ -55,13 +58,15 @@ class Runner:
         if os.path.exists(self.serialized_model_dir):
             shutil.rmtree(self.serialized_model_dir)
 
-    def _get_model_id(self) -> str:
-        sha_hash = hashlib.sha256()
-
+    def _get_model_id(self) -> str:        
         # The GraphModule can be large, so lets serialize it to disk
         # This saves a zip file full of pickled files.
-        torch.save(self.module, self.seralized_model_path, pickle_protocol=config_instance.PICKLE_PROTOCOL)
+        try:
+            torch.save(self.module, self.seralized_model_path, pickle_protocol=config_instance.PICKLE_PROTOCOL)
+        except Exception as e:
+            raise Exception(f"Failed to save module with torch.save: {e}") from e
 
+        sha_hash = hashlib.sha256()
         with open(self.seralized_model_path, "rb") as serialized_model_file:
             # Read in chunks to not load too much into memory
             for block in iter(lambda: serialized_model_file.read(4096), b""):
