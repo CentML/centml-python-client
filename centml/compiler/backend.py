@@ -1,12 +1,12 @@
 import io
 import os
 import gc
-import json
 import time
-import pickle
+import shutil
 import hashlib
 import logging
 import weakref
+import tempfile
 import threading as th
 from http import HTTPStatus
 from typing import List, Callable
@@ -17,6 +17,7 @@ from hidet.runtime.compiled_graph import CompiledGraph
 from centml.compiler.config import config_instance, CompilationStatus
 from centml.compiler.utils import get_backend_compiled_forward_path
 
+
 class Runner:
     def __init__(self, module: GraphModule, inputs: List[torch.Tensor]):
         self._module: GraphModule = weakref.ref(module)
@@ -24,6 +25,9 @@ class Runner:
         self.compiled_forward_function: Callable[[torch.Tensor], tuple] = None
         self.lock = th.Lock()
         self.child_thread = th.Thread(target=self.remote_compilation)
+
+        self.serialized_model_dir = tempfile.mkdtemp()
+        self.seralized_model_path = os.path.join(self.serialized_model_dir, config_instance.SERIALIZED_MODEL_FILE)
 
         try:
             self.child_thread.start()
@@ -48,16 +52,17 @@ class Runner:
         self._inputs = None
 
     def __del__(self):
-        if os.path.isfile(config_instance.SERIALIZED_MODEL_PATH):
-            os.remove(config_instance.SERIALIZED_MODEL_PATH)
+        if os.path.exists(self.serialized_model_dir):
+            shutil.rmtree(self.serialized_model_dir)
 
     def _get_model_id(self) -> str:
         sha_hash = hashlib.sha256()
 
         # The GraphModule can be large, so lets serialize it to disk
-        torch.save(self.module, config_instance.SERIALIZED_MODEL_PATH, pickle_protocol=config_instance.PICKLE_PROTOCOL)
+        # This saves a zip file full of pickled files.
+        torch.save(self.module, self.seralized_model_path, pickle_protocol=config_instance.PICKLE_PROTOCOL)
 
-        with open(config_instance.SERIALIZED_MODEL_PATH, "rb") as serialized_model_file:
+        with open(self.seralized_model_path, "rb") as serialized_model_file:
             # Read in chunks to not load too much into memory
             for block in iter(lambda: serialized_model_file.read(4096), b""):
                 sha_hash.update(block)
@@ -75,21 +80,22 @@ class Runner:
         download_path = get_backend_compiled_forward_path(model_id)
         with open(download_path, "wb") as f:
             f.write(download_response.content)
-            return pickle.loads(download_response.content)
+        return torch.load(download_path)
 
     def _compile_model(self, model_id: str):
         # The model should have been saved using torch.save when we found the model_id
-        if not os.path.isfile(config_instance.SERIALIZED_MODEL_PATH):
-            raise Exception(f"Model not saved at path {config_instance.SERIALIZED_MODEL_PATH}")
+        if not os.path.isfile(self.seralized_model_path):
+            raise Exception(f"Model not saved at path {self.seralized_model_path}")
 
-        with open(config_instance.SERIALIZED_MODEL_PATH, 'rb') as model_file:
-            # Inputs should not be too large, so we can serialize it in memory
-            serialized_inputs = io.BytesIO()
-            torch.save(self.inputs, serialized_inputs, pickle_protocol=config_instance.PICKLE_PROTOCOL)
+        # Inputs should not be too large, so we can serialize them in memory
+        serialized_inputs = io.BytesIO()
+        torch.save(self.inputs, serialized_inputs, pickle_protocol=config_instance.PICKLE_PROTOCOL)
+        serialized_inputs_content = serialized_inputs.getvalue()
 
+        with open(self.seralized_model_path, 'rb') as model_file:
             compile_response = requests.post(
                 url=f"{config_instance.SERVER_URL}/submit/{model_id}",
-                files={"model": model_file.read(), "inputs": serialized_inputs.getvalue()},
+                files={"model": model_file, "inputs": serialized_inputs_content},
                 timeout=config_instance.TIMEOUT,
             )
 
@@ -133,8 +139,7 @@ class Runner:
         # check if compiled forward is saved locally
         compiled_forward_path = get_backend_compiled_forward_path(model_id)
         if os.path.isfile(compiled_forward_path):
-            with open(compiled_forward_path, "rb") as f:
-                compiled_forward = pickle.load(f)
+            compiled_forward = torch.load(compiled_forward_path)
         else:
             self._wait_for_status(model_id)
             compiled_forward = self._download_model(model_id)

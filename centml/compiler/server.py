@@ -1,6 +1,5 @@
 import io
 import os
-import pickle
 from http import HTTPStatus
 import logging
 import uvicorn
@@ -46,7 +45,7 @@ def background_compile(model_id: str, tfx_graph, example_inputs):
     try:
         save_path = get_server_compiled_forward_path(model_id)
         with open(save_path, "wb") as f:
-            pickle.dump(compiled_graph_module, f)
+            torch.save(compiled_graph_module, f, pickle_protocol=config_instance.PICKLE_PROTOCOL)
     except Exception as e:
         raise Exception(f"Saving graph module failed: {e}") from e
 
@@ -58,7 +57,7 @@ def read_upload_files(model_id: str, model: UploadFile, inputs: UploadFile):
     except Exception as e:
         dir_cleanup(model_id)
         raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST, detail=f"Compilation: error reading serialized content. {e}"
+            status_code=HTTPStatus.BAD_REQUEST, detail=f"Compilation: error reading serialized content: {e}"
         ) from e
     finally:
         model.file.close()
@@ -70,7 +69,7 @@ def read_upload_files(model_id: str, model: UploadFile, inputs: UploadFile):
     except Exception as e:
         dir_cleanup(model_id)
         raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST, detail=f"Compilation: error loading pickled content. {e}"
+            status_code=HTTPStatus.BAD_REQUEST, detail=f"Compilation: error loading content with torch.load: {e}"
         ) from e
 
     return tfx_graph, example_inputs
