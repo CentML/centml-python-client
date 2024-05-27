@@ -1,4 +1,3 @@
-import io
 import os
 import gc
 import time
@@ -29,7 +28,8 @@ class Runner:
         self.child_thread = th.Thread(target=self.remote_compilation)
 
         self.serialized_model_dir = tempfile.TemporaryDirectory()  # pylint: disable=consider-using-with
-        self.seralized_model_path = os.path.join(self.serialized_model_dir.name, config_instance.SERIALIZED_MODEL_FILE)
+        self.serialized_model_path = os.path.join(self.serialized_model_dir.name, config_instance.SERIALIZED_MODEL_FILE)
+        self.serialized_input_path = os.path.join(self.serialized_model_dir.name, config_instance.SERIALIZED_INPUT_FILE)
 
         try:
             self.child_thread.start()
@@ -57,12 +57,12 @@ class Runner:
         # The GraphModule can be large, so lets serialize it to disk
         # This saves a zip file full of pickled files.
         try:
-            torch.save(self.module, self.seralized_model_path, pickle_protocol=config_instance.PICKLE_PROTOCOL)
+            torch.save(self.module, self.serialized_model_path, pickle_protocol=config_instance.PICKLE_PROTOCOL)
         except Exception as e:
             raise Exception(f"Failed to save module with torch.save: {e}") from e
 
         sha_hash = hashlib.sha256()
-        with open(self.seralized_model_path, "rb") as serialized_model_file:
+        with open(self.serialized_model_path, "rb") as serialized_model_file:
             # Read in chunks to not load too much into memory
             for block in iter(lambda: serialized_model_file.read(4096), b""):
                 sha_hash.update(block)
@@ -84,18 +84,16 @@ class Runner:
 
     def _compile_model(self, model_id: str):
         # The model should have been saved using torch.save when we found the model_id
-        if not os.path.isfile(self.seralized_model_path):
-            raise Exception(f"Model not saved at path {self.seralized_model_path}")
+        if not os.path.isfile(self.serialized_model_path):
+            raise Exception(f"Model not saved at path {self.serialized_model_path}")
 
-        # Inputs should not be too large, so we can serialize them in memory
-        serialized_inputs = io.BytesIO()
-        torch.save(self.inputs, serialized_inputs, pickle_protocol=config_instance.PICKLE_PROTOCOL)
-        serialized_inputs.seek(0)  # seek since serialized_inputs is still in memory
+        # Serialize inputs to disk
+        torch.save(self.inputs, self.serialized_input_path, pickle_protocol=config_instance.PICKLE_PROTOCOL)
 
-        with open(self.seralized_model_path, 'rb') as model_file:
+        with open(self.serialized_model_path, 'rb') as model_file, open(self.serialized_input_path, 'rb') as input_file:
             compile_response = requests.post(
                 url=f"{config_instance.SERVER_URL}/submit/{model_id}",
-                files={"model": model_file, "inputs": serialized_inputs},
+                files={"model": model_file, "inputs": input_file},
                 timeout=config_instance.TIMEOUT,
             )
 
