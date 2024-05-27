@@ -55,10 +55,11 @@ class Runner:
         self._inputs = None
 
     def __del__(self):
+        
         if os.path.exists(self.serialized_model_dir):
             shutil.rmtree(self.serialized_model_dir)
 
-    def _get_model_id(self) -> str:        
+    def _get_model_id(self) -> str:
         # The GraphModule can be large, so lets serialize it to disk
         # This saves a zip file full of pickled files.
         try:
@@ -95,7 +96,7 @@ class Runner:
         # Inputs should not be too large, so we can serialize them in memory
         serialized_inputs = io.BytesIO()
         torch.save(self.inputs, serialized_inputs, pickle_protocol=config_instance.PICKLE_PROTOCOL)
-        serialized_inputs.seek(0) # seek since serialized_inputs is still in memory
+        serialized_inputs.seek(0)  # seek since serialized_inputs is still in memory
 
         with open(self.seralized_model_path, 'rb') as model_file:
             compile_response = requests.post(

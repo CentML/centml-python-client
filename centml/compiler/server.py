@@ -46,7 +46,7 @@ def background_compile(model_id: str, tfx_graph, example_inputs):
         save_path = get_server_compiled_forward_path(model_id)
         torch.save(compiled_graph_module, save_path, pickle_protocol=config_instance.PICKLE_PROTOCOL)
     except Exception as e:
-        raise Exception(f"Saving graph module failed: {e}") from e
+        logging.getLogger(__name__).exception(f"Saving graph module failed: {e}")
 
 
 def read_upload_files(model_id: str, model: UploadFile, inputs: UploadFile):

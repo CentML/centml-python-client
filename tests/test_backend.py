@@ -5,7 +5,6 @@ from unittest.mock import patch, MagicMock
 import torch
 from parameterized import parameterized_class
 from torch.fx import GraphModule
-import hidet
 from centml.compiler.backend import Runner
 from centml.compiler.config import CompilationStatus, config_instance
 from .test_helpers import MODEL_SUITE
