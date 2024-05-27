@@ -55,9 +55,9 @@ class TestGetModelId(SetUpGraphModule):
         model_compiled_2 = torch.compile(self.model, backend="centml")
         model_compiled_2(self.inputs)
         hash_2 = mock_wait.call_args[0][0]
+        torch._dynamo.reset()
 
         self.assertEqual(hash_1, hash_2)
-        torch._dynamo.reset()
 
     # Given two different models, the model ids should be different
     # We made the models different by adding 1 to the first value in some layer's

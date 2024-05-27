@@ -64,7 +64,7 @@ class TestBackgroundCompile(TestCase):
                 return module.forward
 
         mock_init = MockRunner()
-        
+
         # self.model and self.inputs come from @parameterized_class
         model, inputs = self.model.cuda(), self.inputs.cuda()
         model_compiled = torch.compile(model, backend=mock_init)
@@ -75,6 +75,7 @@ class TestBackgroundCompile(TestCase):
 
         mock_save.assert_called_once()
         mock_logger.assert_not_called()
+
 
 class TestReadUploadFiles(TestCase):
     def test_mock_cant_read(self):

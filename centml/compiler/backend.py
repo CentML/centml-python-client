@@ -2,7 +2,6 @@ import io
 import os
 import gc
 import time
-import shutil
 import hashlib
 import logging
 import weakref
@@ -22,15 +21,15 @@ class Runner:
     def __init__(self, module: GraphModule, inputs: List[torch.Tensor]):
         if not module:
             raise Exception("No module provided")
-        
+
         self._module: GraphModule = weakref.ref(module)
         self._inputs: List[torch.Tensor] = inputs
         self.compiled_forward_function: Callable[[torch.Tensor], tuple] = None
         self.lock = th.Lock()
         self.child_thread = th.Thread(target=self.remote_compilation)
 
-        self.serialized_model_dir = tempfile.mkdtemp()
-        self.seralized_model_path = os.path.join(self.serialized_model_dir, config_instance.SERIALIZED_MODEL_FILE)
+        self.serialized_model_dir = tempfile.TemporaryDirectory()  # pylint: disable=consider-using-with
+        self.seralized_model_path = os.path.join(self.serialized_model_dir.name, config_instance.SERIALIZED_MODEL_FILE)
 
         try:
             self.child_thread.start()
@@ -53,11 +52,6 @@ class Runner:
     @inputs.deleter
     def inputs(self):
         self._inputs = None
-
-    def __del__(self):
-        
-        if os.path.exists(self.serialized_model_dir):
-            shutil.rmtree(self.serialized_model_dir)
 
     def _get_model_id(self) -> str:
         # The GraphModule can be large, so lets serialize it to disk
