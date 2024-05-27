@@ -1,4 +1,3 @@
-from io import BytesIO
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
 from http import HTTPStatus
@@ -10,7 +9,7 @@ from fastapi.testclient import TestClient
 from parameterized import parameterized_class
 from centml.compiler.server import app, background_compile, read_upload_files
 from centml.compiler.config import CompilationStatus
-from tests.test_helpers import MODEL_SUITE
+from tests.test_helpers import MODEL_SUITE, get_dummy_model_and_inputs
 
 client = TestClient(app)
 
@@ -95,14 +94,9 @@ class TestReadUploadFiles(TestCase):
         model_id = "file_cant_be_unpickled"
 
         # Create file-like objects with test data
-        model_file, inputs_file = BytesIO(), BytesIO()
-        torch.save("model", model_file)
-        torch.save("inputs", inputs_file)
-        model_file.seek(0)
-        inputs_file.seek(0)
-
+        model_file, input_file = get_dummy_model_and_inputs("model", "inputs")
         model = UploadFile(filename="model", file=model_file)
-        inputs = UploadFile(filename="inputs", file=inputs_file)
+        inputs = UploadFile(filename="inputs", file=input_file)
 
         with self.assertRaises(HTTPException) as excinfo:
             read_upload_files(model_id, model, inputs)
@@ -117,14 +111,9 @@ class TestReadUploadFiles(TestCase):
         model_data, inputs_data = "model", "inputs"
 
         # Create file-like objects with test data
-        model_file, inputs_file = BytesIO(), BytesIO()
-        torch.save(model_data, model_file)
-        torch.save(inputs_data, inputs_file)
-        model_file.seek(0)
-        inputs_file.seek(0)
-
+        model_file, input_file = get_dummy_model_and_inputs("model", "inputs")
         model = UploadFile(filename="model", file=model_file)
-        inputs = UploadFile(filename="inputs", file=inputs_file)
+        inputs = UploadFile(filename="inputs", file=input_file)
 
         tfx_graph, example_inputs = read_upload_files(model_id, model, inputs)
 
@@ -133,20 +122,13 @@ class TestReadUploadFiles(TestCase):
 
 
 class TestCompileHandler(TestCase):
-    def setUp(self) -> None:
-        self.model = BytesIO()
-        self.inputs = BytesIO()
-        torch.save("model", self.model)
-        torch.save("inputs", self.inputs)
-        self.model.seek(0)
-        self.inputs.seek(0)
-
     @patch("centml.compiler.server.get_status")
     def test_model_compiling(self, mock_status):
         model_id = "compiling_model"
         mock_status.return_value = CompilationStatus.COMPILING
 
-        response = client.post(f"/submit/{model_id}", files={"model": self.model, "inputs": self.inputs})
+        model_file, input_file = get_dummy_model_and_inputs("model", "inputs")
+        response = client.post(f"/submit/{model_id}", files={"model": model_file, "inputs": input_file})
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
     @patch("os.makedirs")
@@ -158,10 +140,10 @@ class TestCompileHandler(TestCase):
         # Stop compilation from happening
         mock_compile.new = lambda x, y, z: None
 
-        response = client.post(f"/submit/{model_id}", files={"model": self.model, "inputs": self.inputs})
+        model_file, input_file = get_dummy_model_and_inputs("model", "inputs")
+        response = client.post(f"/submit/{model_id}", files={"model": model_file, "inputs": input_file})
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-
         mock_mkdir.assert_called_once()
         mock_compile.assert_called_once()
 
