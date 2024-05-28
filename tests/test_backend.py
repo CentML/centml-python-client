@@ -28,43 +28,37 @@ class TestGetModelId(SetUpGraphModule):
     def tearDown(self) -> None:
         torch._dynamo.reset()
 
-    @patch('centml.compiler.backend.torch.save')
-    def test_exception_on_save_graph_failure(self, mock_save):
-        mock_save.side_effect = Exception("Test Exception")
-
+    @patch("centml.compiler.backend.os.path.isfile", new=lambda x: False)
+    def test_no_serialized_model(self):
         with self.assertRaises(Exception) as context:
             self.runner._get_model_id()
 
-        self.assertIn("Failed to save module with torch.save:", str(context.exception))
-        mock_save.assert_called_once()
+        self.assertIn("Model not saved at path", str(context.exception))
 
     # Given the same model graph, the model id should be the same
-    # Check this by grabbing the model_id passed to _wait_for_status
-    @patch("os.path.isfile", new=lambda x: False)
+    # Grab the model_id's passed to get_backend_compiled_forward_path
     @patch("threading.Thread.start", new=start_func)
-    @patch("centml.compiler.backend.Runner._wait_for_status", side_effect=Exception("Exiting early"))
-    def test_model_id_consistency(self, mock_wait):
+    @patch("centml.compiler.backend.get_backend_compiled_forward_path", side_effect=Exception("Exiting early"))
+    def test_model_id_consistency(self, mock_get_path):
         # self.model and self.inputs come from @parameterized_class
         model_compiled_1 = torch.compile(self.model, backend="centml")
         model_compiled_1(self.inputs)
-        hash_1 = mock_wait.call_args[0][0]
-
-        # Reset the dynamo cache to force recompilation
-        torch._dynamo.reset()
+        hash_1 = mock_get_path.call_args[0][0]
+        torch._dynamo.reset()  # Reset the dynamo cache to force recompilation
 
         model_compiled_2 = torch.compile(self.model, backend="centml")
         model_compiled_2(self.inputs)
-        hash_2 = mock_wait.call_args[0][0]
+        hash_2 = mock_get_path.call_args[0][0]
         torch._dynamo.reset()
 
         self.assertEqual(hash_1, hash_2)
 
     # Given two different models, the model ids should be different
     # We made the models different by adding 1 to the first value in some layer's
-    @patch("os.path.isfile", new=lambda x: False)
+    # Grab the model_id's passed to get_backend_compiled_forward_path
     @patch("threading.Thread.start", new=start_func)
-    @patch("centml.compiler.backend.Runner._wait_for_status", side_effect=Exception("Exiting early"))
-    def test_model_id_uniqueness(self, mock_wait):
+    @patch("centml.compiler.backend.get_backend_compiled_forward_path", side_effect=Exception("Exiting early"))
+    def test_model_id_uniqueness(self, mock_get_path):
         def get_modified_model(model):
             modified = deepcopy(model)
             state_dict = modified.state_dict()
@@ -75,12 +69,12 @@ class TestGetModelId(SetUpGraphModule):
         # self.model and self.inputs come from @parameterized_class
         model_compiled_1 = torch.compile(self.model, backend="centml")
         model_compiled_1(self.inputs)
-        hash_1 = mock_wait.call_args[0][0]
+        hash_1 = mock_get_path.call_args[0][0]
 
         model_2 = get_modified_model(self.model)
         model_compiled_2 = torch.compile(model_2, backend="centml")
         model_compiled_2(self.inputs)
-        hash_2 = mock_wait.call_args[0][0]
+        hash_2 = mock_get_path.call_args[0][0]
 
         self.assertNotEqual(hash_1, hash_2)
 

@@ -53,13 +53,17 @@ class Runner:
     def inputs(self):
         self._inputs = None
 
-    def _get_model_id(self) -> str:
-        # The GraphModule can be large, so lets serialize it to disk
-        # This saves a zip file full of pickled files.
+    def _serialize_model_and_inputs(self):
+        # torch.save saves a zip file full of pickled files with the model's states.
         try:
             torch.save(self.module, self.serialized_model_path, pickle_protocol=config_instance.PICKLE_PROTOCOL)
+            torch.save(self.inputs, self.serialized_input_path, pickle_protocol=config_instance.PICKLE_PROTOCOL)
         except Exception as e:
-            raise Exception(f"Failed to save module with torch.save: {e}") from e
+            raise Exception(f"Failed to save module or inputs with torch.save: {e}") from e
+
+    def _get_model_id(self) -> str:
+        if not os.path.isfile(self.serialized_model_path):
+            raise Exception(f"Model not saved at path {self.serialized_model_path}")
 
         sha_hash = hashlib.sha256()
         with open(self.serialized_model_path, "rb") as serialized_model_file:
@@ -86,9 +90,8 @@ class Runner:
         # The model should have been saved using torch.save when we found the model_id
         if not os.path.isfile(self.serialized_model_path):
             raise Exception(f"Model not saved at path {self.serialized_model_path}")
-
-        # Serialize inputs to disk
-        torch.save(self.inputs, self.serialized_input_path, pickle_protocol=config_instance.PICKLE_PROTOCOL)
+        if not os.path.isfile(self.serialized_input_path):
+            raise Exception(f"Inputs not saved at path {self.serialized_input_path}")
 
         with open(self.serialized_model_path, 'rb') as model_file, open(self.serialized_input_path, 'rb') as input_file:
             compile_response = requests.post(
@@ -132,6 +135,8 @@ class Runner:
             time.sleep(config_instance.COMPILING_SLEEP_TIME)
 
     def remote_compilation(self):
+        self._serialize_model_and_inputs()
+
         model_id = self._get_model_id()
 
         # check if compiled forward is saved locally
