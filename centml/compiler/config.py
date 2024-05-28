@@ -26,8 +26,8 @@ class Config:
 
     # Use a constant path since torch.save uses the given file name in it's zipfile.
     # Thus, a different path would result in a different hash.
-    SERIALIZED_MODEL_FILE = "serialized_model.pkl"
-    SERIALIZED_INPUT_FILE = "serialized_input.pkl"
+    SERIALIZED_MODEL_FILE = "serialized_model.zip"
+    SERIALIZED_INPUT_FILE = "serialized_input.zip"
     PICKLE_PROTOCOL = 4
 
 
