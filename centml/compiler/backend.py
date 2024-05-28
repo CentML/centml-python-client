@@ -27,9 +27,9 @@ class Runner:
         self.lock = th.Lock()
         self.child_thread = th.Thread(target=self.remote_compilation)
 
-        self.serialized_model_dir = tempfile.TemporaryDirectory()  # pylint: disable=consider-using-with
-        self.serialized_model_path = os.path.join(self.serialized_model_dir.name, config_instance.SERIALIZED_MODEL_FILE)
-        self.serialized_input_path = os.path.join(self.serialized_model_dir.name, config_instance.SERIALIZED_INPUT_FILE)
+        self.serialized_model_dir = None
+        self.serialized_model_path = None
+        self.serialized_input_path = None
 
         try:
             self.child_thread.start()
@@ -54,6 +54,10 @@ class Runner:
         self._inputs = None
 
     def _serialize_model_and_inputs(self):
+        self.serialized_model_dir = tempfile.TemporaryDirectory()  # pylint: disable=consider-using-with
+        self.serialized_model_path = os.path.join(self.serialized_model_dir.name, config_instance.SERIALIZED_MODEL_FILE)
+        self.serialized_input_path = os.path.join(self.serialized_model_dir.name, config_instance.SERIALIZED_INPUT_FILE)
+
         # torch.save saves a zip file full of pickled files with the model's states.
         try:
             torch.save(self.module, self.serialized_model_path, pickle_protocol=config_instance.PICKLE_PROTOCOL)
@@ -62,7 +66,7 @@ class Runner:
             raise Exception(f"Failed to save module or inputs with torch.save: {e}") from e
 
     def _get_model_id(self) -> str:
-        if not os.path.isfile(self.serialized_model_path):
+        if not self.serialized_model_path or not os.path.isfile(self.serialized_model_path):
             raise Exception(f"Model not saved at path {self.serialized_model_path}")
 
         sha_hash = hashlib.sha256()
@@ -88,9 +92,9 @@ class Runner:
 
     def _compile_model(self, model_id: str):
         # The model should have been saved using torch.save when we found the model_id
-        if not os.path.isfile(self.serialized_model_path):
+        if not self.serialized_model_path or not os.path.isfile(self.serialized_model_path):
             raise Exception(f"Model not saved at path {self.serialized_model_path}")
-        if not os.path.isfile(self.serialized_input_path):
+        if not self.serialized_model_path or not os.path.isfile(self.serialized_input_path):
             raise Exception(f"Inputs not saved at path {self.serialized_input_path}")
 
         with open(self.serialized_model_path, 'rb') as model_file, open(self.serialized_input_path, 'rb') as input_file:
