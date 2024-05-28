@@ -25,10 +25,12 @@ class Config:
     SERVER_BASE_PATH = os.path.join(CACHE_PATH, "server")
 
     # Use a constant path since torch.save uses the given file name in it's zipfile.
-    # Thus, a different path would result in a different hash.
+    # Thus, a different filename would result in a different hash.
     SERIALIZED_MODEL_FILE = "serialized_model.zip"
     SERIALIZED_INPUT_FILE = "serialized_input.zip"
     PICKLE_PROTOCOL = 4
+
+    HASH_CHUNK_SIZE = 4096
 
 
 config_instance = Config()

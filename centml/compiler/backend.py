@@ -64,7 +64,7 @@ class Runner:
         sha_hash = hashlib.sha256()
         with open(self.serialized_model_path, "rb") as serialized_model_file:
             # Read in chunks to not load too much into memory
-            for block in iter(lambda: serialized_model_file.read(4096), b""):
+            for block in iter(lambda: serialized_model_file.read(config_instance.HASH_CHUNK_SIZE), b""):
                 sha_hash.update(block)
 
         return sha_hash.hexdigest()
