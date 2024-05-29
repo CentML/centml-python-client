@@ -11,7 +11,6 @@ from typing import List, Callable
 import requests
 from torch.fx import GraphModule
 import torch
-from hidet.runtime.compiled_graph import CompiledGraph
 from centml.compiler.config import config_instance, CompilationStatus
 from centml.compiler.utils import get_backend_compiled_forward_path
 
@@ -77,7 +76,7 @@ class Runner:
 
         return sha_hash.hexdigest()
 
-    def _download_model(self, model_id: str) -> CompiledGraph:
+    def _download_model(self, model_id: str):
         download_response = requests.get(
             url=f"{config_instance.SERVER_URL}/download/{model_id}", timeout=config_instance.TIMEOUT
         )
