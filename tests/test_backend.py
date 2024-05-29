@@ -5,7 +5,6 @@ from unittest.mock import patch, MagicMock
 import torch
 from parameterized import parameterized_class
 from torch.fx import GraphModule
-import hidet
 from centml.compiler.backend import Runner
 from centml.compiler.config import CompilationStatus, config_instance
 from .test_helpers import MODEL_SUITE
@@ -29,63 +28,53 @@ class TestGetModelId(SetUpGraphModule):
     def tearDown(self) -> None:
         torch._dynamo.reset()
 
-    @patch('hidet.save_graph')
-    def test_none_flow_graph(self, mock_save_graph):
+    @patch("centml.compiler.backend.os.path.isfile", new=lambda x: False)
+    def test_no_serialized_model(self):
         with self.assertRaises(Exception) as context:
-            self.runner._get_model_id(None)
+            self.runner._get_model_id()
 
-        self.assertIn("Getting model id: flow graph is None.", str(context.exception))
-        mock_save_graph.assert_not_called()
-
-    @patch('hidet.save_graph')
-    def test_exception_on_save_graph_failure(self, mock_save_graph):
-        mock_save_graph.side_effect = Exception("Test Exception")
-        flowgraph = MagicMock(spec=hidet.FlowGraph)
-
-        with self.assertRaises(Exception) as context:
-            self.runner._get_model_id(flowgraph)
-
-        self.assertIn("Getting model id: failed to save FlowGraph.", str(context.exception))
-        mock_save_graph.assert_called_once()
+        self.assertIn("Model not saved at path", str(context.exception))
 
     # Given the same model graph, the model id should be the same
-    # Check this by grabbing the model_id passed to _wait_for_status
-    @patch("os.path.isfile", new=lambda x: False)
+    # Grab the model_id's passed to get_backend_compiled_forward_path
     @patch("threading.Thread.start", new=start_func)
-    @patch("centml.compiler.backend.Runner._wait_for_status", side_effect=Exception("Exiting early"))
-    def test_model_id_consistency(self, mock_wait):
+    @patch("centml.compiler.backend.get_backend_compiled_forward_path", side_effect=Exception("Exiting early"))
+    def test_model_id_consistency(self, mock_get_path):
+        # self.model and self.inputs come from @parameterized_class
         model_compiled_1 = torch.compile(self.model, backend="centml")
         model_compiled_1(self.inputs)
-        hash_1 = mock_wait.call_args[0][0]
-
-        # Reset the dynamo cache to force recompilation
-        torch._dynamo.reset()
+        hash_1 = mock_get_path.call_args[0][0]
+        torch._dynamo.reset()  # Reset the dynamo cache to force recompilation
 
         model_compiled_2 = torch.compile(self.model, backend="centml")
         model_compiled_2(self.inputs)
-        hash_2 = mock_wait.call_args[0][0]
-
-        self.assertEqual(hash_1, hash_2)
+        hash_2 = mock_get_path.call_args[0][0]
         torch._dynamo.reset()
 
+        self.assertEqual(hash_1, hash_2)
+
     # Given two different models, the model ids should be different
-    @patch("os.path.isfile", new=lambda x: False)
+    # We made the models different by adding 1 to the first value in some layer's
+    # Grab the model_id's passed to get_backend_compiled_forward_path
     @patch("threading.Thread.start", new=start_func)
-    @patch("centml.compiler.backend.Runner._wait_for_status", side_effect=Exception("Exiting early"))
-    def test_model_id_uniqueness(self, mock_wait):
+    @patch("centml.compiler.backend.get_backend_compiled_forward_path", side_effect=Exception("Exiting early"))
+    def test_model_id_uniqueness(self, mock_get_path):
         def get_modified_model(model):
             modified = deepcopy(model)
-            next(modified.parameters()).data.add_(1)
+            state_dict = modified.state_dict()
+            some_layer = list(state_dict.values())[0]
+            some_layer.view(-1)[0] += 1
             return modified
 
+        # self.model and self.inputs come from @parameterized_class
         model_compiled_1 = torch.compile(self.model, backend="centml")
         model_compiled_1(self.inputs)
-        hash_1 = mock_wait.call_args[0][0]
+        hash_1 = mock_get_path.call_args[0][0]
 
         model_2 = get_modified_model(self.model)
         model_compiled_2 = torch.compile(model_2, backend="centml")
         model_compiled_2(self.inputs)
-        hash_2 = mock_wait.call_args[0][0]
+        hash_2 = mock_get_path.call_args[0][0]
 
         self.assertNotEqual(hash_1, hash_2)
 
@@ -109,7 +98,7 @@ class TestDownloadModel(SetUpGraphModule):
 
     @patch("os.makedirs")
     @patch("builtins.open")
-    @patch("centml.compiler.backend.pickle.loads")
+    @patch("centml.compiler.backend.torch.load")
     @patch("centml.compiler.backend.requests")
     def test_successful_download(self, mock_requests, mock_load, mock_open, mock_makedirs):
         # Mock the response from the requests library
@@ -197,22 +186,18 @@ class TestRemoteCompilation(TestCase):
         torch._dynamo.reset()
 
     @patch("os.path.isfile", new=lambda x: True)
-    @patch("builtins.open")
-    @patch("centml.compiler.backend.pickle.load")
-    @patch("centml.compiler.backend.Runner._get_model_id", new=lambda x, y: "1234")
-    def test_compiled_return_saved(self, mock_load, mock_open):
+    @patch("centml.compiler.backend.Runner._get_model_id", new=lambda x: "1234")
+    @patch("centml.compiler.backend.torch.load")
+    def test_compiled_cached(self, mock_load):
         mock_load.return_value = MagicMock()
-
         self.call_remote_compilation()
-
-        mock_open.assert_called_once()
         mock_load.assert_called_once()
 
     @patch('os.path.isfile', new=lambda x: False)
+    @patch("centml.compiler.backend.Runner._get_model_id", new=lambda x: "1234")
     @patch('centml.compiler.backend.Runner._download_model')
     @patch('centml.compiler.backend.Runner._wait_for_status')
-    @patch("centml.compiler.backend.Runner._get_model_id", new=lambda x, y: "1234")
-    def test_compiled_return_not_saved(self, mock_status, mock_download):
+    def test_compiled_return_not_cached(self, mock_status, mock_download):
         mock_status.return_value = True
         mock_download.return_value = MagicMock()
 

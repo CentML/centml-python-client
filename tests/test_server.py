@@ -1,6 +1,3 @@
-import pickle
-import warnings
-from io import BytesIO
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
 from http import HTTPStatus
@@ -12,9 +9,9 @@ from fastapi.testclient import TestClient
 from parameterized import parameterized_class
 from centml.compiler.server import app, background_compile, read_upload_files
 from centml.compiler.config import CompilationStatus
-from .test_helpers import MODEL_SUITE
+from tests.test_helpers import MODEL_SUITE, get_dummy_model_and_inputs
 
-client = TestClient(app=app)
+client = TestClient(app)
 
 
 class TestStatusHandler(TestCase):
@@ -49,29 +46,33 @@ class TestStatusHandler(TestCase):
 @parameterized_class(list(MODEL_SUITE.values()))
 class TestBackgroundCompile(TestCase):
     @pytest.mark.gpu
-    @patch("centml.compiler.server.open")
     @patch("logging.Logger.exception")
-    @patch("threading.Thread.start", new=lambda x: None)
-    def test_successful_compilation(self, mock_logger, mock_open):
+    @patch("centml.compiler.server.torch.save")
+    def test_successful_compilation(self, mock_save, mock_logger):
         # For some reason there is a deadlock with parallel builds
         hidet.option.parallel_build(False)
-        warnings.filterwarnings("ignore", category=UserWarning)
 
-        model = self.model.cuda()
-        inputs = self.inputs.cuda()
+        # Get the graph_module and example inputs that would be passed to background compile
+        class MockRunner:
+            def __init__(self):
+                self.graph_module = None
+                self.example_inputs = None
 
-        with patch('centml.compiler.backend.Runner.__init__', return_value=None) as mock_init, patch(
-            'centml.compiler.backend.Runner.__call__', new=model.forward
-        ):
-            model_compiled = torch.compile(model, backend="centml")
-            model_compiled(inputs)
-            graph_module = mock_init.call_args[0][0]
-            example_inputs = mock_init.call_args[0][1]
+            def __call__(self, module, inputs):
+                self.graph_module, self.example_inputs = module, inputs
+                return module.forward
+
+        mock_init = MockRunner()
+
+        # self.model and self.inputs come from @parameterized_class
+        model, inputs = self.model.cuda(), self.inputs.cuda()
+        model_compiled = torch.compile(model, backend=mock_init)
+        model_compiled(inputs)
 
         model_id = "successful_model"
-        background_compile(model_id, graph_module, example_inputs)
+        background_compile(model_id, mock_init.graph_module, mock_init.example_inputs)
 
-        mock_open.assert_called_once()
+        mock_save.assert_called_once()
         mock_logger.assert_not_called()
 
 
@@ -88,39 +89,31 @@ class TestReadUploadFiles(TestCase):
         self.assertEqual(excinfo.exception.status_code, HTTPStatus.BAD_REQUEST)
         self.assertIn("Compilation: error reading serialized content", str(excinfo.exception))
 
-    @patch("pickle.loads", side_effect=Exception("an exception occurred"))
-    def test_cant_unpickle(self, mock_pickle_loads):
+    @patch("torch.load", side_effect=Exception("an exception occurred"))
+    def test_cant_load(self, mock_load):
         model_id = "file_cant_be_unpickled"
 
-        model_data = "model"
-        inputs_data = "inputs"
-
-        # Create file-like objects with any data
-        model_file = BytesIO(pickle.dumps(model_data))
-        inputs_file = BytesIO(pickle.dumps(inputs_data))
-
+        # Create file-like objects with test data
+        model_file, input_file = get_dummy_model_and_inputs("model", "inputs")
         model = UploadFile(filename="model", file=model_file)
-        inputs = UploadFile(filename="inputs", file=inputs_file)
+        inputs = UploadFile(filename="inputs", file=input_file)
 
         with self.assertRaises(HTTPException) as excinfo:
             read_upload_files(model_id, model, inputs)
 
-        mock_pickle_loads.assert_called_once()
+        mock_load.assert_called_once()
         self.assertEqual(excinfo.exception.status_code, HTTPStatus.BAD_REQUEST)
-        self.assertIn("error loading pickled content", str(excinfo.exception))
+        self.assertIn("Compilation: error loading content with torch.load:", str(excinfo.exception))
 
     def test_proper_read(self):
         model_id = "test_model_id"
 
-        # Create file-like objects with pickleable data
-        model_data = "model"
-        inputs_data = "inputs"
+        model_data, inputs_data = "model", "inputs"
 
-        model_file = BytesIO(pickle.dumps(model_data))
-        inputs_file = BytesIO(pickle.dumps(inputs_data))
-
+        # Create file-like objects with test data
+        model_file, input_file = get_dummy_model_and_inputs("model", "inputs")
         model = UploadFile(filename="model", file=model_file)
-        inputs = UploadFile(filename="inputs", file=inputs_file)
+        inputs = UploadFile(filename="inputs", file=input_file)
 
         tfx_graph, example_inputs = read_upload_files(model_id, model, inputs)
 
@@ -129,28 +122,28 @@ class TestReadUploadFiles(TestCase):
 
 
 class TestCompileHandler(TestCase):
-    def setUp(self) -> None:
-        self.model = pickle.dumps("model")
-        self.inputs = pickle.dumps("inputs")
-
-    @patch("os.path.isdir", new=lambda x: True)
-    def test_model_compiling(self):
+    @patch("centml.compiler.server.get_status")
+    def test_model_compiling(self, mock_status):
         model_id = "compiling_model"
+        mock_status.return_value = CompilationStatus.COMPILING
 
-        response = client.post(f"/submit/{model_id}", files={"model": self.model, "inputs": self.inputs})
+        model_file, input_file = get_dummy_model_and_inputs("model", "inputs")
+        response = client.post(f"/submit/{model_id}", files={"model": model_file, "inputs": input_file})
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
     @patch("os.makedirs")
     @patch("centml.compiler.server.background_compile")
-    @patch("os.path.isdir", new=lambda x: False)
-    def test_model_not_compiled(self, mock_compile, mock_mkdir):
+    @patch("centml.compiler.server.get_status")
+    def test_model_not_compiled(self, mock_status, mock_compile, mock_mkdir):
         model_id = "compiling_model"
+        mock_status.return_value = CompilationStatus.NOT_FOUND
+        # Stop compilation from happening
         mock_compile.new = lambda x, y, z: None
 
-        response = client.post(f"/submit/{model_id}", files={"model": self.model, "inputs": self.inputs})
+        model_file, input_file = get_dummy_model_and_inputs("model", "inputs")
+        response = client.post(f"/submit/{model_id}", files={"model": model_file, "inputs": input_file})
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-
         mock_mkdir.assert_called_once()
         mock_compile.assert_called_once()
 

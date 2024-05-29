@@ -1,8 +1,9 @@
+import io
 import os
-import pickle
 from http import HTTPStatus
 import logging
 import uvicorn
+import torch
 from fastapi import FastAPI, UploadFile, HTTPException, BackgroundTasks, Response
 from fastapi.responses import FileResponse
 from fastapi.middleware.gzip import GZipMiddleware
@@ -43,32 +44,31 @@ def background_compile(model_id: str, tfx_graph, example_inputs):
 
     try:
         save_path = get_server_compiled_forward_path(model_id)
-        with open(save_path, "wb") as f:
-            pickle.dump(compiled_graph_module, f)
+        torch.save(compiled_graph_module, save_path, pickle_protocol=config_instance.PICKLE_PROTOCOL)
     except Exception as e:
-        raise Exception(f"Saving graph module failed: {e}") from e
+        logging.getLogger(__name__).exception(f"Saving graph module failed: {e}")
 
 
 def read_upload_files(model_id: str, model: UploadFile, inputs: UploadFile):
     try:
-        tfx_contents = model.file.read()
-        ei_contents = inputs.file.read()
+        tfx_contents = io.BytesIO(model.file.read())
+        ei_contents = io.BytesIO(inputs.file.read())
     except Exception as e:
         dir_cleanup(model_id)
         raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST, detail="Compilation: error reading serialized content."
+            status_code=HTTPStatus.BAD_REQUEST, detail=f"Compilation: error reading serialized content: {e}"
         ) from e
     finally:
         model.file.close()
         inputs.file.close()
 
     try:
-        tfx_graph = pickle.loads(tfx_contents)
-        example_inputs = pickle.loads(ei_contents)
+        tfx_graph = torch.load(tfx_contents)
+        example_inputs = torch.load(ei_contents)
     except Exception as e:
         dir_cleanup(model_id)
         raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST, detail="Compilation: error loading pickled content."
+            status_code=HTTPStatus.BAD_REQUEST, detail=f"Compilation: error loading content with torch.load: {e}"
         ) from e
 
     return tfx_graph, example_inputs

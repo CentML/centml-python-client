@@ -11,6 +11,11 @@ Inside the project's base directory, run the following commands:
 pip install . 
 ```
 
+To use the compilation feature, make sure to install Hidet:
+```bash
+pip install hidet
+```
+
 ### Tests
 To run tests, first install required packages:
 ```bash
