@@ -46,9 +46,10 @@ class TestStatusHandler(TestCase):
 @parameterized_class(list(MODEL_SUITE.values()))
 class TestBackgroundCompile(TestCase):
     @pytest.mark.gpu
+    @patch("os.rename")
     @patch("logging.Logger.exception")
     @patch("centml.compiler.server.torch.save")
-    def test_successful_compilation(self, mock_save, mock_logger):
+    def test_successful_compilation(self, mock_save, mock_logger, mock_rename):
         # For some reason there is a deadlock with parallel builds
         hidet.option.parallel_build(False)
 
@@ -72,6 +73,7 @@ class TestBackgroundCompile(TestCase):
         model_id = "successful_model"
         background_compile(model_id, mock_init.graph_module, mock_init.example_inputs)
 
+        mock_rename.assert_called_once()
         mock_save.assert_called_once()
         mock_logger.assert_not_called()
 

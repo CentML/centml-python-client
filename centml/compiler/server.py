@@ -43,8 +43,13 @@ def background_compile(model_id: str, tfx_graph, example_inputs):
         dir_cleanup(model_id)
 
     try:
+        # torch.save's writing is not atomic; it creates an empty zip file then saves the data in multiple calls.
+        # We don't want this incomplete zipfile to be mistaken for the serialized forward function by /status/.
+        # To avoid this, we write to a tmp file and rename it to the correct path after saving.
         save_path = get_server_compiled_forward_path(model_id)
-        torch.save(compiled_graph_module, save_path, pickle_protocol=config_instance.PICKLE_PROTOCOL)
+        tmp_path = save_path + ".tmp"
+        torch.save(compiled_graph_module, tmp_path, pickle_protocol=config_instance.PICKLE_PROTOCOL)
+        os.rename(tmp_path, save_path)
     except Exception as e:
         logging.getLogger(__name__).exception(f"Saving graph module failed: {e}")
 
