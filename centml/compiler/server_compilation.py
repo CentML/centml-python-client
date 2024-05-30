@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Callable
+from typing import List
 import torch
 from torch.fx import GraphModule
 from hidet.graph.frontend import from_torch
@@ -16,7 +16,7 @@ class CompilerType(Enum):
     HIDET = "hidet"
 
 
-class BaseRCReturn(Callable):
+class BaseRCReturn:
     def __init__(self, compiler_type: CompilerType):
         self.compiler_type = compiler_type
 

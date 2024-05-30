@@ -88,12 +88,12 @@ def get(id):
 
 
 @click.command(help="Create a new deployment")
-@click.argument("type", type=click.Choice(depl_type_map.keys()))
+@click.argument("type", type=click.Choice(list(depl_type_map.keys())))
 @click.option("--name", "-n", prompt="Name", help="Name of the deployment")
 @click.option("--image", "-i", prompt="Image", help="Container image")
 @click.option("--port", "-p", prompt="Port", type=int, help="Port to expose")
 @click.option(
-    "--hardware", "-h", prompt="Hardware", type=click.Choice(hw_to_id_map.keys()), help="Hardware instance type"
+    "--hardware", "-h", prompt="Hardware", type=click.Choice(list(hw_to_id_map.keys())), help="Hardware instance type"
 )
 @click.option("--health", default="/", prompt="Health check", help="Health check endpoint")
 @click.option("--min_replicas", default="1", prompt="Min replicas", type=click.IntRange(1, 10))
