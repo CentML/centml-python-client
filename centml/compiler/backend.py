@@ -84,6 +84,8 @@ class Runner:
             raise Exception(
                 f"Download: request failed, exception from server:\n{download_response.json().get('detail')}"
             )
+        if download_response.content == b"":
+            raise Exception("Download: empty response from server")
         download_path = get_backend_compiled_forward_path(model_id)
         with open(download_path, "wb") as f:
             f.write(download_response.content)

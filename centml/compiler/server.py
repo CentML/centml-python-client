@@ -20,7 +20,10 @@ def get_status(model_id: str):
     if not os.path.isdir(os.path.join(config_instance.SERVER_BASE_PATH, model_id)):
         return CompilationStatus.NOT_FOUND
 
-    if not os.path.isfile(get_server_compiled_forward_path(model_id)):
+    # For the case where size == 0, torch.save creates a zip file before saving the actual data.
+    # We don't want this empty zipfile to be considered the serialized forward function
+    save_path = get_server_compiled_forward_path(model_id)
+    if not os.path.isfile(save_path) or os.path.getsize(save_path) == 0:
         return CompilationStatus.COMPILING
 
     return CompilationStatus.DONE
