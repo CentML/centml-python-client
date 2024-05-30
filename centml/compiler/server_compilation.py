@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Callable
+from typing import List
 import torch
 from torch.fx import GraphModule
 from hidet.graph.frontend import from_torch

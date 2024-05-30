@@ -27,7 +27,7 @@ class Config:
     SERIALIZED_INPUT_FILE: str = "serialized_input.zip"
     PICKLE_PROTOCOL: int = 4
 
-    HASH_CHUNK_SIZE: int  = 4096
+    HASH_CHUNK_SIZE: int = 4096
 
     # If the server response is smaller than this, don't gzip it
     MINIMUM_GZIP_SIZE: int = 1000

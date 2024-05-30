@@ -36,7 +36,7 @@ class Runner:
             logging.getLogger(__name__).exception("Remote compilation failed with the following exception: \n")
 
     @property
-    def module(self) -> GraphModule | None:
+    def module(self) -> Optional[GraphModule]:
         return self._module()
 
     @module.deleter
