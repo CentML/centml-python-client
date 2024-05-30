@@ -28,7 +28,6 @@ class TestStatusHandler(TestCase):
 
     @patch("os.path.isfile", new=lambda x: False)
     @patch("os.path.isdir", new=lambda x: True)
-    @patch("os.path.getsize", new=lambda x: 1024)
     def test_model_compiling(self):
         model_id = "compiling_model"
         response = client.get(f"/status/{model_id}")
@@ -37,16 +36,6 @@ class TestStatusHandler(TestCase):
 
     @patch("os.path.isfile", new=lambda x: True)
     @patch("os.path.isdir", new=lambda x: True)
-    @patch("os.path.getsize", new=lambda x: 0)
-    def test_empty_file(self):
-        model_id = "empty_model"
-        response = client.get(f"/status/{model_id}")
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json(), {"status": CompilationStatus.COMPILING.value})
-
-    @patch("os.path.isfile", new=lambda x: True)
-    @patch("os.path.isdir", new=lambda x: True)
-    @patch("os.path.getsize", new=lambda x: 1024)
     def test_model_done(self):
         model_id = "completed_model"
         response = client.get(f"/status/{model_id}")
@@ -57,9 +46,10 @@ class TestStatusHandler(TestCase):
 @parameterized_class(list(MODEL_SUITE.values()))
 class TestBackgroundCompile(TestCase):
     @pytest.mark.gpu
+    @patch("os.rename")
     @patch("logging.Logger.exception")
     @patch("centml.compiler.server.torch.save")
-    def test_successful_compilation(self, mock_save, mock_logger):
+    def test_successful_compilation(self, mock_save, mock_logger, mock_rename):
         # For some reason there is a deadlock with parallel builds
         hidet.option.parallel_build(False)
 
@@ -83,6 +73,7 @@ class TestBackgroundCompile(TestCase):
         model_id = "successful_model"
         background_compile(model_id, mock_init.graph_module, mock_init.example_inputs)
 
+        mock_rename.assert_called_once()
         mock_save.assert_called_once()
         mock_logger.assert_not_called()
 
