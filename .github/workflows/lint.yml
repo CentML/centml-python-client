@@ -33,3 +33,7 @@ jobs:
       run: |
         echo "Running with" $(pip freeze | grep "pylint")
         ./scripts/lint.sh
+    - name: Check static types
+      run: |
+        echo "Running with" $(pip freeze | grep "mypy")
+        ./scripts/typecheck.sh
