@@ -16,7 +16,7 @@ class CompilerType(Enum):
     HIDET = "hidet"
 
 
-class BaseRCReturn(Callable):
+class BaseRCReturn:
     def __init__(self, compiler_type: CompilerType):
         self.compiler_type = compiler_type
 

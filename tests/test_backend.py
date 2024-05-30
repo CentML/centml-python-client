@@ -19,7 +19,8 @@ class SetUpGraphModule(TestCase):
     @patch('threading.Thread.start', new=lambda x: None)
     def setUp(self) -> None:
         model = MagicMock(spec=GraphModule)
-        self.runner = Runner(model, None)
+        inputs = [torch.tensor([1.0])]
+        self.runner = Runner(model, inputs)
 
 
 @parameterized_class(list(MODEL_SUITE.values()))

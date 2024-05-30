@@ -3,14 +3,14 @@ import gc
 import time
 import hashlib
 import logging
-import weakref
-import tempfile
 import threading as th
 from http import HTTPStatus
-from typing import List, Callable
+from weakref import ReferenceType, ref
+from tempfile import TemporaryDirectory
+from typing import List, Callable, Optional
 import requests
-from torch.fx import GraphModule
 import torch
+from torch.fx import GraphModule
 from centml.compiler.config import config_instance, CompilationStatus
 from centml.compiler.utils import get_backend_compiled_forward_path
 
@@ -20,15 +20,15 @@ class Runner:
         if not module:
             raise Exception("No module provided")
 
-        self._module: GraphModule = weakref.ref(module)
+        self._module: ReferenceType[GraphModule] = ref(module)
         self._inputs: List[torch.Tensor] = inputs
-        self.compiled_forward_function: Callable[[torch.Tensor], tuple] = None
+        self.compiled_forward_function: Optional[Callable[[torch.Tensor], tuple]] = None
         self.lock = th.Lock()
         self.child_thread = th.Thread(target=self.remote_compilation)
 
-        self.serialized_model_dir = None
-        self.serialized_model_path = None
-        self.serialized_input_path = None
+        self.serialized_model_dir: Optional[TemporaryDirectory] = None
+        self.serialized_model_path: Optional[str] = None
+        self.serialized_input_path: Optional[str] = None
 
         try:
             self.child_thread.start()
@@ -36,24 +36,24 @@ class Runner:
             logging.getLogger(__name__).exception("Remote compilation failed with the following exception: \n")
 
     @property
-    def module(self) -> GraphModule:
+    def module(self) -> GraphModule | None:
         return self._module()
-
-    @property
-    def inputs(self) -> List[torch.Tensor]:
-        return self._inputs
 
     @module.deleter
     def module(self):
         self._module().graph.owning_module = None
         self._module = None
 
+    @property
+    def inputs(self) -> List[torch.Tensor]:
+        return self._inputs
+
     @inputs.deleter
     def inputs(self):
         self._inputs = None
 
     def _serialize_model_and_inputs(self):
-        self.serialized_model_dir = tempfile.TemporaryDirectory()  # pylint: disable=consider-using-with
+        self.serialized_model_dir = TemporaryDirectory()  # pylint: disable=consider-using-with
         self.serialized_model_path = os.path.join(self.serialized_model_dir.name, config_instance.SERIALIZED_MODEL_FILE)
         self.serialized_input_path = os.path.join(self.serialized_model_dir.name, config_instance.SERIALIZED_INPUT_FILE)
 
@@ -91,9 +91,11 @@ class Runner:
 
     def _compile_model(self, model_id: str):
         # The model should have been saved using torch.save when we found the model_id
-        if not self.serialized_model_path or not os.path.isfile(self.serialized_model_path):
+        if not self.serialized_model_path or not self.serialized_input_path:
+            raise Exception("Model or inputs not serialized")
+        if not os.path.isfile(self.serialized_model_path):
             raise Exception(f"Model not saved at path {self.serialized_model_path}")
-        if not self.serialized_model_path or not os.path.isfile(self.serialized_input_path):
+        if not os.path.isfile(self.serialized_input_path):
             raise Exception(f"Inputs not saved at path {self.serialized_input_path}")
 
         with open(self.serialized_model_path, 'rb') as model_file, open(self.serialized_input_path, 'rb') as input_file:
