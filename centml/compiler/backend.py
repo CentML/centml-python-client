@@ -101,6 +101,8 @@ class Runner:
             raise Exception(f"Inputs not saved at path {self.serialized_input_path}")
 
         with open(self.serialized_model_path, 'rb') as model_file, open(self.serialized_input_path, 'rb') as input_file:
+            print("CALLING SUBMIT")
+            
             compile_response = requests.post(
                 url=f"{config_instance.SERVER_URL}/submit/{model_id}",
                 files={"model": model_file, "inputs": input_file},
@@ -126,11 +128,14 @@ class Runner:
 
             status = status_response.json().get("status")
 
+            print("STATUS IS", status)
+
             if status == CompilationStatus.DONE.value:
                 return True
             elif status == CompilationStatus.COMPILING.value:
                 pass
             elif status == CompilationStatus.NOT_FOUND.value:
+                print("STATUS NOT FOUND, COMPILING AGAIN.")
                 tries += 1
                 self._compile_model(model_id)
             else:
