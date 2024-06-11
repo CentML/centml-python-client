@@ -3,9 +3,9 @@ from enum import Enum
 
 
 class CompilationStatus(Enum):
-    NOT_FOUND = "not_found"
-    COMPILING = "compiling"
-    DONE = "done"
+    NOT_FOUND = "NOT_FOUND"
+    COMPILING = "COMPILING"
+    DONE = "DONE"
 
 
 class Config:

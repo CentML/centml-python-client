@@ -102,7 +102,7 @@ class Runner:
 
         with open(self.serialized_model_path, 'rb') as model_file, open(self.serialized_input_path, 'rb') as input_file:
             print("CALLING SUBMIT")
-            
+
             compile_response = requests.post(
                 url=f"{config_instance.SERVER_URL}/submit/{model_id}",
                 files={"model": model_file, "inputs": input_file},
