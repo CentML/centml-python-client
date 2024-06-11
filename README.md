@@ -25,7 +25,7 @@ centml
 ### Compilation
 
 centml-python-client's compiler feature allows you to compile your ML model remotely using the [hidet](https://hidet.org/docs/stable/index.html) backend. \
-Thus, use the compilation feature, make sure to install Hidet:
+Thus, use the compilation feature, make sure to run:
 ```bash
 pip install hidet
 ```
@@ -53,9 +53,9 @@ compiled_model = torch.compile(model, backend="centml")
 # Since torch.compile is JIT, compilation is only triggered when you first call the model
 output = compiled_model(inputs)
 ```
-Note that the centml backend compiler is non-blocking. This means it that until the server returns the compiled model, your python script will use the uncompiled model for inference.
+Note that the centml backend compiler is non-blocking. This means it that until the server returns the compiled model, your python script will use the uncompiled model to generate the output.
 
-Again, make sure to set the environment variables `CENTML_SERVER_IP` and `CENTML_SERVER_PORT` to communicate with the desired server.
+Again, make sure your script's environment sets the environment variables `CENTML_SERVER_IP` and `CENTML_SERVER_PORT` to communicate with the desired server.
 
 
 ### Tests
