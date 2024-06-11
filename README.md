@@ -25,6 +25,11 @@ centml
 ### Compilation
 
 centml-python-client's compiler feature allows you to compile your ML model remotely using the [hidet](https://hidet.org/docs/stable/index.html) backend. \
+Thus, use the compilation feature, make sure to install Hidet:
+```bash
+pip install hidet
+```
+
 To run the server locally, you can use the following CLI command:
 ```bash
 centml server
@@ -32,11 +37,6 @@ centml server
 By default, the server will run at the URL `http://0.0.0.0:8090`. \
 You can change this by setting the environment variables `CENTML_SERVER_IP` and `CENTML_SERVER_PORT`
 
-
-To use the compilation feature, make sure to install Hidet:
-```bash
-pip install hidet
-```
 
 Then, within your python script include the following:
 ```python
