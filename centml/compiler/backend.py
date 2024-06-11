@@ -139,7 +139,7 @@ class Runner:
                 tries += 1
                 self._compile_model(model_id)
             else:
-                tries += 1
+                raise Exception(f"Unexpected status recieved: {status}\n")
 
             if tries > config_instance.MAX_RETRIES:
                 raise Exception("Waiting for status: compilation failed too many times.\n")
