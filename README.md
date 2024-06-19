@@ -35,7 +35,7 @@ To run the server locally, you can use the following CLI command:
 centml server
 ```
 By default, the server will run at the URL `http://0.0.0.0:8090`. \
-You can change this by setting the environment variables `CENTML_SERVER_IP` and `CENTML_SERVER_PORT`
+You can change this by setting the environment variable `CENTML_SERVER_URL`
 
 
 Then, within your python script include the following:
@@ -55,7 +55,7 @@ output = compiled_model(inputs)
 ```
 Note that the centml backend compiler is non-blocking. This means it that until the server returns the compiled model, your python script will use the uncompiled model to generate the output.
 
-Again, make sure your script's environment sets the environment variables `CENTML_SERVER_IP` and `CENTML_SERVER_PORT` to communicate with the desired server.
+Again, make sure your script's environment sets `CENTML_SERVER_URL` to communicate with the desired server.
 
 
 ### Tests
