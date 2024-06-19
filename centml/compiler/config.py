@@ -2,6 +2,7 @@ import os
 from enum import Enum
 from urllib.parse import urlparse
 
+
 class CompilationStatus(Enum):
     NOT_FOUND = "NOT_FOUND"
     COMPILING = "COMPILING"
@@ -17,8 +18,8 @@ class Config:
 
     SERVER_URL: str = os.getenv("CENTML_SERVER_URL", default="http://0.0.0.0:8090")
     SERVER_IP: str
-    SERVER_PORT: str 
-    SERVER_IP, SERVER_PORT = urlparse(SERVER_URL).hostname, urlparse(SERVER_URL).port
+    SERVER_PORT: str
+    SERVER_IP, SERVER_PORT = str(urlparse(SERVER_URL).hostname), str(urlparse(SERVER_URL).port)
 
     BACKEND_BASE_PATH: str = os.path.join(CACHE_PATH, "backend")
     SERVER_BASE_PATH: str = os.path.join(CACHE_PATH, "server")
