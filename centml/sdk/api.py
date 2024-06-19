@@ -100,3 +100,8 @@ def pause(id):
 
 def resume(id):
     update_status(id, DeploymentStatus.ACTIVE)
+
+
+def get_hardware_instances():
+    with get_api() as api:
+        return api.get_hardware_instances_hardware_instances_get().results

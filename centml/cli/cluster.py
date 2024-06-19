@@ -1,4 +1,5 @@
 import sys
+from typing import Dict
 import click
 from tabulate import tabulate
 import platform_api_client
@@ -20,8 +21,20 @@ class InferenceEnvType(click.ParamType):
             return None  # to avoid warning from lint for inconsistent return statements
 
 
-hw_to_id_map = {"small": 1000, "medium": 1001, "large": 1002}
-id_to_hw_map = {v: k for k, v in hw_to_id_map.items()}
+def get_hw_to_id_map():
+    response = api.get_hardware_instances()
+
+    # Convert to list of dictionaries
+    instances = [item.to_dict() for item in response]
+
+    # Initialize hashmap for hardware to id or vice versa mapping
+    hw_to_id_map: Dict[str, int] = {}
+    id_to_hw_map: Dict[str, str] = {}
+
+    for item in instances:
+        hw_to_id_map[item["name"]] = item["id"]
+        id_to_hw_map[item["id"]] = item["name"]
+    return hw_to_id_map, id_to_hw_map
 
 
 depl_type_map = {
@@ -99,6 +112,9 @@ def get(type, id):
     ready_status = get_ready_status(deployment.status, state.service_status)
 
     click.echo(f"The current status of Deployment #{id} is: {ready_status}.")
+
+    _, id_to_hw_map = get_hw_to_id_map()
+
     click.echo(
         tabulate(
             [
@@ -144,6 +160,7 @@ def get(type, id):
 
 # Define common deployment
 def common_options(func):
+    hw_to_id_map, _ = get_hw_to_id_map()
     func = click.option("--name", "-n", prompt="Name", help="Name of the deployment")(func)
     func = click.option("--image", "-i", prompt="Image", help="Container image")(func)
     func = click.option(
@@ -214,6 +231,8 @@ def create_inference(ctx, **kwargs):
     command_args = kwargs.get("command_args")
     timeout = kwargs.get("timeout")
 
+    hw_to_id_map, _ = get_hw_to_id_map()
+
     # Call the API function for creating infrence deployment
     resp = api.create_inference(
         name,
@@ -247,6 +266,8 @@ def create_compute(ctx, **kwargs):
     password = kwargs.get("password")
     ssh_key = kwargs.get("ssh_key")
     hardware = kwargs.get("hardware")
+
+    hw_to_id_map, _ = get_hw_to_id_map()
 
     # Call the API function for creating infrence deployment
     resp = api.create_compute(name, image, username, password, ssh_key, hw_to_id_map[hardware])
