@@ -74,7 +74,9 @@ class Runner:
             for block in iter(lambda: serialized_model_file.read(config_instance.HASH_CHUNK_SIZE), b""):
                 sha_hash.update(block)
 
-        return sha_hash.hexdigest()
+        model_id = sha_hash.hexdigest()
+        logging.info(f"Model has id {model_id}")
+        return model_id
 
     def _download_model(self, model_id: str):
         download_response = requests.get(
@@ -123,7 +125,6 @@ class Runner:
                 raise Exception(
                     f"Status check: request failed, exception from server:\n{status_response.json().get('detail')}"
                 )
-
             status = status_response.json().get("status")
 
             if status == CompilationStatus.DONE.value:
@@ -132,6 +133,7 @@ class Runner:
                 pass
             elif status == CompilationStatus.NOT_FOUND.value:
                 tries += 1
+                logging.info("Submitting model to server for compilation.")
                 self._compile_model(model_id)
             else:
                 tries += 1
@@ -149,12 +151,15 @@ class Runner:
         # check if compiled forward is saved locally
         compiled_forward_path = get_backend_compiled_forward_path(model_id)
         if os.path.isfile(compiled_forward_path):
+            logging.info("Compiled model found in local cache. Not submitting to server.")
             compiled_forward = torch.load(compiled_forward_path)
         else:
             self._wait_for_status(model_id)
             compiled_forward = self._download_model(model_id)
 
         self.compiled_forward_function = compiled_forward
+
+        logging.info("Compilation successful.")
 
         # Let garbage collector free the memory used by the uncompiled model
         with self.lock:
