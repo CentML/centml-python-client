@@ -1,6 +1,7 @@
 import io
 import os
 from http import HTTPStatus
+from urllib.parse import urlparse
 import logging
 import uvicorn
 import torch
@@ -107,7 +108,8 @@ async def download_handler(model_id: str):
 
 
 def run():
-    uvicorn.run(app, host=config_instance.SERVER_IP, port=int(config_instance.SERVER_PORT))
+    parsed = urlparse(config_instance.SERVER_URL)
+    uvicorn.run(app, host=parsed.hostname, port=parsed.port)
 
 
 if __name__ == "__main__":

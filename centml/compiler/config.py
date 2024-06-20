@@ -1,6 +1,5 @@
 import os
 from enum import Enum
-from urllib.parse import urlparse
 
 
 class CompilationStatus(Enum):
@@ -17,9 +16,6 @@ class Config:
     CACHE_PATH: str = os.getenv("CENTML_CACHE_DIR", default=os.path.expanduser("~/.cache/centml"))
 
     SERVER_URL: str = os.getenv("CENTML_SERVER_URL", default="http://0.0.0.0:8090")
-    SERVER_IP: str
-    SERVER_PORT: str
-    SERVER_IP, SERVER_PORT = str(urlparse(SERVER_URL).hostname), str(urlparse(SERVER_URL).port)
 
     BACKEND_BASE_PATH: str = os.path.join(CACHE_PATH, "backend")
     SERVER_BASE_PATH: str = os.path.join(CACHE_PATH, "server")
