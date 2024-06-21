@@ -57,6 +57,10 @@ Note that the centml backend compiler is non-blocking. This means it that until 
 
 Again, make sure your script's environment sets `CENTML_SERVER_URL` to communicate with the desired server.
 
+To see logs, add this to your script before triggering compilation:
+```python
+logging.basicConfig(level=logging.INFO)
+```
 
 ### Tests
 To run tests, first install required packages:
