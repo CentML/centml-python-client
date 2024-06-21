@@ -14,9 +14,8 @@ class Config:
     COMPILING_SLEEP_TIME: int = 15
 
     CACHE_PATH: str = os.getenv("CENTML_CACHE_DIR", default=os.path.expanduser("~/.cache/centml"))
-    SERVER_IP: str = os.getenv("CENTML_SERVER_IP", default="0.0.0.0")
-    SERVER_PORT: str = os.getenv("CENTML_SERVER_PORT", default="8090")
-    SERVER_URL: str = f"http://{SERVER_IP}:{SERVER_PORT}"
+
+    SERVER_URL: str = os.getenv("CENTML_SERVER_URL", default="http://0.0.0.0:8090")
 
     BACKEND_BASE_PATH: str = os.path.join(CACHE_PATH, "backend")
     SERVER_BASE_PATH: str = os.path.join(CACHE_PATH, "server")
