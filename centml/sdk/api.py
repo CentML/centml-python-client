@@ -48,6 +48,7 @@ def get_compute(id):
 def create_inference(
     name, image, port, is_private, hw_to_id_map, health, min_replicas, max_replicas, env, command, command_args, timeout
 ):
+    triplet = None
     if is_private:
         triplet = client_certs.generate_ca_client_triplet(name)
         # Handle automatic download of client private secrets
