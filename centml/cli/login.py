@@ -1,6 +1,6 @@
 import click
 
-from ..sdk import auth, config
+from centml.sdk import auth, config
 
 
 @click.command(help="Login to CentML")

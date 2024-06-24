@@ -1,1 +1,1 @@
-from .main import cli, ccluster
+from centml.cli.main import cli, ccluster

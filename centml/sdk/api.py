@@ -2,9 +2,9 @@ import contextlib
 import platform_api_client
 from platform_api_client.models.deployment_status import DeploymentStatus
 
-from . import auth
-from .config import Config
-from .utils import client_certs
+from centml.sdk import auth
+from centml.sdk.config import Config
+from centml.sdk.utils import client_certs
 
 
 @contextlib.contextmanager
