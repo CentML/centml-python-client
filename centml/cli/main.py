@@ -1,7 +1,7 @@
 import click
 
-from .login import login, logout
-from .cluster import ls, get, create, delete, pause, resume
+from centml.cli.login import login, logout
+from centml.cli.cluster import ls, get, create, delete, pause, resume
 
 
 @click.group()
@@ -15,7 +15,7 @@ cli.add_command(logout)
 
 @cli.command(help="Start remote compilation server")
 def server():
-    from ..compiler.server import run
+    from centml.compiler.server import run
 
     run()
 

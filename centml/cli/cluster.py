@@ -4,7 +4,7 @@ from tabulate import tabulate
 import platform_api_client
 from platform_api_client.models.endpoint_ready_state import EndpointReadyState
 from platform_api_client.models.deployment_status import DeploymentStatus
-from ..sdk import api
+from centml.sdk import api
 
 
 # Custom class to parse key-value pairs for env variables for inference deployment

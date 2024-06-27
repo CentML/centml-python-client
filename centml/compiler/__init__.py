@@ -1,6 +1,6 @@
 import torch._dynamo
 
-from .backend import centml_dynamo_backend
+from centml.compiler.backend import centml_dynamo_backend
 
 
 # Register centml compiler backend to torch dynamo
