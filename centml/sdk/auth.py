@@ -5,7 +5,7 @@ import json
 import requests
 import jwt
 
-from .config import Config
+from centml.sdk.config import Config
 
 
 def refresh_centml_token(refresh_token):
