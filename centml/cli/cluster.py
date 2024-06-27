@@ -21,6 +21,22 @@ class InferenceEnvType(click.ParamType):
             return None  # to avoid warning from lint for inconsistent return statements
 
 
+# Hardware pricing tier that loads choices dynamically
+class HardwarePricingTier(click.ParamType):
+    name = "choice"
+
+    def __init__(self, choices_loader):
+        self.choices_loader = choices_loader
+        self.choices = None
+
+    def convert(self, value, param, ctx):
+        if self.choices is None:
+            self.choices = self.choices_loader()
+        if value not in self.choices:
+            self.fail(f"{value} is not a valid choice. Available choices are: {', '.join(self.choices)}", param, ctx)
+        return value
+
+
 def get_hw_to_id_map():
     response = api.get_hardware_instances()
 
@@ -158,17 +174,19 @@ def get(type, id):
         )
 
 
-# Define common deployment
+# load hardware pricing choices
+def load_hw_choices():
+    hw_to_id_map, _ = get_hw_to_id_map()
+    return list(hw_to_id_map.keys())
+
+
+# Define common deployment options
 def common_options(func):
     hw_to_id_map, _ = get_hw_to_id_map()
     func = click.option("--name", "-n", prompt="Name", help="Name of the deployment")(func)
     func = click.option("--image", "-i", prompt="Image", help="Container image")(func)
     func = click.option(
-        "--hardware",
-        "-h",
-        prompt="Hardware",
-        type=click.Choice(list(hw_to_id_map.keys())),
-        help="Hardware instance type",
+        "--hardware", "-h", prompt="Hardware", type=HardwarePricingTier(load_hw_choices), help="Hardware instance type"
     )(func)
     return func
 
