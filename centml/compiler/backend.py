@@ -164,7 +164,8 @@ class Runner:
         # Let garbage collector free the memory used by the uncompiled model
         with self.lock:
             del self.inputs
-            del self.module
+            if self.module:
+                del self.module
             gc.collect()
             torch.cuda.empty_cache()
 
