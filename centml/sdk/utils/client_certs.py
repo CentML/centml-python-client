@@ -1,8 +1,8 @@
 import os
-import click
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+import click
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
