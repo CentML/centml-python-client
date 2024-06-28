@@ -175,6 +175,7 @@ class Runner:
             if not self.compiled_forward_function:
                 return self.module.forward(*args, **kwargs)
 
+        logging.info("Using compiled forward function")
         return self.compiled_forward_function(*args)
 
 
