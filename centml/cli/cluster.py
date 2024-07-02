@@ -21,22 +21,6 @@ class InferenceEnvType(click.ParamType):
             return None  # to avoid warning from lint for inconsistent return statements
 
 
-# Hardware pricing tier that loads choices dynamically
-class HardwarePricingTier(click.ParamType):
-    name = "choice"
-
-    def __init__(self, choices_loader):
-        self.choices_loader = choices_loader
-        self.choices = None
-
-    def convert(self, value, param, ctx):
-        if self.choices is None:
-            self.choices = self.choices_loader()
-        if value not in self.choices:
-            self.fail(f"{value} is not a valid choice. Available choices are: {', '.join(self.choices)}", param, ctx)
-        return value
-
-
 def get_hw_to_id_map():
     response = api.get_hardware_instances()
 
@@ -52,6 +36,20 @@ def get_hw_to_id_map():
         id_to_hw_map[item["id"]] = item["name"]
     return hw_to_id_map, id_to_hw_map
 
+
+# # Hardware pricing tier that loads choices dynamically
+class HardwarePricingTier(click.ParamType):
+    def __init__(self):
+        self.hw_to_id_map, self.id_to_hw_map = get_hw_to_id_map()
+        self.choices = list(self.hw_to_id_map.keys())
+
+    def convert(self, value, param, ctx):
+        if value not in self.choices:
+            self.fail(f"{value} is not a valid choice. Available choices are: {', '.join(self.choices)}", param, ctx)
+        return value
+
+
+hardware_pricing_tier_instance = HardwarePricingTier()
 
 depl_type_map = {
     "inference": platform_api_client.DeploymentType.INFERENCE,
@@ -129,8 +127,6 @@ def get(type, id):
 
     click.echo(f"The current status of Deployment #{id} is: {ready_status}.")
 
-    _, id_to_hw_map = get_hw_to_id_map()
-
     click.echo(
         tabulate(
             [
@@ -138,7 +134,7 @@ def get(type, id):
                 ("Image", deployment.image_url),
                 ("Endpoint", deployment.endpoint_url),
                 ("Created at", deployment.created_at.strftime("%Y-%m-%d %H:%M:%S")),
-                ("Hardware", id_to_hw_map[deployment.hardware_instance_id]),
+                ("Hardware", hardware_pricing_tier_instance.id_to_hw_map[deployment.hardware_instance_id]),
             ],
             tablefmt="rounded_outline",
             disable_numparse=True,
@@ -174,90 +170,36 @@ def get(type, id):
         )
 
 
-# load hardware pricing choices
-def load_hw_choices():
-    hw_to_id_map, _ = get_hw_to_id_map()
-    return list(hw_to_id_map.keys())
-
-
-# Define common deployment options
-def common_options(func):
-    hw_to_id_map, _ = get_hw_to_id_map()
-    func = click.option("--name", "-n", prompt="Name", help="Name of the deployment")(func)
-    func = click.option("--image", "-i", prompt="Image", help="Container image")(func)
-    func = click.option(
-        "--hardware", "-h", prompt="Hardware", type=HardwarePricingTier(load_hw_choices), help="Hardware instance type"
-    )(func)
-    return func
-
-
-# Define inference specific options
-def inference_options(func):
-    func = click.option("--port", "-p", prompt="Port", type=int, help="Port to expose")(func)
-    func = click.option(
-        "--env", type=InferenceEnvType(), help="Environment variables in the format KEY=VALUE", multiple=True
-    )(func)
-    func = click.option("--min_replicas", default="1", prompt="Min replicas", type=click.IntRange(1, 10))(func)
-    func = click.option("--max_replicas", default="1", prompt="Max replicas", type=click.IntRange(1, 10))(func)
-    func = click.option("--health", default="/", prompt="Health check", help="Health check endpoint")(func)
-    func = click.option("--is_private", default=False, type=bool, prompt="Is private?", help="Is private endpoint?")(
-        func
-    )
-    func = click.option("--timeout", prompt="Max concurrency", default=0, type=int)(func)
-    func = click.option("--command", type=str, required=False, default=None, help="Define a command for a container")(
-        func
-    )
-    func = click.option("--command_args", multiple=True, type=str, default=None, help="List of command arguments")(func)
-    return func
-
-
-# Define compute specific options
-def compute_options(func):
-    func = click.option("--username", prompt="Username", type=str, help="Username")(func)
-    func = click.option("--password", prompt="Password", hide_input=True, type=str, help="password")(func)
-    func = click.option(
-        "--ssh_key", prompt="Add ssh key", default="", type=str, help="Would you like to add an SSH key?"
-    )(func)
-    return func
-
-
-# Main command group
 @click.group(help="Create a new deployment")
-@click.pass_context
-def create(ctx):
+def create():
     pass
 
 
-# Define the inference subcommand
 @create.command(name="inference", help="Create an inference deployment")
-@common_options
-@inference_options
-@click.pass_context
-def create_inference(ctx, **kwargs):
+@click.option("--name", "-n", prompt="Name", help="Name of the deployment")
+@click.option("--image", "-i", prompt="Image", help="Container image")
+@click.option("--hardware", "-h", prompt="Hardware", type=hardware_pricing_tier_instance, help="Hardware instance type")
+@click.option("--port", "-p", prompt="Port", type=int, help="Port to expose")
+@click.option("--env", type=InferenceEnvType(), help="Environment variables in the format KEY=VALUE", multiple=True)
+@click.option("--min_replicas", default="1", prompt="Min replicas", type=click.IntRange(1, 10))
+@click.option("--max_replicas", default="1", prompt="Max replicas", type=click.IntRange(1, 10))
+@click.option("--health", default="/", prompt="Health check", help="Health check endpoint")
+@click.option("--is_private", default=False, type=bool, prompt="Is private?", help="Is private endpoint?")
+@click.option("--timeout", prompt="Max concurrency", default=0, type=int)
+@click.option("--command", type=str, required=False, default=None, help="Define a command for a container")
+@click.option("--command_args", multiple=True, type=str, default=None, help="List of command arguments")
+def create_inference(
+    name, image, hardware, port, env, min_replicas, max_replicas, health, is_private, timeout, command, command_args
+):
     click.echo("Creating inference deployment with the following options:")
 
-    name = kwargs.get("name")
-    image = kwargs.get("image")
-    port = kwargs.get("port")
-    is_private = kwargs.get("is_private")
-    hardware = kwargs.get("hardware")
-    health = kwargs.get("health")
-    min_replicas = kwargs.get("min_replicas")
-    max_replicas = kwargs.get("max_replicas")
-    env = kwargs.get("env")
-    command = kwargs.get("command")
-    command_args = kwargs.get("command_args")
-    timeout = kwargs.get("timeout")
-
-    hw_to_id_map, _ = get_hw_to_id_map()
-
-    # Call the API function for creating infrence deployment
+    # Call the API function for creating inference deployment
     resp = api.create_inference(
         name,
         image,
         port,
         is_private,
-        hw_to_id_map[hardware],
+        hardware_pricing_tier_instance.hw_to_id_map[hardware],
         health,
         min_replicas,
         max_replicas,
@@ -270,25 +212,20 @@ def create_inference(ctx, **kwargs):
     click.echo(f"Inference deployment #{resp.id} created at https://{resp.endpoint_url}/")
 
 
-# Define the compute subcommand
 @create.command(name="compute", help="Create a compute deployment")
-@common_options
-@compute_options
-@click.pass_context
-def create_compute(ctx, **kwargs):
-    click.echo("Creating compute deployment with the following options:")
-
-    name = kwargs.get("name")
-    image = kwargs.get("image")
-    username = kwargs.get("username")
-    password = kwargs.get("password")
-    ssh_key = kwargs.get("ssh_key")
-    hardware = kwargs.get("hardware")
-
-    hw_to_id_map, _ = get_hw_to_id_map()
+@click.option("--name", "-n", prompt="Name", help="Name of the deployment")
+@click.option("--image", "-i", prompt="Image", help="Container image")
+@click.option("--hardware", "-h", prompt="Hardware", type=hardware_pricing_tier_instance, help="Hardware instance type")
+@click.option("--username", prompt="Username", type=str, help="Username")
+@click.option("--password", prompt="Password", hide_input=True, type=str, help="password")
+@click.option("--ssh_key", prompt="Add ssh key", default="", type=str, help="Would you like to add an SSH key?")
+def create_compute(name, image, hardware, username, password, ssh_key):
+    click.echo("Creating inference deployment with the following options:")
 
     # Call the API function for creating infrence deployment
-    resp = api.create_compute(name, image, username, password, ssh_key, hw_to_id_map[hardware])
+    resp = api.create_compute(
+        name, image, username, password, ssh_key, hardware_pricing_tier_instance.hw_to_id_map[hardware]
+    )
 
     click.echo(f"Compute deployment #{resp.id} created at https://{resp.endpoint_url}/")
 
