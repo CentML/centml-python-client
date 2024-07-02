@@ -22,6 +22,13 @@ Once installed, use the centml CLI tool with the following command:
 centml 
 ```
 
+If you want tab completion, run
+```bash
+source centml-complete.bash
+```
+DO THIS ANOTHER WAY TO SUPPORT OTHER SHELL LANGUAGES
+ALSO IT"S TOO SLOW.
+
 ### Compilation
 
 centml-python-client's compiler feature allows you to compile your ML model remotely using the [hidet](https://hidet.org/docs/stable/index.html) backend. \
