@@ -20,7 +20,7 @@ class Runner:
         if not module:
             raise Exception("No module provided")
 
-        self._module: ReferenceType[GraphModule] = ref(module)
+        self._module: GraphModule = module
         self._inputs: List[torch.Tensor] = inputs
         self.compiled_forward_function: Optional[Callable[[torch.Tensor], tuple]] = None
         self.lock = th.Lock()
@@ -36,12 +36,12 @@ class Runner:
             logging.getLogger(__name__).exception(f"Failed to start compilation thread\n{e}")
 
     @property
-    def module(self) -> Optional[GraphModule]:
-        return self._module()
+    def module(self) -> GraphModule:
+        return self._module
 
     @module.deleter
     def module(self):
-        self._module().graph.owning_module = None
+        self._module.graph.owning_module = None
         self._module = None
 
     @property
