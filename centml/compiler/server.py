@@ -42,6 +42,7 @@ def background_compile(model_id: str, tfx_graph, example_inputs):
     except Exception as e:
         logging.getLogger(__name__).exception(f"Compilation: error compiling model. {e}")
         dir_cleanup(model_id)
+        return
 
     try:
         # torch.save's writing is not atomic; it creates an empty zip file then saves the data in multiple calls.
@@ -53,6 +54,7 @@ def background_compile(model_id: str, tfx_graph, example_inputs):
         os.rename(tmp_path, save_path)
     except Exception as e:
         logging.getLogger(__name__).exception(f"Saving graph module failed: {e}")
+        dir_cleanup(model_id)
 
 
 def read_upload_files(model_id: str, model: UploadFile, inputs: UploadFile):
