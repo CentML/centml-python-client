@@ -40,10 +40,18 @@ def get_hw_to_id_map():
 # # Hardware pricing tier that loads choices dynamically
 class HardwarePricingTier(click.ParamType):
     def __init__(self):
-        self.hw_to_id_map, self.id_to_hw_map = get_hw_to_id_map()
-        self.choices = list(self.hw_to_id_map.keys())
+        self.hw_to_id_map = None
+        self.id_to_hw_map = None
+        self.choices = None
+
+    def initialize_maps(self):
+        if self.hw_to_id_map is None or self.id_to_hw_map is None or self.choices is None:
+            self.hw_to_id_map, self.id_to_hw_map = get_hw_to_id_map()
+            self.choices = list(self.hw_to_id_map.keys())
 
     def convert(self, value, param, ctx):
+        # calling initialize_maps to defer api call during initialization phase
+        self.initialize_maps()
         if value not in self.choices:
             self.fail(f"{value} is not a valid choice. Available choices are: {', '.join(self.choices)}", param, ctx)
         return value
