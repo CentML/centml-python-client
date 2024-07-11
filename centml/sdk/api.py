@@ -3,13 +3,13 @@ import platform_api_client
 from platform_api_client.models.deployment_status import DeploymentStatus
 
 from centml.sdk import auth
-from centml.sdk.config import Config
+from centml.sdk.config import settings
 from centml.sdk.utils import client_certs
 
 
 @contextlib.contextmanager
 def get_api():
-    configuration = platform_api_client.Configuration(host=Config.platformapi_url, access_token=auth.get_centml_token())
+    configuration = platform_api_client.Configuration(host=settings.platformapi_url, access_token=auth.get_centml_token())
 
     with platform_api_client.ApiClient(configuration) as api_client:
         api_instance = platform_api_client.EXTERNALApi(api_client)

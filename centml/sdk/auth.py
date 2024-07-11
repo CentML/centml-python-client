@@ -5,11 +5,11 @@ import json
 import requests
 import jwt
 
-from centml.sdk.config import Config
+from centml.sdk.config import settings
 
 
 def refresh_centml_token(refresh_token):
-    api_key = Config.firebase_api_key
+    api_key = settings.firebase_api_key
 
     cred = requests.post(
         f"https://securetoken.googleapis.com/v1/token?key={api_key}",
@@ -18,7 +18,7 @@ def refresh_centml_token(refresh_token):
         timeout=3,
     ).json()
 
-    with open(Config.centml_cred_file, 'w') as f:
+    with open(settings.centml_cred_file, 'w') as f:
         json.dump(cred, f)
 
     return cred
@@ -27,7 +27,7 @@ def refresh_centml_token(refresh_token):
 def store_centml_cred(token_file):
     try:
         with open(token_file, 'r') as f:
-            os.makedirs(Config.centml_config_dir, exist_ok=True)
+            os.makedirs(settings.centml_config_dir, exist_ok=True)
             refresh_token = json.load(f)["refreshToken"]
 
             refresh_centml_token(refresh_token)
@@ -38,8 +38,8 @@ def store_centml_cred(token_file):
 def load_centml_cred():
     cred = None
 
-    if os.path.exists(Config.centml_cred_file):
-        with open(Config.centml_cred_file, 'r') as f:
+    if os.path.exists(settings.centml_cred_file):
+        with open(settings.centml_cred_file, 'r') as f:
             cred = json.load(f)
 
     return cred
@@ -60,5 +60,5 @@ def get_centml_token():
 
 
 def remove_centml_cred():
-    if os.path.exists(Config.centml_cred_file):
-        os.remove(Config.centml_cred_file)
+    if os.path.exists(settings.centml_cred_file):
+        os.remove(settings.centml_cred_file)

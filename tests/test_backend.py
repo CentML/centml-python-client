@@ -132,7 +132,7 @@ class TestWaitForStatus(SetUpGraphModule):
         mock_requests.get.assert_called_once()
         self.assertIn("Status check: request failed, exception from server", str(context.exception))
 
-    @patch("centml.compiler.config.Config.COMPILING_SLEEP_TIME", new=0)
+    @patch("centml.compiler.config.settings.COMPILING_SLEEP_TIME", new=0)
     @patch("centml.compiler.backend.Runner._compile_model")
     @patch("centml.compiler.backend.requests")
     def test_max_tries(self, mock_requests, mock_compile):
@@ -148,7 +148,7 @@ class TestWaitForStatus(SetUpGraphModule):
         self.assertEqual(mock_compile.call_count, config_instance.MAX_RETRIES + 1)
         self.assertIn("Waiting for status: compilation failed too many times", str(context.exception))
 
-    @patch("centml.compiler.config.Config.COMPILING_SLEEP_TIME", new=0)
+    @patch("centml.compiler.config.settings.COMPILING_SLEEP_TIME", new=0)
     @patch("centml.compiler.backend.requests")
     def test_wait_on_compilation(self, mock_requests):
         COMPILATION_STEPS = 10

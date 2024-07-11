@@ -10,3 +10,5 @@ class Config(BaseSettings):
     platformapi_url: str = "https://api.centml.org"
 
     firebase_api_key: str = "AIzaSyBXSNjruNdtypqUt_CPhB8QNl8Djfh5RXI"
+
+settings = Config()
