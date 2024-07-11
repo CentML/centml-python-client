@@ -24,10 +24,10 @@ centml
 
 If you want tab completion, run
 ```bash
-source centml-complete.bash
+source completions/completion.<shell language>
 ```
-DO THIS ANOTHER WAY TO SUPPORT OTHER SHELL LANGUAGES
-ALSO IT"S TOO SLOW.
+Shell language can be: bash, zsh, fish
+(Hint: add `source /path/to/completions/completion.<shell language>` to your `~/.bashrc`, `~/.zshrc` or `~/.config/fish/completions/centml.fish`)
 
 ### Compilation
 
