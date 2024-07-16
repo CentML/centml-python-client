@@ -80,7 +80,7 @@ class Runner:
 
     def _download_model(self, model_id: str):
         download_response = requests.get(
-            url=f"{config_instance.SERVER_URL}/download/{model_id}", timeout=config_instance.TIMEOUT
+            url=f"{config_instance.CENTML_SERVER_URL}/download/{model_id}", timeout=config_instance.TIMEOUT
         )
         if download_response.status_code != HTTPStatus.OK:
             raise Exception(
@@ -104,7 +104,7 @@ class Runner:
 
         with open(self.serialized_model_path, 'rb') as model_file, open(self.serialized_input_path, 'rb') as input_file:
             compile_response = requests.post(
-                url=f"{config_instance.SERVER_URL}/submit/{model_id}",
+                url=f"{config_instance.CENTML_SERVER_URL}/submit/{model_id}",
                 files={"model": model_file, "inputs": input_file},
                 timeout=config_instance.TIMEOUT,
             )
@@ -119,7 +119,7 @@ class Runner:
         while True:
             # get server compilation status
             status_response = requests.get(
-                f"{config_instance.SERVER_URL}/status/{model_id}", timeout=config_instance.TIMEOUT
+                f"{config_instance.CENTML_SERVER_URL}/status/{model_id}", timeout=config_instance.TIMEOUT
             )
             if status_response.status_code != HTTPStatus.OK:
                 raise Exception(

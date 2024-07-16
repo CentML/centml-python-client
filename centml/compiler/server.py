@@ -110,7 +110,7 @@ async def download_handler(model_id: str):
 
 
 def run():
-    parsed = urlparse(config_instance.SERVER_URL)
+    parsed = urlparse(config_instance.CENTML_SERVER_URL)
     uvicorn.run(app, host=parsed.hostname, port=parsed.port)
 
 

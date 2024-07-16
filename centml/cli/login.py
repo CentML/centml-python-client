@@ -11,7 +11,7 @@ def login(token_file):
         auth.store_centml_cred(token_file)
 
     if auth.load_centml_cred():
-        click.echo(f"Authenticating with credentials from {settings.centml_cred_file}\n")
+        click.echo(f"Authenticating with credentials from {settings.CENTML_CRED_FILE_PATH}\n")
         click.echo("Login successful")
     else:
         click.echo("Login with CentML authentication token")
@@ -19,7 +19,7 @@ def login(token_file):
         choice = click.confirm("Do you want to download the token?")
 
         if choice:
-            click.launch(f"{settings.centml_web_url}?isCliAuthenticated=true")
+            click.launch(f"{settings.CENTML_WEB_URL}?isCliAuthenticated=true")
         else:
             click.echo("Login unsuccessful")
 
