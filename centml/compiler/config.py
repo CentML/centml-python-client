@@ -14,7 +14,7 @@ class Config(BaseSettings):
     MAX_RETRIES: int = 3
     COMPILING_SLEEP_TIME: int = 15
 
-    CENTML_CACHE_DIR: str = "~/.cache/centml"
+    CENTML_CACHE_DIR: str = os.path.expanduser("~/.cache/centml")
     BACKEND_BASE_PATH: str = os.path.join(CENTML_CACHE_DIR, "backend")
     SERVER_BASE_PATH: str = os.path.join(CENTML_CACHE_DIR, "server")
 
