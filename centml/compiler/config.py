@@ -32,4 +32,4 @@ class Config(BaseSettings):
     MINIMUM_GZIP_SIZE: int = 1000
 
 
-config_instance = Config()
+settings = Config()

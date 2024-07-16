@@ -11,7 +11,7 @@ from typing import List, Callable, Optional
 import requests
 import torch
 from torch.fx import GraphModule
-from centml.compiler.config import config_instance, CompilationStatus
+from centml.compiler.config import settings, CompilationStatus
 from centml.compiler.utils import get_backend_compiled_forward_path
 
 
@@ -54,13 +54,13 @@ class Runner:
 
     def _serialize_model_and_inputs(self):
         self.serialized_model_dir = TemporaryDirectory()  # pylint: disable=consider-using-with
-        self.serialized_model_path = os.path.join(self.serialized_model_dir.name, config_instance.SERIALIZED_MODEL_FILE)
-        self.serialized_input_path = os.path.join(self.serialized_model_dir.name, config_instance.SERIALIZED_INPUT_FILE)
+        self.serialized_model_path = os.path.join(self.serialized_model_dir.name, settings.SERIALIZED_MODEL_FILE)
+        self.serialized_input_path = os.path.join(self.serialized_model_dir.name, settings.SERIALIZED_INPUT_FILE)
 
         # torch.save saves a zip file full of pickled files with the model's states.
         try:
-            torch.save(self.module, self.serialized_model_path, pickle_protocol=config_instance.PICKLE_PROTOCOL)
-            torch.save(self.inputs, self.serialized_input_path, pickle_protocol=config_instance.PICKLE_PROTOCOL)
+            torch.save(self.module, self.serialized_model_path, pickle_protocol=settings.PICKLE_PROTOCOL)
+            torch.save(self.inputs, self.serialized_input_path, pickle_protocol=settings.PICKLE_PROTOCOL)
         except Exception as e:
             raise Exception(f"Failed to save module or inputs with torch.save: {e}") from e
 
@@ -71,7 +71,7 @@ class Runner:
         sha_hash = hashlib.sha256()
         with open(self.serialized_model_path, "rb") as serialized_model_file:
             # Read in chunks to not load too much into memory
-            for block in iter(lambda: serialized_model_file.read(config_instance.HASH_CHUNK_SIZE), b""):
+            for block in iter(lambda: serialized_model_file.read(settings.HASH_CHUNK_SIZE), b""):
                 sha_hash.update(block)
 
         model_id = sha_hash.hexdigest()
@@ -80,7 +80,7 @@ class Runner:
 
     def _download_model(self, model_id: str):
         download_response = requests.get(
-            url=f"{config_instance.CENTML_SERVER_URL}/download/{model_id}", timeout=config_instance.TIMEOUT
+            url=f"{settings.CENTML_SERVER_URL}/download/{model_id}", timeout=settings.TIMEOUT
         )
         if download_response.status_code != HTTPStatus.OK:
             raise Exception(
@@ -104,9 +104,9 @@ class Runner:
 
         with open(self.serialized_model_path, 'rb') as model_file, open(self.serialized_input_path, 'rb') as input_file:
             compile_response = requests.post(
-                url=f"{config_instance.CENTML_SERVER_URL}/submit/{model_id}",
+                url=f"{settings.CENTML_SERVER_URL}/submit/{model_id}",
                 files={"model": model_file, "inputs": input_file},
-                timeout=config_instance.TIMEOUT,
+                timeout=settings.TIMEOUT,
             )
 
         if compile_response.status_code != HTTPStatus.OK:
@@ -119,7 +119,7 @@ class Runner:
         while True:
             # get server compilation status
             status_response = requests.get(
-                f"{config_instance.CENTML_SERVER_URL}/status/{model_id}", timeout=config_instance.TIMEOUT
+                f"{settings.CENTML_SERVER_URL}/status/{model_id}", timeout=settings.TIMEOUT
             )
             if status_response.status_code != HTTPStatus.OK:
                 raise Exception(
@@ -138,10 +138,10 @@ class Runner:
             else:
                 tries += 1
 
-            if tries > config_instance.MAX_RETRIES:
+            if tries > settings.MAX_RETRIES:
                 raise Exception("Waiting for status: compilation failed too many times.\n")
 
-            time.sleep(config_instance.COMPILING_SLEEP_TIME)
+            time.sleep(settings.COMPILING_SLEEP_TIME)
 
     def remote_compilation(self):
         self._serialize_model_and_inputs()
