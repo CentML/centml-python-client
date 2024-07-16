@@ -118,9 +118,7 @@ class Runner:
         tries = 0
         while True:
             # get server compilation status
-            status_response = requests.get(
-                f"{settings.CENTML_SERVER_URL}/status/{model_id}", timeout=settings.TIMEOUT
-            )
+            status_response = requests.get(f"{settings.CENTML_SERVER_URL}/status/{model_id}", timeout=settings.TIMEOUT)
             if status_response.status_code != HTTPStatus.OK:
                 raise Exception(
                     f"Status check: request failed, exception from server:\n{status_response.json().get('detail')}"
