@@ -110,7 +110,7 @@ class Runner:
             )
         if compile_response.status_code != HTTPStatus.OK:
             raise Exception(
-                f"Compile model: request failed, exception from server:\n{compile_response.json().get('detail')}\n"
+                f"Compile model: request failed, exception from server:\n{compile_response.__dict__}\n"
             )
 
     def _wait_for_status(self, model_id: str) -> bool:
