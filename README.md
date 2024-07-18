@@ -22,6 +22,13 @@ Once installed, use the centml CLI tool with the following command:
 centml 
 ```
 
+If you want tab completion, run
+```bash
+source scripts/completions/completion.<shell language>
+```
+Shell language can be: bash, zsh, fish
+(Hint: add `source /path/to/completions/completion.<shell language>` to your `~/.bashrc`, `~/.zshrc` or `~/.config/fish/completions/centml.fish`)
+
 ### Compilation
 
 centml-python-client's compiler feature allows you to compile your ML model remotely using the [hidet](https://hidet.org/docs/stable/index.html) backend. \
