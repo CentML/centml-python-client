@@ -24,7 +24,7 @@ centml
 
 If you want tab completion, run
 ```bash
-source completions/completion.<shell language>
+source scripts/completions/completion.<shell language>
 ```
 Shell language can be: bash, zsh, fish
 (Hint: add `source /path/to/completions/completion.<shell language>` to your `~/.bashrc`, `~/.zshrc` or `~/.config/fish/completions/centml.fish`)
