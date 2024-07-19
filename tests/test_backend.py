@@ -119,8 +119,10 @@ class TestDownloadModel(SetUpGraphModule):
 
 
 class TestWaitForStatus(SetUpGraphModule):
+    @patch("centml.compiler.config.settings.COMPILING_SLEEP_TIME", new=0)
     @patch("centml.compiler.backend.requests")
-    def test_invalid_status(self, mock_requests):
+    @patch("logging.Logger.exception")
+    def test_invalid_status(self, mock_logger, mock_requests):
         mock_response = MagicMock()
         mock_response.status_code = HTTPStatus.BAD_REQUEST
         mock_requests.get.return_value = mock_response
@@ -129,8 +131,28 @@ class TestWaitForStatus(SetUpGraphModule):
         with self.assertRaises(Exception) as context:
             self.runner._wait_for_status(model_id)
 
-        mock_requests.get.assert_called_once()
-        self.assertIn("Status check: request failed, exception from server", str(context.exception))
+        mock_requests.get.assert_called()
+        assert mock_requests.get.call_count == settings.MAX_RETRIES + 1
+        assert len(mock_logger.call_args_list) == settings.MAX_RETRIES + 1
+        print(mock_logger.call_args_list)
+        assert mock_logger.call_args_list[0].startswith("Status check failed:")
+        assert "Waiting for status: compilation failed too many times.\n" == str(context.exception)
+
+    @patch("centml.compiler.config.settings.COMPILING_SLEEP_TIME", new=0)
+    @patch("centml.compiler.backend.requests")
+    @patch("logging.Logger.exception")
+    def test_exception_in_status(self, mock_logger, mock_requests):
+        exception_message = "Exiting early"
+        mock_requests.get.side_effect = Exception(exception_message)
+
+        model_id = "exception_in_status"
+        with self.assertRaises(Exception) as context:
+            self.runner._wait_for_status(model_id)
+
+        mock_requests.get.assert_called()
+        assert mock_requests.get.call_count == settings.MAX_RETRIES + 1
+        mock_logger.assert_called_with(f"Status check failed:\n{exception_message}")
+        assert str(context.exception) == "Waiting for status: compilation failed too many times.\n"
 
     @patch("centml.compiler.config.settings.COMPILING_SLEEP_TIME", new=0)
     @patch("centml.compiler.backend.Runner._compile_model")
@@ -151,6 +173,7 @@ class TestWaitForStatus(SetUpGraphModule):
     @patch("centml.compiler.config.settings.COMPILING_SLEEP_TIME", new=0)
     @patch("centml.compiler.backend.requests")
     def test_wait_on_compilation(self, mock_requests):
+        # Mock the status check
         COMPILATION_STEPS = 10
         mock_response = MagicMock()
         mock_response.status_code = HTTPStatus.OK
@@ -162,6 +185,34 @@ class TestWaitForStatus(SetUpGraphModule):
         model_id = "compilation_done"
         # _wait_for_status should return True when compilation DONE
         assert self.runner._wait_for_status(model_id)
+
+    @patch("centml.compiler.config.settings.COMPILING_SLEEP_TIME", new=0)
+    @patch("centml.compiler.backend.requests")
+    @patch("centml.compiler.backend.Runner._compile_model")
+    @patch("logging.Logger.exception")
+    def test_exception_in_compilation(self, mock_logger, mock_compile, mock_requests):
+        # Mock the status check
+        mock_response = MagicMock()
+        mock_response.status_code = HTTPStatus.OK
+        mock_response.json.return_value = {"status": CompilationStatus.NOT_FOUND.value}
+        mock_requests.get.return_value = mock_response
+
+        # Mock the compile model function
+        exception_message = "Exiting early"
+        mock_compile.side_effect = Exception(exception_message)
+
+        model_id = "exception_in_compilation"
+        with self.assertRaises(Exception) as context:
+            self.runner._wait_for_status(model_id)
+
+        mock_requests.get.assert_called()
+        assert mock_requests.get.call_count == settings.MAX_RETRIES + 1
+
+        mock_compile.assert_called()
+        assert mock_compile.call_count == settings.MAX_RETRIES + 1
+
+        mock_logger.assert_called_with(f"Submitting compilation failed:\n{exception_message}")
+        assert str(context.exception) == "Waiting for status: compilation failed too many times.\n"
 
     @patch("centml.compiler.backend.requests")
     def test_compilation_done(self, mock_requests):
