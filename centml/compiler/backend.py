@@ -12,10 +12,7 @@ import requests
 import torch
 from torch.fx import GraphModule
 from centml.compiler.config import settings, CompilationStatus
-from centml.compiler.utils import (
-    get_backend_compiled_forward_path, 
-    verify_model_and_input_paths,
-)
+from centml.compiler.utils import get_backend_compiled_forward_path, verify_model_and_input_paths
 
 
 class Runner:
@@ -117,7 +114,9 @@ class Runner:
             # get server compilation status
             status = None
             try:
-                status_response = requests.get(f"{settings.CENTML_SERVER_URL}/status/{model_id}", timeout=settings.TIMEOUT)
+                status_response = requests.get(
+                    f"{settings.CENTML_SERVER_URL}/status/{model_id}", timeout=settings.TIMEOUT
+                )
                 if status_response.status_code != HTTPStatus.OK:
                     raise Exception(
                         f"Status check: request failed, exception from server:\n{status_response.json().get('detail')}"
@@ -140,7 +139,7 @@ class Runner:
             else:
                 tries += 1
 
-            if tries >= settings.MAX_RETRIES:
+            if tries > settings.MAX_RETRIES:
                 raise Exception("Waiting for status: compilation failed too many times.\n")
 
             time.sleep(settings.COMPILING_SLEEP_TIME)

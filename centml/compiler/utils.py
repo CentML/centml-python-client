@@ -27,6 +27,7 @@ def dir_cleanup(model_id: str):
     except Exception as e:
         raise Exception("Failed to delete the directory") from e
 
+
 def verify_model_and_input_paths(model_path, input_path):
     if not model_path or not input_path:
         raise Exception("Model or inputs not serialized")
