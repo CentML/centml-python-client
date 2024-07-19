@@ -84,7 +84,7 @@ class Runner:
         )
         if download_response.status_code != HTTPStatus.OK:
             raise Exception(
-                f"Download: request failed, exception from server:\n{download_response.json().get('detail')}"
+                f"Download: request failed, exception from server:\n{download_response.__dict__}"
             )
         if download_response.content == b"":
             raise Exception("Download: empty response from server")
@@ -124,7 +124,7 @@ class Runner:
                 )
                 if status_response.status_code != HTTPStatus.OK:
                     raise Exception(
-                        f"Status check: request failed, exception from server:\n{status_response.json().get('detail')}"
+                        f"Status check: request failed, exception from server:\n{status_response.__dict__}"
                     )
                 status = status_response.json().get("status")
             except Exception as e:
