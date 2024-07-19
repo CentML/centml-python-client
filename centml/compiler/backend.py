@@ -12,7 +12,10 @@ import requests
 import torch
 from torch.fx import GraphModule
 from centml.compiler.config import settings, CompilationStatus
-from centml.compiler.utils import get_backend_compiled_forward_path
+from centml.compiler.utils import (
+    get_backend_compiled_forward_path, 
+    verify_model_and_input_paths,
+)
 
 
 class Runner:
@@ -95,12 +98,7 @@ class Runner:
 
     def _compile_model(self, model_id: str):
         # The model should have been saved using torch.save when we found the model_id
-        if not self.serialized_model_path or not self.serialized_input_path:
-            raise Exception("Model or inputs not serialized")
-        if not os.path.isfile(self.serialized_model_path):
-            raise Exception(f"Model not saved at path {self.serialized_model_path}")
-        if not os.path.isfile(self.serialized_input_path):
-            raise Exception(f"Inputs not saved at path {self.serialized_input_path}")
+        verify_model_and_input_paths(self.serialized_model_path, self.serialized_input_path)
 
         with open(self.serialized_model_path, 'rb') as model_file, open(self.serialized_input_path, 'rb') as input_file:
             compile_response = requests.post(
@@ -108,7 +106,6 @@ class Runner:
                 files={"model": model_file, "inputs": input_file},
                 timeout=settings.TIMEOUT,
             )
-
         if compile_response.status_code != HTTPStatus.OK:
             raise Exception(
                 f"Compile model: request failed, exception from server:\n{compile_response.json().get('detail')}\n"
@@ -130,9 +127,12 @@ class Runner:
             elif status == CompilationStatus.COMPILING.value:
                 pass
             elif status == CompilationStatus.NOT_FOUND.value:
-                tries += 1
                 logging.info("Submitting model to server for compilation.")
-                self._compile_model(model_id)
+                try:
+                    self._compile_model(model_id)
+                except Exception as e:
+                    logging.info(f"Exception raised:\n{e}")
+                tries += 1
             else:
                 tries += 1
 
