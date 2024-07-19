@@ -26,12 +26,3 @@ def dir_cleanup(model_id: str):
         shutil.rmtree(dir_path)
     except Exception as e:
         raise Exception("Failed to delete the directory") from e
-
-
-def verify_model_and_input_paths(model_path, input_path):
-    if not model_path or not input_path:
-        raise Exception("Model or inputs not serialized")
-    if not os.path.isfile(model_path):
-        raise Exception(f"Model not saved at path {model_path}")
-    if not os.path.isfile(input_path):
-        raise Exception(f"Inputs not saved at path {input_path}")

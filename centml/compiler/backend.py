@@ -12,7 +12,7 @@ import requests
 import torch
 from torch.fx import GraphModule
 from centml.compiler.config import settings, CompilationStatus
-from centml.compiler.utils import get_backend_compiled_forward_path, verify_model_and_input_paths
+from centml.compiler.utils import get_backend_compiled_forward_path
 
 
 class Runner:
@@ -95,7 +95,12 @@ class Runner:
 
     def _compile_model(self, model_id: str):
         # The model should have been saved using torch.save when we found the model_id
-        verify_model_and_input_paths(self.serialized_model_path, self.serialized_input_path)
+        if not self.serialized_model_path or not self.serialized_input_path:
+            raise Exception("Model or inputs not serialized")
+        if not os.path.isfile(self.serialized_model_path):
+            raise Exception(f"Model not saved at path {self.serialized_model_path}")
+        if not os.path.isfile(self.serialized_input_path):
+            raise Exception(f"Inputs not saved at path {self.serialized_input_path}")
 
         with open(self.serialized_model_path, 'rb') as model_file, open(self.serialized_input_path, 'rb') as input_file:
             compile_response = requests.post(
