@@ -79,9 +79,11 @@ class Runner:
         return model_id
 
     def _download_model(self, model_id: str):
+        start_time = time.time()
         download_response = requests.get(
             url=f"{settings.CENTML_SERVER_URL}/download/{model_id}", timeout=settings.CENTML_COMPILER_TIMEOUT
         )
+        logging.info(f"Download call took {time.time() - start_time} seconds")
         if download_response.status_code != HTTPStatus.OK:
             raise Exception(
                 f"Download: request failed, exception from server:\n{download_response.__dict__}"
