@@ -24,7 +24,7 @@ class Runner:
         self._inputs: List[torch.Tensor] = inputs
         self.compiled_forward_function: Optional[Callable[[torch.Tensor], tuple]] = None
         self.lock = th.Lock()
-        self.child_thread = th.Thread(target=self.remote_compilation)
+        self.child_thread = th.Thread(target=self.remote_compilation_starter)
 
         self.serialized_model_dir: Optional[TemporaryDirectory] = None
         self.serialized_model_path: Optional[str] = None
@@ -32,8 +32,8 @@ class Runner:
 
         try:
             self.child_thread.start()
-        except Exception:
-            logging.getLogger(__name__).exception("Remote compilation failed with the following exception: \n")
+        except Exception as e:
+            logging.getLogger(__name__).exception(f"Failed to start compilation thread\n{e}")
 
     @property
     def module(self) -> Optional[GraphModule]:
@@ -108,7 +108,6 @@ class Runner:
                 files={"model": model_file, "inputs": input_file},
                 timeout=settings.TIMEOUT,
             )
-
         if compile_response.status_code != HTTPStatus.OK:
             raise Exception(
                 f"Compile model: request failed, exception from server:\n{compile_response.json().get('detail')}\n"
@@ -118,21 +117,30 @@ class Runner:
         tries = 0
         while True:
             # get server compilation status
-            status_response = requests.get(f"{settings.CENTML_SERVER_URL}/status/{model_id}", timeout=settings.TIMEOUT)
-            if status_response.status_code != HTTPStatus.OK:
-                raise Exception(
-                    f"Status check: request failed, exception from server:\n{status_response.json().get('detail')}"
+            status = None
+            try:
+                status_response = requests.get(
+                    f"{settings.CENTML_SERVER_URL}/status/{model_id}", timeout=settings.TIMEOUT
                 )
-            status = status_response.json().get("status")
+                if status_response.status_code != HTTPStatus.OK:
+                    raise Exception(
+                        f"Status check: request failed, exception from server:\n{status_response.json().get('detail')}"
+                    )
+                status = status_response.json().get("status")
+            except Exception as e:
+                logging.getLogger(__name__).exception(f"Status check failed:\n{e}")
 
             if status == CompilationStatus.DONE.value:
                 return True
             elif status == CompilationStatus.COMPILING.value:
                 pass
             elif status == CompilationStatus.NOT_FOUND.value:
-                tries += 1
                 logging.info("Submitting model to server for compilation.")
-                self._compile_model(model_id)
+                try:
+                    self._compile_model(model_id)
+                except Exception as e:
+                    logging.getLogger(__name__).exception(f"Submitting compilation failed:\n{e}")
+                tries += 1
             else:
                 tries += 1
 
@@ -140,6 +148,12 @@ class Runner:
                 raise Exception("Waiting for status: compilation failed too many times.\n")
 
             time.sleep(settings.COMPILING_SLEEP_TIME)
+
+    def remote_compilation_starter(self):
+        try:
+            self.remote_compilation()
+        except Exception as e:
+            logging.getLogger(__name__).exception(f"Compilation thread failed:\n{e}")
 
     def remote_compilation(self):
         self._serialize_model_and_inputs()
