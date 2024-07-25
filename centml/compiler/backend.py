@@ -122,7 +122,7 @@ class Runner:
             status = None
             try:
                 status_response = requests.get(
-                    f"{settings.CENTML_SERVER_URL}/status/{model_id}", timeout=settings.TIMEOUT
+                    f"{settings.CENTML_SERVER_URL}/status/{model_id}", timeout=settings.CENTML_COMPILER_TIMEOUT
                 )
                 if status_response.status_code != HTTPStatus.OK:
                     raise Exception(
