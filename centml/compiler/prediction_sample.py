@@ -1,5 +1,5 @@
 import torch
-import centml.compile 
+import centml.compile
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import time
 
@@ -12,12 +12,7 @@ model = AutoModelForCausalLM.from_pretrained(model_name)
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model.eval()
 
-inputs = torch.randint(
-    low=0,
-    high=tokenizer.vocab_size,
-    size=(1, 512),
-    dtype=torch.int64,
-    device='cpu')
+inputs = torch.randint(low=0, high=tokenizer.vocab_size, size=(1, 512), dtype=torch.int64, device='cpu')
 
 compiled_model = centml.compile(model)
 output = compiled_model(inputs)

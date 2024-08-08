@@ -5,6 +5,7 @@ import csv
 import ast
 from sklearn.neighbors import KDTree
 
+
 class KDTreeWithValues:
     def __init__(self, points=None, values=None):
         self.points = points if points else []
@@ -34,7 +35,7 @@ class MockDB:
     def add_from_db(self, key, points, times):
         if key not in self.db:
             self.db[key] = {}
-        self.db[key]= KDTreeWithValues(points, times)
+        self.db[key] = KDTreeWithValues(points, times)
 
     def get(self, key, inp):
         if key not in self.db:
@@ -43,6 +44,7 @@ class MockDB:
 
         dist, val = self.db[key].query(inp)
         return val
+
 
 def populate_db(csv_file, db):
     with open(csv_file, newline='') as f:
@@ -56,13 +58,13 @@ def populate_db(csv_file, db):
             except ValueError as e:
                 print(f"Error parsing row: {row}")
                 print(e)
-                
+
+
 db = MockDB()
 
 data = './sample_data.csv'
 
 populate_db(data, db)
-
 
 
 class Profiler:
@@ -74,14 +76,14 @@ class Profiler:
 
     def propagate(self, *args):
         args_iter = iter(args)
-        env : Dict[str, Node] = {}
+        env: Dict[str, Node] = {}
         global db
         global count
 
         def load_arg(a):
             return torch.fx.graph.map_arg(a, lambda n: env[n.name])
 
-        def fetch_attr(target : str):
+        def fetch_attr(target: str):
             target_atoms = target.split('.')
             attr_itr = self.mod
             for i, atom in enumerate(target_atoms):
@@ -92,7 +94,7 @@ class Profiler:
 
         def get_flattened_shapes(args):
             flattened_shapes = []
-            
+
             for arg in args:
                 if isinstance(arg, (tuple, list)):
                     if len(arg) > 0 and isinstance(arg[0], (tuple, list, torch.Tensor)):
@@ -108,7 +110,7 @@ class Profiler:
                 else:
                     shape = [1]
                 flattened_shapes.extend(shape)
-            
+
             if len(flattened_shapes) < 2:
                 flattened_shapes.extend([1])
 
@@ -124,7 +126,7 @@ class Profiler:
                 kwargs = load_arg(node.kwargs)
                 result = node.target(*args, **kwargs)
                 inp_shapes = get_flattened_shapes(args)
-                key = (node.target.__name__, len(inp_shapes), 'A10G', 'f16') 
+                key = (node.target.__name__, len(inp_shapes), 'A10G', 'f16')
                 t = db.get(key, inp_shapes)
                 if t is not None:
                     self.total_time += t

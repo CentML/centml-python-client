@@ -12,12 +12,16 @@ from centml.compiler.config import settings
 
 start_http_server(8000)
 
-def compile(model: Optional[Callable] = None, *,
-            fullgraph: builtins.bool = False,
-            dynamic: Optional[builtins.bool] = None,
-            mode: Union[str, None] = None,
-            options: Optional[Dict[str, Union[str, builtins.int, builtins.bool]]] = None,
-            disable: builtins.bool = False) -> Callable:
+
+def compile(
+    model: Optional[Callable] = None,
+    *,
+    fullgraph: builtins.bool = False,
+    dynamic: Optional[builtins.bool] = None,
+    mode: Union[str, None] = None,
+    options: Optional[Dict[str, Union[str, builtins.int, builtins.bool]]] = None,
+    disable: builtins.bool = False
+) -> Callable:
 
     def centml_prediction_backend(gm: torch.fx.GraphModule, example_inputs: List[torch.Tensor]):
 
@@ -27,8 +31,8 @@ def compile(model: Optional[Callable] = None, *,
             with fake_mode:
                 profiler = Profiler(gm)
                 out, t = profiler.propagate(*fake_args)
-            
-            #Increment the prometheus metric
+
+            # Increment the prometheus metric
             time_metric.inc(t)
 
             return out
@@ -36,18 +40,34 @@ def compile(model: Optional[Callable] = None, *,
         return forward
 
     if not settings.PREDICTING:
-        #Return the remote-compiled model as normal
-        compiled_model = torch.compile(model, backend=centml_dynamo_backend, fullgraph=fullgraph, dynamic=dynamic, mode=mode, options=options, disable=disable)
+        # Return the remote-compiled model as normal
+        compiled_model = torch.compile(
+            model,
+            backend=centml_dynamo_backend,
+            fullgraph=fullgraph,
+            dynamic=dynamic,
+            mode=mode,
+            options=options,
+            disable=disable,
+        )
         return compiled_model
 
-    compiled_model = torch.compile(model, backend=centml_prediction_backend, fullgraph=fullgraph, dynamic=dynamic, mode=mode, options=options, disable=disable)
+    compiled_model = torch.compile(
+        model,
+        backend=centml_prediction_backend,
+        fullgraph=fullgraph,
+        dynamic=dynamic,
+        mode=mode,
+        options=options,
+        disable=disable,
+    )
 
     def centml_wrapper(*args, **kwargs):
         out = compiled_model(*args, **kwargs)
-        #At this point the metric can be reset to 0
-        #Need to do something with its value before resetting it
+        # At this point the metric can be reset to 0
+        # Need to do something with its value before resetting it
         time_metric.set(0)
-        
+
         return out
 
     return centml_wrapper
