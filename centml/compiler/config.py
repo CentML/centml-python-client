@@ -31,5 +31,7 @@ class Config(BaseSettings):
     # If the server response is smaller than this, don't gzip it
     MINIMUM_GZIP_SIZE: int = 1000
 
+    PREDICTING: bool = False
+
 
 settings = Config()
