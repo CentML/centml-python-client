@@ -30,7 +30,7 @@ class KDTreeWithValues:
         return dist[0][0], self.values[idx[0][0]]
 
 
-class MockDB:
+class TreeDB:
     def __init__(self):
         self.db = {}
 
@@ -44,11 +44,11 @@ class MockDB:
             print("Key not found")
             return None
 
-        dist, val = self.db[key].query(inp)
+        _, val = self.db[key].query(inp)
         return val
 
 
-def populate_db(csv_file, db):
+def populate_db(csv_file, database):
     with open(csv_file, newline='') as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -62,11 +62,7 @@ def populate_db(csv_file, db):
                 print(e)
 
 
-db = MockDB()
-
 data = './sample_data.csv'
-
-populate_db(data, db)
 
 
 class Profiler:
@@ -75,12 +71,12 @@ class Profiler:
         self.graph = mod.graph
         self.modules = dict(self.mod.named_modules())
         self.total_time = 0
+        self.TreeDB = TreeDB()
+        populate_db(data, self.TreeDB)
 
     def propagate(self, *args):
         args_iter = iter(args)
         env: Dict[str, Node] = {}
-        global db
-        global count
 
         def load_arg(a):
             return torch.fx.graph.map_arg(a, lambda n: env[n.name])
@@ -119,6 +115,7 @@ class Profiler:
             return flattened_shapes
 
         for node in self.graph.nodes:
+            result = None
             if node.op == 'placeholder':
                 result = next(args_iter)
             elif node.op == 'get_attr':
@@ -129,7 +126,7 @@ class Profiler:
                 result = node.target(*args, **kwargs)
                 inp_shapes = get_flattened_shapes(args)
                 key = (node.target.__name__, len(inp_shapes), 'A10G', 'f16')
-                t = db.get(key, inp_shapes)
+                t = self.TreeDB.get(key, inp_shapes)
                 if t is not None:
                     self.total_time += t
             elif node.op == 'call_method':
@@ -138,7 +135,7 @@ class Profiler:
                 result = getattr(self_obj, node.target)(*args, **kwargs)
                 inp_shapes = get_flattened_shapes(args)
                 key = (node.target, len(inp_shapes), 'A10G', 'f16')
-                t = db.get(key, inp_shapes)
+                t = self.TreeDB.get(key, inp_shapes)
                 if t is not None:
                     self.total_time += t
             elif node.op == 'call_module':
@@ -152,7 +149,7 @@ class Profiler:
                 flattened_params = [dim for shape in param_shapes for dim in shape]
                 inp_shapes = inp_shapes + flattened_params
                 key = (mod._get_name(), len(inp_shapes), 'A10G', 'f16')
-                t = db.get(key, inp_shapes)
+                t = self.TreeDB.get(key, inp_shapes)
                 if t is not None:
                     self.total_time += t
             elif node.op == 'output':

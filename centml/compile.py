@@ -5,7 +5,6 @@ import torch
 from prometheus_client import start_http_server
 from torch._subclasses.fake_tensor import FakeTensorMode
 
-import centml.compiler
 from centml.compiler.backend import centml_dynamo_backend
 from centml.compiler.config import settings
 from centml.compiler.metrics import time_metric
