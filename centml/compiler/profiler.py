@@ -56,7 +56,7 @@ def populate_db(csv_file, database):
                 key = (row['op'], int(row['dim']), row['gpu'], row['dtype'])
                 points = ast.literal_eval(row['points'])
                 values = ast.literal_eval(row['values'])
-                db.add_from_db(key, points, values)
+                database.add_from_db(key, points, values)
             except ValueError as e:
                 print(f"Error parsing row: {row}")
                 print(e)
