@@ -1,7 +1,9 @@
-import torch
-import centml.compile
-from transformers import AutoModelForCausalLM, AutoTokenizer
 import time
+
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+import centml.compile
 
 torch.set_default_device('cpu')
 torch.set_float32_matmul_precision('high')

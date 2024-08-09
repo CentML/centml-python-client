@@ -1,14 +1,15 @@
-import torch
-from typing import Optional, Callable, Dict, Union, List
 import builtins
-import centml.compiler
-from centml.compiler.metrics import time_metric
-from centml.compiler.backend import centml_dynamo_backend
-from torch._subclasses.fake_tensor import FakeTensorMode
-from centml.compiler.profiler import Profiler
+from typing import Callable, Dict, List, Optional, Union
+
+import torch
 from prometheus_client import start_http_server
-from centml.compiler.metrics import time_metric
+from torch._subclasses.fake_tensor import FakeTensorMode
+
+import centml.compiler
+from centml.compiler.backend import centml_dynamo_backend
 from centml.compiler.config import settings
+from centml.compiler.metrics import time_metric
+from centml.compiler.profiler import Profiler
 
 start_http_server(8000)
 

@@ -1,9 +1,11 @@
+import ast
+import csv
+from typing import Dict
+
 import torch
 import torch.fx
-from torch.fx.node import Node
-import csv
-import ast
 from sklearn.neighbors import KDTree
+from torch.fx.node import Node
 
 
 class KDTreeWithValues:
@@ -104,7 +106,7 @@ class Profiler:
                 elif isinstance(arg, torch.Tensor):
                     shape = list(arg.shape)
                 elif isinstance(arg, bool):
-                    shape = [1 if arg == True else 0]
+                    shape = [1 if arg is True else 0]
                 elif isinstance(arg, (int, float)):
                     shape = [arg]
                 else:
