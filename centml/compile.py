@@ -6,8 +6,8 @@ from prometheus_client import start_http_server
 from torch._subclasses.fake_tensor import FakeTensorMode
 
 from centml.compiler.backend import centml_dynamo_backend
-from centml.compiler.config import settings
-from centml.compiler.metrics import time_metric
+from centml.compiler.config import OperationMode, settings
+from centml.compiler.metrics import A10_time
 from centml.compiler.profiler import Profiler
 
 start_http_server(8000)
@@ -33,13 +33,13 @@ def compile(
                 out, t = profiler.propagate(*fake_args)
 
             # Increment the prometheus metric
-            time_metric.inc(t)
+            A10_time.inc(t)
 
             return out
 
         return forward
 
-    if not settings.PREDICTING:
+    if settings.MODE == OperationMode.REMOTE_COMPILATION:
         # Return the remote-compiled model as normal
         compiled_model = torch.compile(
             model,
@@ -66,7 +66,7 @@ def compile(
         out = compiled_model(*args, **kwargs)
         # At this point the metric can be reset to 0
         # Need to do something with its value before resetting it
-        time_metric.set(0)
+        A10_time.set(0)
 
         return out
 

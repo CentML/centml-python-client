@@ -1,3 +1,3 @@
 from prometheus_client import Gauge
 
-time_metric = Gauge('time_metric', 'Sum of the kernel execution times')
+A10_time = Gauge('A10_time', 'Sum of the kernel execution times on A10')

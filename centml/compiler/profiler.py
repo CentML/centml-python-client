@@ -1,11 +1,14 @@
 import ast
 import csv
+import logging
 from typing import Dict
 
 import torch
 import torch.fx
 from sklearn.neighbors import KDTree  # type: ignore
 from torch.fx.node import Node
+
+from centml.compiler.config import settings
 
 
 class KDTreeWithValues:
@@ -41,7 +44,7 @@ class TreeDB:
 
     def get(self, key, inp):
         if key not in self.db:
-            print("Key not found")
+            logging.getLogger(__name__).warning(f"Key {key} not found in database")
             return None
 
         _, val = self.db[key].query(inp)
@@ -58,11 +61,7 @@ def populate_db(csv_file, database):
                 values = ast.literal_eval(row['values'])
                 database.add_from_db(key, points, values)
             except ValueError as e:
-                print(f"Error parsing row: {row}")
-                print(e)
-
-
-data = './sample_data.csv'
+                logging.getLogger(__name__).exception(f"Error parsing row: {row}\n{e}")
 
 
 class Profiler:
@@ -72,7 +71,7 @@ class Profiler:
         self.modules = dict(self.mod.named_modules())
         self.total_time = 0
         self.TreeDB = TreeDB()
-        populate_db(data, self.TreeDB)
+        populate_db(settings.PREDICTION_DATA_DIR, self.TreeDB)
 
     def propagate(self, *args):
         args_iter = iter(args)
