@@ -7,10 +7,11 @@ from torch._subclasses.fake_tensor import FakeTensorMode
 
 from centml.compiler.backend import centml_dynamo_backend
 from centml.compiler.config import OperationMode, settings
-from centml.compiler.metrics import A10_time
+from centml.compiler.metrics import A10_time_metric
 from centml.compiler.profiler import Profiler
 
 start_http_server(8000)
+A10_time = 0
 
 
 def compile(
@@ -24,8 +25,8 @@ def compile(
 ) -> Callable:
 
     def centml_prediction_backend(gm: torch.fx.GraphModule, example_inputs: List[torch.Tensor]):
-
         def forward(*args):
+            global A10_time
             fake_mode = FakeTensorMode(allow_non_fake_inputs=True)
             fake_args = [fake_mode.from_tensor(arg) for arg in args]
             with fake_mode:
@@ -33,8 +34,7 @@ def compile(
                 out, t = profiler.propagate(*fake_args)
 
             # Increment the prometheus metric
-            A10_time.inc(t)
-
+            A10_time += t
             return out
 
         return forward
@@ -63,10 +63,13 @@ def compile(
     )
 
     def centml_wrapper(*args, **kwargs):
+        global A10_time
         out = compiled_model(*args, **kwargs)
+        A10_time_metric.set(A10_time)
         # At this point the metric can be reset to 0
         # Need to do something with its value before resetting it
-        A10_time.set(0)
+        A10_time_metric.set(0)
+        A10_time = 0
 
         return out
 
