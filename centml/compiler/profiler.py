@@ -137,7 +137,7 @@ class Profiler:
                     shape = list(arg.shape)
                     dtypes.append(dtypeMap[arg.dtype])
                 elif isinstance(arg, bool):
-                    shape = [1 if arg == True else 0]
+                    shape = [1 if arg is True else 0]
                 elif isinstance(arg, (int, float)):
                     shape = [arg]
                 else:
