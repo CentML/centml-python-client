@@ -56,7 +56,7 @@ def populate_db(csv_file, database):
         reader = csv.DictReader(f)
         for row in reader:
             try:
-                key = (row['op'], int(row['dim']), row['gpu'], row['dtype'])
+                key = (row['op'], int(row['dim']), row['inp_dtypes'], row['out_dtypes'], row['gpu'])
                 points = ast.literal_eval(row['points'])
                 values = ast.literal_eval(row['values'])
                 database.add_from_db(key, points, values)
@@ -77,6 +77,38 @@ class Profiler:
         args_iter = iter(args)
         env: Dict[str, Node] = {}
 
+        dtypeMap = {
+            torch.float32: 'f32',
+            torch.float: 'f32',
+            torch.float64: 'f64',
+            torch.double: 'f64',
+            torch.float16: 'f16',
+            torch.half: 'f16',
+            torch.bfloat16: 'bf16',
+            torch.complex32: 'c32',
+            torch.chalf: 'c32',
+            torch.complex64: 'c64',
+            torch.cfloat: 'c64',
+            torch.complex128: 'c128',
+            torch.cdouble: 'c128',
+            torch.uint8: 'u8',
+            torch.uint16: 'u16',
+            torch.uint32: 'u32',
+            torch.uint64: 'u64',
+            torch.int8: 'i8',
+            torch.int16: 'i16',
+            torch.short: 'i16',
+            torch.int32: 'i32',
+            torch.int: 'i32',
+            torch.int64: 'i64',
+            torch.long: 'i64',
+            torch.bool: 'bool',
+            torch.quint8: 'qu8',
+            torch.qint8: 'qi8',
+            torch.qint32: 'qi32',
+            torch.quint4x2: 'qu4x2',
+        }
+
         def load_arg(a):
             return torch.fx.graph.map_arg(a, lambda n: env[n.name])
 
@@ -91,17 +123,21 @@ class Profiler:
 
         def get_flattened_shapes(args):
             flattened_shapes = []
+            dtypes = []
 
             for arg in args:
                 if isinstance(arg, (tuple, list)):
                     if len(arg) > 0 and isinstance(arg[0], (tuple, list, torch.Tensor)):
-                        shape = [len(arg)] + get_flattened_shapes(arg[0])
+                        nested_shapes, nested_dtypes = get_flattened_shapes(arg[0])
+                        shape = [len(arg)] + nested_shapes
+                        dtypes.extend(nested_dtypes.split(','))
                     else:
                         shape = [len(arg)]
                 elif isinstance(arg, torch.Tensor):
                     shape = list(arg.shape)
+                    dtypes.append(dtypeMap[arg.dtype])
                 elif isinstance(arg, bool):
-                    shape = [1 if arg is True else 0]
+                    shape = [1 if arg == True else 0]
                 elif isinstance(arg, (int, float)):
                     shape = [arg]
                 else:
@@ -111,7 +147,26 @@ class Profiler:
             if len(flattened_shapes) < 2:
                 flattened_shapes.extend([1])
 
-            return flattened_shapes
+            input_dtypes = ','.join(dtypes) if dtypes else 'N/A'
+
+            return flattened_shapes, input_dtypes
+
+        def get_output_dtypes(results):
+            def find_dtypes(results):
+                if isinstance(results, torch.Tensor):
+                    return [dtypeMap[results.dtype]]
+                elif isinstance(results, (list, tuple)):
+                    dtypes = []
+                    for item in results:
+                        dtypes.extend(find_dtypes(item))
+                    return dtypes
+                return []
+
+            types = find_dtypes(results)
+
+            if types:
+                return ','.join(types)
+            return 'N/A'
 
         for node in self.graph.nodes:
             result = None
@@ -123,8 +178,11 @@ class Profiler:
                 args = load_arg(node.args)
                 kwargs = load_arg(node.kwargs)
                 result = node.target(*args, **kwargs)
-                inp_shapes = get_flattened_shapes(args)
-                key = (node.target.__name__, len(inp_shapes), 'A10G', 'f16')
+                inp_shapes, input_dtypes = get_flattened_shapes(args)
+                output_dtypes = get_output_dtypes(result)
+
+                key = (node.target.__name__, len(inp_shapes), input_dtypes, output_dtypes, 'A10G')
+
                 t = self.TreeDB.get(key, inp_shapes)
                 if t is not None:
                     self.total_time += t
@@ -132,8 +190,11 @@ class Profiler:
                 self_obj, *args = load_arg(node.args)
                 kwargs = load_arg(node.kwargs)
                 result = getattr(self_obj, node.target)(*args, **kwargs)
-                inp_shapes = get_flattened_shapes(args)
-                key = (node.target, len(inp_shapes), 'A10G', 'f16')
+                inp_shapes, input_dtypes = get_flattened_shapes(args)
+                output_dtypes = get_output_dtypes(result)
+
+                key = (node.target, len(inp_shapes), input_dtypes, output_dtypes, 'A10G')
+
                 t = self.TreeDB.get(key, inp_shapes)
                 if t is not None:
                     self.total_time += t
@@ -143,11 +204,15 @@ class Profiler:
                 kwargs = load_arg(node.kwargs)
                 result = mod(*args, **kwargs)
 
-                inp_shapes = get_flattened_shapes(args)
+                inp_shapes, input_dtypes = get_flattened_shapes(args)
                 param_shapes = [param.shape for name, param in mod.named_parameters()]
+                param_dtypes = [dtypeMap[param.dtype] for name, param in mod.named_parameters()]
                 flattened_params = [dim for shape in param_shapes for dim in shape]
                 inp_shapes = inp_shapes + flattened_params
-                key = (mod._get_name(), len(inp_shapes), 'A10G', 'f16')
+                input_dtypes = input_dtypes + ',' + ','.join(param_dtypes)
+                output_dtypes = get_output_dtypes(result)
+
+                key = (mod._get_name(), len(inp_shapes), input_dtypes, output_dtypes, 'A10G')
                 t = self.TreeDB.get(key, inp_shapes)
                 if t is not None:
                     self.total_time += t
