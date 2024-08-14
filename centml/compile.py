@@ -51,26 +51,26 @@ def compile(
             disable=disable,
         )
         return compiled_model
+    else:
+        compiled_model = torch.compile(
+            model,
+            backend=centml_prediction_backend,
+            fullgraph=fullgraph,
+            dynamic=dynamic,
+            mode=mode,
+            options=options,
+            disable=disable,
+        )
 
-    compiled_model = torch.compile(
-        model,
-        backend=centml_prediction_backend,
-        fullgraph=fullgraph,
-        dynamic=dynamic,
-        mode=mode,
-        options=options,
-        disable=disable,
-    )
+        def centml_wrapper(*args, **kwargs):
+            global A10_time
+            out = compiled_model(*args, **kwargs)
+            A10_time_metric.set(A10_time)
+            # At this point the metric can be reset to 0
+            # Need to do something with its value before resetting it
+            A10_time_metric.set(0)
+            A10_time = 0
 
-    def centml_wrapper(*args, **kwargs):
-        global A10_time
-        out = compiled_model(*args, **kwargs)
-        A10_time_metric.set(A10_time)
-        # At this point the metric can be reset to 0
-        # Need to do something with its value before resetting it
-        A10_time_metric.set(0)
-        A10_time = 0
+            return out
 
-        return out
-
-    return centml_wrapper
+        return centml_wrapper
