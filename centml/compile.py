@@ -90,7 +90,7 @@ def compile(
             # TODO: Do something with metrics
 
             # Reset the metrics after the prediction
-            for gpu, metric in GPU_METRICS.items():
+            for metric in GPU_METRICS.values():
                 metric.reset()
 
             return out
