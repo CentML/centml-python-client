@@ -39,5 +39,7 @@ class Config(BaseSettings):
     MODE: OperationMode = OperationMode.PREDICTION
     PREDICTION_DATA_DIR: str = os.path.join(os.path.dirname(__file__), 'sample_data.csv')
 
+    PREDICTION_GPUS: str = "A10G,A100SXM440GB"
+
 
 settings = Config()

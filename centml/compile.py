@@ -2,16 +2,33 @@ import builtins
 from typing import Callable, Dict, List, Optional, Union
 
 import torch
-from prometheus_client import start_http_server
+from prometheus_client import Gauge, start_http_server
 from torch._subclasses.fake_tensor import FakeTensorMode
 
 from centml.compiler.backend import centml_dynamo_backend
 from centml.compiler.config import OperationMode, settings
-from centml.compiler.metrics import A10_time_metric
 from centml.compiler.profiler import Profiler
 
 start_http_server(8000)
-A10_time = 0
+
+
+class Metric:
+    def __init__(self, gpu_name):
+        self._time = 0
+        self._metric = Gauge(f'{gpu_name}_metric', f'Sum of the kernel execution times on {gpu_name}')
+
+    def increment(self, value):
+        self._time += value
+
+    def update_metric(self):
+        self._metric.set(self._time)
+
+    def reset(self):
+        self._time = 0
+        self._metric.set(0)
+
+    def get(self):
+        return self._time
 
 
 def compile(
@@ -21,20 +38,20 @@ def compile(
     dynamic: Optional[builtins.bool] = None,
     mode: Union[str, None] = None,
     options: Optional[Dict[str, Union[str, builtins.int, builtins.bool]]] = None,
-    disable: builtins.bool = False
+    disable: builtins.bool = False,
 ) -> Callable:
+
+    GPU_METRICS = {gpu: Metric(gpu) for gpu in settings.PREDICTION_GPUS.split(',')}
 
     def centml_prediction_backend(gm: torch.fx.GraphModule, example_inputs: List[torch.Tensor]):
         def forward(*args):
-            global A10_time
             fake_mode = FakeTensorMode(allow_non_fake_inputs=True)
             fake_args = [fake_mode.from_tensor(arg) for arg in args]
             with fake_mode:
-                profiler = Profiler(gm)
-                out, t = profiler.propagate(*fake_args)
-
-            # Increment the prometheus metric
-            A10_time += t
+                for gpu, metric in GPU_METRICS.items():
+                    profiler = Profiler(gm, gpu)
+                    out, t = profiler.propagate(*fake_args)
+                    metric.increment(t)
             return out
 
         return forward
@@ -65,11 +82,12 @@ def compile(
         def centml_wrapper(*args, **kwargs):
             global A10_time
             out = compiled_model(*args, **kwargs)
-            A10_time_metric.set(A10_time)
-            # At this point the metric can be reset to 0
-            # Need to do something with its value before resetting it
-            A10_time_metric.set(0)
-            A10_time = 0
+            for gpu, metric in GPU_METRICS.items():
+                metric.update_metric()
+                print(metric.get())
+
+            for gpu, metric in GPU_METRICS.items():
+                metric.reset()
 
             return out
 

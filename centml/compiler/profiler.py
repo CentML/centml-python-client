@@ -65,12 +65,13 @@ def populate_db(csv_file, database):
 
 
 class Profiler:
-    def __init__(self, mod):
+    def __init__(self, mod, gpu):
         self.mod = mod
         self.graph = mod.graph
         self.modules = dict(self.mod.named_modules())
         self.total_time = 0
         self.TreeDB = TreeDB()
+        self.gpu = gpu
         populate_db(settings.PREDICTION_DATA_DIR, self.TreeDB)
 
     def propagate(self, *args):
@@ -178,10 +179,11 @@ class Profiler:
                 args = load_arg(node.args)
                 kwargs = load_arg(node.kwargs)
                 result = node.target(*args, **kwargs)
+
                 inp_shapes, input_dtypes = get_flattened_shapes(args)
                 output_dtypes = get_output_dtypes(result)
 
-                key = (node.target.__name__, len(inp_shapes), input_dtypes, output_dtypes, 'A10G')
+                key = (node.target.__name__, len(inp_shapes), input_dtypes, output_dtypes, self.gpu)
 
                 t = self.TreeDB.get(key, inp_shapes)
                 if t is not None:
@@ -190,10 +192,11 @@ class Profiler:
                 self_obj, *args = load_arg(node.args)
                 kwargs = load_arg(node.kwargs)
                 result = getattr(self_obj, node.target)(*args, **kwargs)
+
                 inp_shapes, input_dtypes = get_flattened_shapes(args)
                 output_dtypes = get_output_dtypes(result)
 
-                key = (node.target, len(inp_shapes), input_dtypes, output_dtypes, 'A10G')
+                key = (node.target, len(inp_shapes), input_dtypes, output_dtypes, self.gpu)
 
                 t = self.TreeDB.get(key, inp_shapes)
                 if t is not None:
@@ -212,7 +215,7 @@ class Profiler:
                 input_dtypes = input_dtypes + ',' + ','.join(param_dtypes)
                 output_dtypes = get_output_dtypes(result)
 
-                key = (mod._get_name(), len(inp_shapes), input_dtypes, output_dtypes, 'A10G')
+                key = (mod._get_name(), len(inp_shapes), input_dtypes, output_dtypes, self.gpu)
                 t = self.TreeDB.get(key, inp_shapes)
                 if t is not None:
                     self.total_time += t
