@@ -41,6 +41,7 @@ def compile(
     disable: builtins.bool = False,
 ) -> Callable:
 
+    # Create a metric for each GPU
     GPU_METRICS = {gpu: Metric(gpu) for gpu in settings.PREDICTION_GPUS.split(',')}
 
     def centml_prediction_backend(gm: torch.fx.GraphModule, example_inputs: List[torch.Tensor]):
@@ -69,6 +70,7 @@ def compile(
         )
         return compiled_model
     else:
+        # Proceed with production workflow
         compiled_model = torch.compile(
             model,
             backend=centml_prediction_backend,
@@ -80,12 +82,14 @@ def compile(
         )
 
         def centml_wrapper(*args, **kwargs):
-            global A10_time
             out = compiled_model(*args, **kwargs)
-            for gpu, metric in GPU_METRICS.items():
+            # Update the prometheus metrics with final values
+            for metric in GPU_METRICS.values():
                 metric.update_metric()
-                print(metric.get())
 
+            # TODO: Do something with metrics
+
+            # Reset the metrics after the prediction
             for gpu, metric in GPU_METRICS.items():
                 metric.reset()
 
