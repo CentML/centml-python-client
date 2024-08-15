@@ -2,7 +2,6 @@ import ast
 import csv
 import logging
 from typing import Dict
-
 import torch
 import torch.fx
 from sklearn.neighbors import KDTree  # type: ignore
@@ -72,7 +71,7 @@ class Profiler:
         self.total_time = 0
         self.TreeDB = TreeDB()
         self.gpu = gpu
-        populate_db(settings.PREDICTION_DATA_DIR, self.TreeDB)
+        populate_db(settings.PREDICTION_DATA_FILE, self.TreeDB)
 
     def propagate(self, *args):
         args_iter = iter(args)
