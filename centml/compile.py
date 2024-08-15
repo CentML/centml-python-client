@@ -27,7 +27,7 @@ class Metric:
         self._time = 0
         self._metric.set(0)
 
-    def get(self):
+    def get_value(self):
         return self._time
 
 
