@@ -27,6 +27,7 @@ class Gauge_Metric:
         self._gauge.labels(gpu=gpu_name, time_stamp=time.time()).set(self._values[gpu_name])
         self._values[gpu_name] = 0
 
+
 def compile(
     model: Optional[Callable] = None,
     *,
@@ -78,7 +79,7 @@ def compile(
 
         def centml_wrapper(*args, **kwargs):
             out = compiled_model(*args, **kwargs)
-            
+
             # Update the prometheus metrics with final values
             for gpu in settings.PREDICTION_GPUS.split(','):
                 gauge.setMetricValue(gpu)
