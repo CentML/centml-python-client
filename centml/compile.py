@@ -1,4 +1,5 @@
 import builtins
+import time
 from typing import Callable, Dict, List, Optional, Union
 
 import torch
@@ -12,24 +13,19 @@ from centml.compiler.profiler import Profiler
 start_http_server(8000)
 
 
-class Metric:
-    def __init__(self, gpu_name):
-        self._time = 0
-        self._metric = Gauge(f'{gpu_name}_metric', f'Sum of the kernel execution times on {gpu_name}')
+class Gauge_Metric:
+    def __init__(self):
+        self._gauge = Gauge('execution_time_microseconds', 'Kernel execution times by GPU', ['gpu', 'time_stamp'])
+        self._values = {}
 
-    def increment(self, value):
-        self._time += value
+    def increment(self, gpu_name, value):
+        if gpu_name not in self._values:
+            self._values[gpu_name] = 0
+        self._values[gpu_name] += value
 
-    def update_metric(self):
-        self._metric.set(self._time)
-
-    def reset(self):
-        self._time = 0
-        self._metric.set(0)
-
-    def get_value(self):
-        return self._time
-
+    def setMetricValue(self, gpu_name):
+        self._gauge.labels(gpu=gpu_name, time_stamp=time.time()).set(self._values[gpu_name])
+        self._values[gpu_name] = 0
 
 def compile(
     model: Optional[Callable] = None,
@@ -41,18 +37,17 @@ def compile(
     disable: builtins.bool = False,
 ) -> Callable:
 
-    # Create a metric for each GPU
-    GPU_METRICS = {gpu: Metric(gpu) for gpu in settings.PREDICTION_GPUS.split(',')}
+    gauge = Gauge_Metric()
 
     def centml_prediction_backend(gm: torch.fx.GraphModule, example_inputs: List[torch.Tensor]):
         def forward(*args):
             fake_mode = FakeTensorMode(allow_non_fake_inputs=True)
-            fake_args = [fake_mode.from_tensor(arg) for arg in args]
+            fake_args = [fake_mode.from_tensor(arg) if isinstance(arg, torch.Tensor) else arg for arg in args]
             with fake_mode:
-                for gpu, metric in GPU_METRICS.items():
+                for gpu in settings.PREDICTION_GPUS.split(','):
                     profiler = Profiler(gm, gpu)
                     out, t = profiler.propagate(*fake_args)
-                    metric.increment(t)
+                    gauge.increment(gpu, t)
             return out
 
         return forward
@@ -83,15 +78,12 @@ def compile(
 
         def centml_wrapper(*args, **kwargs):
             out = compiled_model(*args, **kwargs)
+            
             # Update the prometheus metrics with final values
-            for metric in GPU_METRICS.values():
-                metric.update_metric()
+            for gpu in settings.PREDICTION_GPUS.split(','):
+                gauge.setMetricValue(gpu)
 
             # TODO: Do something with metrics
-
-            # Reset the metrics after the prediction
-            for metric in GPU_METRICS.values():
-                metric.reset()
 
             return out
 

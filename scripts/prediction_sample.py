@@ -19,5 +19,9 @@ inputs = torch.randint(low=0, high=tokenizer.vocab_size, size=(1, 1024), dtype=t
 compiled_model = centml.compile(model)
 output = compiled_model(inputs)
 
+inputs_2 = torch.randint(low=0, high=tokenizer.vocab_size, size=(1, 512), dtype=torch.int64, device='cpu')
+
+output = compiled_model(inputs_2)
+
 while True:
     time.sleep(1)
