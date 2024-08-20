@@ -6,7 +6,6 @@ from prometheus_client import Gauge, start_http_server
 from torch._subclasses.fake_tensor import FakeTensorMode
 
 from centml.compiler.config import settings
-from centml.compiler.prediction.metrics import gauge
 from centml.compiler.prediction.profiler import Profiler
 
 
