@@ -22,7 +22,7 @@ def compile(
         # Return the remote-compiled model
         compiled_model = torch.compile(
             model,
-            backend=centml_dynamo_backend, # Compilation backend
+            backend=centml_dynamo_backend,  # Compilation backend
             fullgraph=fullgraph,
             dynamic=dynamic,
             mode=mode,
@@ -34,7 +34,7 @@ def compile(
         # Proceed with prediction workflow
         compiled_model = torch.compile(
             model,
-            backend=centml_prediction_backend, # Prediction backend
+            backend=centml_prediction_backend,  # Prediction backend
             fullgraph=fullgraph,
             dynamic=dynamic,
             mode=mode,
