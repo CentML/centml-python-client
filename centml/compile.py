@@ -66,7 +66,7 @@ def compile(
         )
         return compiled_model
     else:
-        # Proceed with production workflow
+        # Proceed with prediction workflow
         compiled_model = torch.compile(
             model,
             backend=centml_prediction_backend,
