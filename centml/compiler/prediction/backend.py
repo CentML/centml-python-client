@@ -9,7 +9,7 @@ from centml.compiler.config import settings
 from centml.compiler.prediction.profiler import Profiler
 
 
-class Gauge_Metric:
+class GaugeMetric:
     def __init__(self):
         start_http_server(8000)
         self._gauge = Gauge('execution_time_microseconds', 'Kernel execution times by GPU', ['gpu', 'time_stamp'])
@@ -20,12 +20,12 @@ class Gauge_Metric:
             self._values[gpu_name] = 0
         self._values[gpu_name] += value
 
-    def setMetricValue(self, gpu_name):
+    def set_metric_value(self, gpu_name):
         self._gauge.labels(gpu=gpu_name, time_stamp=time.time()).set(self._values[gpu_name])
         self._values[gpu_name] = 0
 
 
-gauge = Gauge_Metric()
+gauge = GaugeMetric()
 
 
 def centml_prediction_backend(gm: torch.fx.GraphModule, example_inputs: List[torch.Tensor]):

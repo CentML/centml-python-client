@@ -1,5 +1,5 @@
 import builtins
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, Optional, Union
 
 import torch
 
@@ -46,7 +46,7 @@ def compile(
             out = compiled_model(*args, **kwargs)
             # Update the prometheus metrics with final values
             for gpu in settings.PREDICTION_GPUS.split(','):
-                gauge.setMetricValue(gpu)
+                gauge.set_metric_value(gpu)
 
             return out
 
