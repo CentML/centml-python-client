@@ -4,8 +4,6 @@ import torch
 import torch.fx
 from torch.fx.node import Node
 
-from centml.compiler.config import settings
-
 
 class Profiler:
     def __init__(self, mod, gpu, treeDB):

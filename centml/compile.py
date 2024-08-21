@@ -5,7 +5,7 @@ import torch
 
 from centml.compiler.backend import centml_dynamo_backend
 from centml.compiler.config import OperationMode, settings
-from centml.compiler.prediction.backend import centml_prediction_backend, get_gauge, get_treeDB
+from centml.compiler.prediction.backend import centml_prediction_backend, get_gauge
 
 
 def compile(

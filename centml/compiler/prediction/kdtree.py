@@ -4,6 +4,10 @@ import logging
 
 from sklearn.neighbors import KDTree  # type: ignore
 
+from centml.compiler.config import settings
+
+_tree_db = None
+
 
 class KDTreeWithValues:
     def __init__(self, points=None, values=None):
@@ -54,3 +58,10 @@ class TreeDB:
                     self._add_from_db(key, points, values)
                 except ValueError as e:
                     logging.getLogger(__name__).exception(f"Error parsing row: {row}\n{e}")
+
+
+def get_tree_db():
+    global _tree_db
+    if _tree_db is None:
+        _tree_db = TreeDB(settings.PREDICTION_DATA_FILE)
+    return _tree_db
