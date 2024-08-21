@@ -38,7 +38,7 @@ class Config(BaseSettings):
     MINIMUM_GZIP_SIZE: int = 1000
 
     MODE: OperationMode = OperationMode.PREDICTION
-    PREDICTION_DATA_FILE: str = 'centml/compiler/prediction/sample_data.csv'
+    PREDICTION_DATA_FILE: str = './centml/compiler/prediction/sample_data.csv'
     PREDICTION_GPUS: str = "A10G,A100SXM440GB"
     PROMETHEUS_PORT: int = 8000
 
