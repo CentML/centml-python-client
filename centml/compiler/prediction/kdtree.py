@@ -39,7 +39,9 @@ class TreeDB:
     def get(self, key, inp):
         if key not in self.db:
             logging.getLogger(__name__).warning(f"Key {key} not found in database")
-            return None
+            return float('-inf')
+            # TODO: Handle the case of unfound keys better. For now, return -inf to indicate something went wrong.
+            # Ideally, we shouldn't throw away a whole prediction because of one possibly insignificant node.
 
         _, val = self.db[key].query(inp)
         return val
