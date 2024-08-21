@@ -10,9 +10,9 @@ class CompilationStatus(Enum):
 
 
 class Config(BaseSettings):
-    TIMEOUT: int = 10
-    MAX_RETRIES: int = 3
-    COMPILING_SLEEP_TIME: int = 15
+    CENTML_COMPILER_TIMEOUT: int = 10
+    CENTML_COMPILER_MAX_RETRIES: int = 3
+    CENTML_COMPILER_COMPILING_SLEEP_TIME: int = 15
 
     CENTML_CACHE_DIR: str = os.path.expanduser("~/.cache/centml")
     BACKEND_BASE_PATH: str = os.path.join(CENTML_CACHE_DIR, "backend")
@@ -24,7 +24,7 @@ class Config(BaseSettings):
     # Using a different filename would result in a different hash.
     SERIALIZED_MODEL_FILE: str = "serialized_model.zip"
     SERIALIZED_INPUT_FILE: str = "serialized_input.zip"
-    PICKLE_PROTOCOL: int = 4
+    CENTML_PICKLE_PROTOCOL: int = 4
 
     HASH_CHUNK_SIZE: int = 4096
 
