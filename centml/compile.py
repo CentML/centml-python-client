@@ -30,7 +30,7 @@ def compile(
             disable=disable,
         )
         return compiled_model
-    else:
+    elif settings.MODE == OperationMode.PREDICTION:
         # Proceed with prediction workflow
         compiled_model = torch.compile(
             model,
@@ -51,3 +51,5 @@ def compile(
             return out
 
         return centml_wrapper
+    else:
+        raise Exception("Invalid operation mode")

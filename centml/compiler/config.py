@@ -12,6 +12,7 @@ class CompilationStatus(Enum):
 class OperationMode(Enum):
     PREDICTION = "PREDICTION"
     REMOTE_COMPILATION = "REMOTE_COMPILATION"
+    TEST = "TEST"
 
 
 class Config(BaseSettings):
@@ -38,8 +39,8 @@ class Config(BaseSettings):
 
     MODE: OperationMode = OperationMode.PREDICTION
     PREDICTION_DATA_FILE: str = 'centml/compiler/prediction/sample_data.csv'
-
     PREDICTION_GPUS: str = "A10G,A100SXM440GB"
+    PROMETHEUS_PORT: int = 8000
 
 
 settings = Config()

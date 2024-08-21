@@ -37,10 +37,8 @@ class TreeDB:
     def __init__(self):
         self.db = {}
 
-    def add_from_db(self, key, points, times):
-        if key not in self.db:
-            self.db[key] = {}
-        self.db[key] = KDTreeWithValues(points, times)
+    def add_from_db(self, key, points, values):
+        self.db[key] = KDTreeWithValues(points, values)
 
     def get(self, key, inp):
         if key not in self.db:
@@ -64,51 +62,22 @@ def populate_db(csv_file, database):
                 logging.getLogger(__name__).exception(f"Error parsing row: {row}\n{e}")
 
 
+treeDB = TreeDB()
+populate_db(settings.PREDICTION_DATA_FILE, treeDB)
+
+
 class Profiler:
     def __init__(self, mod, gpu):
         self.mod = mod
         self.graph = mod.graph
         self.modules = dict(self.mod.named_modules())
-        self.total_time = 0
-        self.TreeDB = TreeDB()
+        self.tree_db = treeDB
         self.gpu = gpu
-        populate_db(settings.PREDICTION_DATA_FILE, self.TreeDB)
 
     def propagate(self, *args):
         args_iter = iter(args)
         env: Dict[str, Node] = {}
-
-        dtypeMap = {
-            torch.float32: 'f32',
-            torch.float: 'f32',
-            torch.float64: 'f64',
-            torch.double: 'f64',
-            torch.float16: 'f16',
-            torch.half: 'f16',
-            torch.bfloat16: 'bf16',
-            torch.complex32: 'c32',
-            torch.chalf: 'c32',
-            torch.complex64: 'c64',
-            torch.cfloat: 'c64',
-            torch.complex128: 'c128',
-            torch.cdouble: 'c128',
-            torch.uint8: 'u8',
-            torch.uint16: 'u16',
-            torch.uint32: 'u32',
-            torch.uint64: 'u64',
-            torch.int8: 'i8',
-            torch.int16: 'i16',
-            torch.short: 'i16',
-            torch.int32: 'i32',
-            torch.int: 'i32',
-            torch.int64: 'i64',
-            torch.long: 'i64',
-            torch.bool: 'bool',
-            torch.quint8: 'qu8',
-            torch.qint8: 'qi8',
-            torch.qint32: 'qi32',
-            torch.quint4x2: 'qu4x2',
-        }
+        total_time = 0
 
         def load_arg(a):
             return torch.fx.graph.map_arg(a, lambda n: env[n.name])
@@ -136,7 +105,7 @@ class Profiler:
                         shape = [len(arg)]
                 elif isinstance(arg, torch.Tensor):
                     shape = list(arg.shape)
-                    dtypes.append(dtypeMap[arg.dtype])
+                    dtypes.append(str(arg.dtype))
                 elif isinstance(arg, bool):
                     shape = [1 if arg is True else 0]
                 elif isinstance(arg, (int, float)):
@@ -155,8 +124,8 @@ class Profiler:
         def get_output_dtypes(results):
             def find_dtypes(results):
                 if isinstance(results, torch.Tensor):
-                    return [dtypeMap[results.dtype]]
-                elif isinstance(results, (list, tuple)):
+                    return [str(results.dtype)]
+                if isinstance(results, (list, tuple)):
                     dtypes = []
                     for item in results:
                         dtypes.extend(find_dtypes(item))
@@ -185,9 +154,9 @@ class Profiler:
 
                 key = (node.target.__name__, len(inp_shapes), input_dtypes, output_dtypes, self.gpu)
 
-                t = self.TreeDB.get(key, inp_shapes)
+                t = self.tree_db.get(key, inp_shapes)
                 if t is not None:
-                    self.total_time += t
+                    total_time += t
             elif node.op == 'call_method':
                 self_obj, *args = load_arg(node.args)
                 kwargs = load_arg(node.kwargs)
@@ -198,9 +167,9 @@ class Profiler:
 
                 key = (node.target, len(inp_shapes), input_dtypes, output_dtypes, self.gpu)
 
-                t = self.TreeDB.get(key, inp_shapes)
+                t = self.tree_db.get(key, inp_shapes)
                 if t is not None:
-                    self.total_time += t
+                    total_time += t
             elif node.op == 'call_module':
                 mod = self.modules[node.target]
                 args = load_arg(node.args)
@@ -209,18 +178,18 @@ class Profiler:
 
                 inp_shapes, input_dtypes = get_flattened_shapes(args)
                 param_shapes = [param.shape for name, param in mod.named_parameters()]
-                param_dtypes = [dtypeMap[param.dtype] for name, param in mod.named_parameters()]
+                param_dtypes = [str(param.dtype) for name, param in mod.named_parameters()]
                 flattened_params = [dim for shape in param_shapes for dim in shape]
                 inp_shapes = inp_shapes + flattened_params
                 input_dtypes = input_dtypes + ',' + ','.join(param_dtypes)
                 output_dtypes = get_output_dtypes(result)
 
                 key = (mod._get_name(), len(inp_shapes), input_dtypes, output_dtypes, self.gpu)
-                t = self.TreeDB.get(key, inp_shapes)
+                t = self.tree_db.get(key, inp_shapes)
                 if t is not None:
-                    self.total_time += t
+                    total_time += t
             elif node.op == 'output':
                 args = load_arg(node.args)
-                return args[0], self.total_time
+                return args[0], total_time
 
             env[node.name] = result

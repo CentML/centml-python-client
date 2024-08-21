@@ -105,37 +105,6 @@ class ShapeProp:
         args_iter = iter(args)
         env: Dict[str, Node] = {}
 
-        dtypeMap = {
-            torch.float32: 'f32',
-            torch.float: 'f32',
-            torch.float64: 'f64',
-            torch.double: 'f64',
-            torch.float16: 'f16',
-            torch.half: 'f16',
-            torch.bfloat16: 'bf16',
-            torch.complex32: 'c32',
-            torch.chalf: 'c32',
-            torch.complex64: 'c64',
-            torch.cfloat: 'c64',
-            torch.complex128: 'c128',
-            torch.cdouble: 'c128',
-            torch.uint8: 'u8',
-            torch.uint16: 'u16',
-            torch.uint32: 'u32',
-            torch.uint64: 'u64',
-            torch.int8: 'i8',
-            torch.int16: 'i16',
-            torch.short: 'i16',
-            torch.int32: 'i32',
-            torch.int: 'i32',
-            torch.int64: 'i64',
-            torch.long: 'i64',
-            torch.bool: 'bool',
-            torch.quint8: 'qu8',
-            torch.qint8: 'qi8',
-            torch.qint32: 'qi32',
-            torch.quint4x2: 'qu4x2',
-        }
 
         def load_arg(a):
             return torch.fx.graph.map_arg(a, lambda n: env[n.name])
@@ -163,7 +132,7 @@ class ShapeProp:
                         shape = [len(arg)]
                 elif isinstance(arg, torch.Tensor):
                     shape = list(arg.shape)
-                    dtypes.append(dtypeMap[arg.dtype])
+                    dtypes.append(str(arg.dtype))
                 elif isinstance(arg, bool):
                     shape = [1 if arg == True else 0]
                 elif isinstance(arg, (int, float)):
@@ -182,7 +151,7 @@ class ShapeProp:
         def get_output_dtypes(results):
             def find_dtypes(results):
                 if isinstance(results, torch.Tensor):
-                    return [dtypeMap[results.dtype]]
+                    return [str(results.dtype)]
                 elif isinstance(results, (list, tuple)):
                     dtypes = []
                     for item in results:
@@ -249,7 +218,7 @@ class ShapeProp:
                 kwargs = load_arg(node.kwargs)
                 inp_shapes, input_dtypes = get_flattened_shapes(args)
                 param_shapes = [param.shape for name, param in mod.named_parameters()]
-                param_dtypes = [dtypeMap[param.dtype] for name, param in mod.named_parameters()]
+                param_dtypes = [str(param.dtype) for name, param in mod.named_parameters()]
                 flattened_params = [dim for shape in param_shapes for dim in shape]
                 inp_shapes = inp_shapes + flattened_params
                 input_dtypes = input_dtypes + ',' + ','.join(param_dtypes)
