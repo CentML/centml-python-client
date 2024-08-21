@@ -12,7 +12,6 @@ class CompilationStatus(Enum):
 class OperationMode(Enum):
     PREDICTION = "PREDICTION"
     REMOTE_COMPILATION = "REMOTE_COMPILATION"
-    TEST = "TEST"
 
 
 class Config(BaseSettings):
@@ -37,7 +36,7 @@ class Config(BaseSettings):
     # If the server response is smaller than this, don't gzip it
     MINIMUM_GZIP_SIZE: int = 1000
 
-    MODE: OperationMode = OperationMode.PREDICTION
+    MODE: OperationMode = OperationMode.REMOTE_COMPILATION
     PREDICTION_DATA_FILE: str = 'tests/sample_data.csv'
     PREDICTION_GPUS: str = "A10G,A100SXM440GB"
     PROMETHEUS_PORT: int = 8000
