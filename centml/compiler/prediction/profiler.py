@@ -6,12 +6,13 @@ from torch.fx.node import Node
 
 
 class Profiler:
-    def __init__(self, mod, gpu, treeDB):
+    def __init__(self, mod, gpu, treeDB, data_collection_mode=False):
         self.mod = mod
         self.graph = mod.graph
         self.modules = dict(self.mod.named_modules())
         self.tree_db = treeDB
         self.gpu = gpu
+        self.data_collection_mode = data_collection_mode
 
     def propagate(self, *args):
         args_iter = iter(args)
@@ -94,6 +95,16 @@ class Profiler:
                 key = (node.target.__name__, len(inp_shapes), input_dtypes, output_dtypes, self.gpu)
 
                 t = self.tree_db.get(key, inp_shapes)
+
+                if self.data_collection_mode and t is None:
+                    with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
+                        result = node.target(*args, **kwargs)
+                    event_time_total = 0
+                    for event in prof.key_averages():
+                        event_time_total += event.cuda_time_total
+                    t = event_time_total
+                    self.tree_db.add(key, inp_shapes, t)
+
                 total_time += t
             elif node.op == 'call_method':
                 self_obj, *args = load_arg(node.args)
@@ -106,6 +117,16 @@ class Profiler:
                 key = (node.target, len(inp_shapes), input_dtypes, output_dtypes, self.gpu)
 
                 t = self.tree_db.get(key, inp_shapes)
+
+                if self.data_collection_mode and t is None:
+                    with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
+                        result = getattr(self_obj, node.target)(*args, **kwargs)
+                    event_time_total = 0
+                    for event in prof.key_averages():
+                        event_time_total += event.cuda_time_total
+                    t = event_time_total
+                    self.tree_db.add(key, inp_shapes, t)
+
                 total_time += t
             elif node.op == 'call_module':
                 mod = self.modules[node.target]
@@ -123,6 +144,16 @@ class Profiler:
 
                 key = (mod._get_name(), len(inp_shapes), input_dtypes, output_dtypes, self.gpu)
                 t = self.tree_db.get(key, inp_shapes)
+
+                if self.data_collection_mode and t is None:
+                    with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
+                        result = mod(*args, **kwargs)
+                    event_time_total = 0
+                    for event in prof.key_averages():
+                        event_time_total += event.cuda_time_total
+                    t = event_time_total
+                    self.tree_db.add(key, inp_shapes, t)
+
                 total_time += t
             elif node.op == 'output':
                 args = load_arg(node.args)

@@ -1,3 +1,4 @@
+import argparse
 import csv
 import gc
 import json
@@ -22,11 +23,32 @@ from transformers import (
     PegasusForCausalLM,
 )
 
+from centml.compiler.prediction.kdtree import KDTreeWithValues
+from centml.compiler.prediction.profiler import Profiler
+
 torch.set_float32_matmul_precision('high')
 torch.set_default_device('cuda')
 torch.set_default_dtype(torch.float16)
 
 CURR_GPU = "A10G"
+
+# Different HuggingFace Models + Different Input Sizes
+hf_model_tests = [
+    ("EleutherAI/gpt-neo-2.7B", (1, 512)),
+    ("gpt2-xl", (1, 1024)),
+    ("gpt2-large", (1, 1024)),
+    ("gpt2-xl", (1, 512)),
+    ("google-bert/bert-large-uncased", (8, 512)),
+    ("google-bert/bert-large-uncased", (16, 512)),
+    ("meta-llama/Meta-Llama-3.1-8B", (1, 512)),
+    ("meta-llama/Meta-Llama-3.1-8B", (1, 256)),
+    ("gpt2-medium", (1, 1024)),
+    ("facebook/bart-large", (1, 1024)),
+    ("google/pegasus-cnn_dailymail", (1, 1024)),
+]
+
+# Different Batch Sizes for each ResNet Model (torchvision)
+resnet_tests = [1024, 720, 1440]
 
 
 def timed(fn):
@@ -41,28 +63,6 @@ def timed(fn):
 
 def percent_error(observed, true):
     return abs((observed - true) / true) * 100
-
-
-class KDTreeWithValues:
-    def __init__(self, points=None, values=None):
-        self.points = points if points else []
-        self.values = values if values else []
-        if self.points:
-            self.tree = KDTree(self.points)
-        else:
-            self.tree = None
-
-    def add(self, point, value):
-        self.points.append(point)
-        self.values.append(value)
-        self.tree = KDTree(self.points)
-
-    def query(self, point):
-        if self.tree is None:
-            return None, None
-
-        dist, idx = self.tree.query([point], k=1)
-        return dist[0][0], self.values[idx[0][0]]
 
 
 class DataCollectionTreeDB:
@@ -89,192 +89,34 @@ class DataCollectionTreeDB:
 
 
 db = DataCollectionTreeDB()
-
-
-class ShapeProp:
-    def __init__(self, mod):
-        self.mod = mod
-        self.graph = mod.graph
-        self.modules = dict(self.mod.named_modules())
-
-    def propagate(self, *args):
-        global db
-
-        total_time = 0
-
-        args_iter = iter(args)
-        env: Dict[str, Node] = {}
-
-
-        def load_arg(a):
-            return torch.fx.graph.map_arg(a, lambda n: env[n.name])
-
-        def fetch_attr(target: str):
-            target_atoms = target.split('.')
-            attr_itr = self.mod
-            for i, atom in enumerate(target_atoms):
-                if not hasattr(attr_itr, atom):
-                    raise RuntimeError(f"Node referenced nonexistant target {'.'.join(target_atoms[:i])}")
-                attr_itr = getattr(attr_itr, atom)
-            return attr_itr
-
-        def get_flattened_shapes(args):
-            flattened_shapes = []
-            dtypes = []
-
-            for arg in args:
-                if isinstance(arg, (tuple, list)):
-                    if len(arg) > 0 and isinstance(arg[0], (tuple, list, torch.Tensor)):
-                        nested_shapes, nested_dtypes = get_flattened_shapes(arg[0])
-                        shape = [len(arg)] + nested_shapes
-                        dtypes.extend(nested_dtypes.split(','))
-                    else:
-                        shape = [len(arg)]
-                elif isinstance(arg, torch.Tensor):
-                    shape = list(arg.shape)
-                    dtypes.append(str(arg.dtype))
-                elif isinstance(arg, bool):
-                    shape = [1 if arg == True else 0]
-                elif isinstance(arg, (int, float)):
-                    shape = [arg]
-                else:
-                    shape = [1]
-                flattened_shapes.extend(shape)
-
-            if len(flattened_shapes) < 2:
-                flattened_shapes.extend([1])
-
-            input_dtypes = ','.join(dtypes) if dtypes else 'N/A'
-
-            return flattened_shapes, input_dtypes
-
-        def get_output_dtypes(results):
-            def find_dtypes(results):
-                if isinstance(results, torch.Tensor):
-                    return [str(results.dtype)]
-                elif isinstance(results, (list, tuple)):
-                    dtypes = []
-                    for item in results:
-                        dtypes.extend(find_dtypes(item))
-                    return dtypes
-                return []
-
-            types = find_dtypes(results)
-
-            if types:
-                return ','.join(types)
-            return 'N/A'
-
-        for node in self.graph.nodes:
-            if node.op == 'placeholder':
-                result = next(args_iter)
-            elif node.op == 'get_attr':
-                result = fetch_attr(node.target)
-            elif node.op == 'call_function':
-                args = load_arg(node.args)
-                kwargs = load_arg(node.kwargs)
-                inp_shapes, input_dtypes = get_flattened_shapes(args)
-                with profile(activities=[ProfilerActivity.CUDA]) as prof:
-                    result = node.target(*args, **kwargs)
-                output_dtypes = get_output_dtypes(result)
-
-                key = (node.target.__name__, len(inp_shapes), input_dtypes, output_dtypes, CURR_GPU)
-
-                t = db.get(key, inp_shapes)
-
-                if t is None:
-                    new_time = 0
-                    for x in prof.key_averages():
-                        new_time += x.cuda_time_total
-                    total_time += new_time
-                    db.add(key, inp_shapes, new_time)
-                else:
-                    total_time += t
-
-            elif node.op == 'call_method':
-                self_obj, *args = load_arg(node.args)
-                kwargs = load_arg(node.kwargs)
-                inp_shapes, input_dtypes = get_flattened_shapes(args)
-                with profile(activities=[ProfilerActivity.CUDA]) as prof:
-                    result = getattr(self_obj, node.target)(*args, **kwargs)
-                output_dtypes = get_output_dtypes(result)
-
-                key = (node.target, len(inp_shapes), input_dtypes, output_dtypes, CURR_GPU)
-
-                t = db.get(key, inp_shapes)
-
-                if t is None:
-                    new_time = 0
-                    for x in prof.key_averages():
-                        new_time += x.cuda_time_total
-                    total_time += new_time
-                    db.add(key, inp_shapes, new_time)
-                else:
-                    total_time += t
-
-            elif node.op == 'call_module':
-                mod = self.modules[node.target]
-                args = load_arg(node.args)
-                kwargs = load_arg(node.kwargs)
-                inp_shapes, input_dtypes = get_flattened_shapes(args)
-                param_shapes = [param.shape for name, param in mod.named_parameters()]
-                param_dtypes = [str(param.dtype) for name, param in mod.named_parameters()]
-                flattened_params = [dim for shape in param_shapes for dim in shape]
-                inp_shapes = inp_shapes + flattened_params
-                input_dtypes = input_dtypes + ',' + ','.join(param_dtypes)
-                with profile(activities=[ProfilerActivity.CUDA]) as prof:
-                    result = mod(*args, **kwargs)
-
-                output_dtypes = get_output_dtypes(result)
-
-                key = (mod._get_name(), len(inp_shapes), input_dtypes, output_dtypes, CURR_GPU)
-
-                t = db.get(key, inp_shapes)
-
-                if t is None:
-                    new_time = 0
-                    for x in prof.key_averages():
-                        new_time += x.cuda_time_total
-                    total_time += new_time
-                    db.add(key, inp_shapes, new_time)
-                else:
-                    total_time += t
-
-            if isinstance(result, torch.Tensor):
-                node.shape = result.shape
-                node.dtype = result.dtype
-
-            env[node.name] = result
-
-        return total_time / 1000000
-
-
 added_time = 0
 
 
 def custom_backend(gm: torch.fx.GraphModule, inps):
     print("Compiling")
-    shape = ShapeProp(gm)
-    t = shape.propagate(*inps)
+    profiler = Profiler(mod=gm, gpu=CURR_GPU, treeDB=db, data_collection_mode=True)
 
     def forward(*args):
         global added_time
+        out, t = profiler.propagate(*args)
         added_time += t
-        return gm.forward(*args)
+        return out
 
     return forward
 
 
-def model_test(model_name, input_size, custom_backend):
+def hf_model_test(model_name, input_size, custom_backend):
     global added_time
+    models_without_tokenizer = {"google/pegasus-cnn_dailymail"}
+
     model = AutoModelForCausalLM.from_pretrained(model_name).to("cuda:0")
-    if model_name not in {"google/pegasus-cnn_dailymail"}:
+    if model_name not in models_without_tokenizer:
         tokenizer = AutoTokenizer.from_pretrained(model_name)
     model.eval()
 
     inp = torch.randint(
         low=0,
-        high=tokenizer.vocab_size if model_name not in {"google/pegasus-cnn_dailymail"} else 50265,
+        high=tokenizer.vocab_size if model_name not in models_without_tokenizer else 50265,
         size=input_size,
         dtype=torch.int64,
         device='cuda:0',
@@ -287,6 +129,9 @@ def model_test(model_name, input_size, custom_backend):
 
     compiled_model = torch.compile(model, backend=custom_backend)
     compiled_model(inp)
+
+    added_time /= 1000000
+
     print(f"{model_name}, {input_size}")
     print("Real time: ", t)
     print("TOTAL TIME: ", added_time)
@@ -322,28 +167,13 @@ def resnet_test(batch_size, custom_backend):
     torch.cuda.empty_cache()
 
 
-model_tests = [
-    ("EleutherAI/gpt-neo-2.7B", (1, 512)),
-    ("gpt2-xl", (1, 1024)),
-    ("gpt2-large", (1, 1024)),
-    ("gpt2-xl", (1, 512)),
-    ("google-bert/bert-large-uncased", (8, 512)),
-    ("google-bert/bert-large-uncased", (16, 512)),
-    ("meta-llama/Meta-Llama-3.1-8B", (1, 512)),
-    ("meta-llama/Meta-Llama-3.1-8B", (1, 256)),
-    ("gpt2-medium", (1, 1024)),
-    ("facebook/bart-large", (1, 1024)),
-    ("google/pegasus-cnn_dailymail", (1, 1024)),
-]
+for model_name, input_size in hf_model_tests:
+    hf_model_test(model_name, input_size, custom_backend)
 
-for model_name, input_size in model_tests:
-    model_test(model_name, input_size, custom_backend)
-
-resnet_tests = [1024, 720, 1440]
 for batch_size in resnet_tests:
     resnet_test(batch_size, custom_backend)
 
-
+# Write to CSV
 with open('data.csv', 'w', newline='') as csvfile:
     csvwriter = csv.writer(csvfile, quoting=csv.QUOTE_ALL)
     csvwriter.writerow(['op', 'dim', 'inp_dtypes', 'out_dtypes', 'gpu', 'points', 'values'])
