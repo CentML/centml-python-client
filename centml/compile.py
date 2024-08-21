@@ -5,7 +5,7 @@ import torch
 
 from centml.compiler.backend import centml_dynamo_backend
 from centml.compiler.config import OperationMode, settings
-from centml.compiler.prediction.backend import centml_prediction_backend, gauge
+from centml.compiler.prediction.backend import centml_prediction_backend, get_gauge, get_treeDB
 
 
 def compile(
@@ -45,6 +45,7 @@ def compile(
         def centml_wrapper(*args, **kwargs):
             out = compiled_model(*args, **kwargs)
             # Update the prometheus metrics with final values
+            gauge = get_gauge()
             for gpu in settings.PREDICTION_GPUS.split(','):
                 gauge.set_metric_value(gpu)
 

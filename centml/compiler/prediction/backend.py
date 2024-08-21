@@ -6,7 +6,26 @@ from prometheus_client import Gauge, start_http_server
 from torch._subclasses.fake_tensor import FakeTensorMode
 
 from centml.compiler.config import settings
+from centml.compiler.prediction.kdtree import TreeDB
 from centml.compiler.prediction.profiler import Profiler
+
+# Initialize gauge and treeDB lazily
+_gauge = None
+_treeDB = None
+
+
+def get_gauge():
+    global _gauge
+    if _gauge is None:
+        _gauge = GaugeMetric()
+    return _gauge
+
+
+def get_treeDB():
+    global _treeDB
+    if _treeDB is None:
+        _treeDB = TreeDB(settings.PREDICTION_DATA_FILE)
+    return _treeDB
 
 
 class GaugeMetric:
@@ -25,13 +44,11 @@ class GaugeMetric:
         self._values[gpu_name] = 0
 
 
-gauge = GaugeMetric()
-
-
 def centml_prediction_backend(gm: torch.fx.GraphModule, example_inputs: List[torch.Tensor]):
     profilers = []
+    treeDB = get_treeDB()
     for gpu in settings.PREDICTION_GPUS.split(','):
-        profilers.append(Profiler(gm, gpu))
+        profilers.append(Profiler(gm, gpu, treeDB))
 
     def forward(*args):
         fake_mode = FakeTensorMode(allow_non_fake_inputs=True)
@@ -39,6 +56,7 @@ def centml_prediction_backend(gm: torch.fx.GraphModule, example_inputs: List[tor
         with fake_mode:
             for prof in profilers:
                 out, t = prof.propagate(*fake_args)
+                gauge = get_gauge()
                 gauge.increment(prof.gpu, t)
         return out
 
