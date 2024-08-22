@@ -31,6 +31,7 @@ torch.set_default_device('cuda')
 torch.set_default_dtype(torch.float16)
 
 CURR_GPU = "A10G"
+OUTPUT_FILE = 'data.csv'
 
 # Different HuggingFace Models + Different Input Sizes
 hf_model_tests = [
@@ -174,7 +175,7 @@ for batch_size in resnet_tests:
     resnet_test(batch_size, custom_backend)
 
 # Write to CSV
-with open('data.csv', 'w', newline='') as csvfile:
+with open(OUTPUT_FILE, 'w', newline='') as csvfile:
     csvwriter = csv.writer(csvfile, quoting=csv.QUOTE_ALL)
     csvwriter.writerow(['op', 'dim', 'inp_dtypes', 'out_dtypes', 'gpu', 'points', 'values'])
 
