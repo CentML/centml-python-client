@@ -18,7 +18,7 @@ def compile(
     disable: builtins.bool = False,
 ) -> Callable:
 
-    if settings.MODE == OperationMode.REMOTE_COMPILATION:
+    if settings.CENTML_MODE == OperationMode.REMOTE_COMPILATION:
         # Return the remote-compiled model
         compiled_model = torch.compile(
             model,
@@ -30,7 +30,7 @@ def compile(
             disable=disable,
         )
         return compiled_model
-    elif settings.MODE == OperationMode.PREDICTION:
+    elif settings.CENTML_MODE == OperationMode.PREDICTION:
         # Proceed with prediction workflow
         compiled_model = torch.compile(
             model,
@@ -46,7 +46,7 @@ def compile(
             out = compiled_model(*args, **kwargs)
             # Update the prometheus metrics with final values
             gauge = get_gauge()
-            for gpu in settings.PREDICTION_GPUS.split(','):
+            for gpu in settings.CENTML_PREDICTION_GPUS.split(','):
                 gauge.set_metric_value(gpu)
 
             return out

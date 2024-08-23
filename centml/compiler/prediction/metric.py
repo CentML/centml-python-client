@@ -16,7 +16,7 @@ def get_gauge():
 
 class GaugeMetric:
     def __init__(self):
-        start_http_server(settings.PROMETHEUS_PORT)
+        start_http_server(settings.CENTML_PROMETHEUS_PORT)
         self._gauge = Gauge('execution_time_microseconds', 'Kernel execution times by GPU', ['gpu', 'timestamp'])
         self._values = {}
 

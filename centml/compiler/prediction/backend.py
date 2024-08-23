@@ -12,7 +12,7 @@ from centml.compiler.prediction.profiler import Profiler
 def centml_prediction_backend(gm: torch.fx.GraphModule, example_inputs: List[torch.Tensor]):
     profilers = []
     tree_db = get_tree_db()
-    for gpu in settings.PREDICTION_GPUS.split(','):
+    for gpu in settings.CENTML_PREDICTION_GPUS.split(','):
         profilers.append(Profiler(gm, gpu, tree_db))
 
     def forward(*args):

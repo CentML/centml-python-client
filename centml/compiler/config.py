@@ -36,10 +36,10 @@ class Config(BaseSettings):
     # If the server response is smaller than this, don't gzip it
     CENTML_MINIMUM_GZIP_SIZE: int = 1000
 
-    MODE: OperationMode = OperationMode.REMOTE_COMPILATION
-    PREDICTION_DATA_FILE: str = 'tests/sample_data.csv'
-    PREDICTION_GPUS: str = "A10G,A100SXM440GB"
-    PROMETHEUS_PORT: int = 8000
+    CENTML_MODE: OperationMode = OperationMode.REMOTE_COMPILATION
+    CENTML_PREDICTION_DATA_FILE: str = 'tests/sample_data.csv'
+    CENTML_PREDICTION_GPUS: str = "A10G,A100SXM440GB"
+    CENTML_PROMETHEUS_PORT: int = 8000
 
 
 settings = Config()

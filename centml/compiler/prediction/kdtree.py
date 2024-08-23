@@ -65,5 +65,5 @@ class TreeDB:
 def get_tree_db():
     global _tree_db
     if _tree_db is None:
-        _tree_db = TreeDB(settings.PREDICTION_DATA_FILE)
+        _tree_db = TreeDB(settings.CENTML_PREDICTION_DATA_FILE)
     return _tree_db
