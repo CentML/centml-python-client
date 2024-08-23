@@ -78,6 +78,20 @@ class Profiler:
                 return ','.join(types)
             return 'N/A'
 
+        def get_time_or_profile(key, inp_shapes, operation, *args, **kwargs):
+            t = self.tree_db.get(key, inp_shapes)
+
+            if self.data_collection_mode and t is None:
+                with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
+                    result = operation(*args, **kwargs)
+                event_time_total = 0
+                for event in prof.key_averages():
+                    event_time_total += event.cuda_time_total
+                t = event_time_total
+                self.tree_db.add(key, inp_shapes, t)
+
+            return t
+
         for node in self.graph.nodes:
             result = None
             if node.op == 'placeholder':
@@ -94,16 +108,7 @@ class Profiler:
 
                 key = (node.target.__name__, len(inp_shapes), input_dtypes, output_dtypes, self.gpu)
 
-                t = self.tree_db.get(key, inp_shapes)
-
-                if self.data_collection_mode and t is None:
-                    with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
-                        result = node.target(*args, **kwargs)
-                    event_time_total = 0
-                    for event in prof.key_averages():
-                        event_time_total += event.cuda_time_total
-                    t = event_time_total
-                    self.tree_db.add(key, inp_shapes, t)
+                t = get_time_or_profile(key, inp_shapes, node.target, *args, **kwargs)
 
                 total_time += t
             elif node.op == 'call_method':
@@ -116,16 +121,7 @@ class Profiler:
 
                 key = (node.target, len(inp_shapes), input_dtypes, output_dtypes, self.gpu)
 
-                t = self.tree_db.get(key, inp_shapes)
-
-                if self.data_collection_mode and t is None:
-                    with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
-                        result = getattr(self_obj, node.target)(*args, **kwargs)
-                    event_time_total = 0
-                    for event in prof.key_averages():
-                        event_time_total += event.cuda_time_total
-                    t = event_time_total
-                    self.tree_db.add(key, inp_shapes, t)
+                t = get_time_or_profile(key, inp_shapes, getattr(self_obj, node.target), *args, **kwargs)
 
                 total_time += t
             elif node.op == 'call_module':
@@ -135,24 +131,19 @@ class Profiler:
                 result = mod(*args, **kwargs)
 
                 inp_shapes, input_dtypes = get_flattened_shapes(args)
+
                 param_shapes = [param.shape for name, param in mod.named_parameters()]
                 param_dtypes = [str(param.dtype) for name, param in mod.named_parameters()]
                 flattened_params = [dim for shape in param_shapes for dim in shape]
+
                 inp_shapes = inp_shapes + flattened_params
                 input_dtypes = input_dtypes + ',' + ','.join(param_dtypes)
+
                 output_dtypes = get_output_dtypes(result)
 
                 key = (mod._get_name(), len(inp_shapes), input_dtypes, output_dtypes, self.gpu)
-                t = self.tree_db.get(key, inp_shapes)
 
-                if self.data_collection_mode and t is None:
-                    with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
-                        result = mod(*args, **kwargs)
-                    event_time_total = 0
-                    for event in prof.key_averages():
-                        event_time_total += event.cuda_time_total
-                    t = event_time_total
-                    self.tree_db.add(key, inp_shapes, t)
+                t = get_time_or_profile(key, inp_shapes, mod, *args, **kwargs)
 
                 total_time += t
             elif node.op == 'output':
