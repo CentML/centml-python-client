@@ -14,7 +14,7 @@ from centml.compiler.config import settings, CompilationStatus
 from centml.compiler.utils import get_server_compiled_forward_path
 
 app = FastAPI()
-app.add_middleware(GZipMiddleware, minimum_size=settings.CENTML_HASH_CHUNK_SIZE)  # type: ignore
+app.add_middleware(GZipMiddleware, minimum_size=settings.CENTML_MINIMUM_GZIP_SIZE)  # type: ignore
 
 
 def get_status(model_id: str):

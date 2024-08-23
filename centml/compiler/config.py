@@ -29,7 +29,7 @@ class Config(BaseSettings):
     CENTML_HASH_CHUNK_SIZE: int = 4096
 
     # If the server response is smaller than this, don't gzip it
-    CENTML_HASH_CHUNK_SIZE: int = 1000
+    CENTML_MINIMUM_GZIP_SIZE: int = 1000
 
 
 settings = Config()
