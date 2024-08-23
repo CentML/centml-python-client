@@ -9,6 +9,11 @@ class CompilationStatus(Enum):
     DONE = "DONE"
 
 
+class OperationMode(Enum):
+    PREDICTION = "PREDICTION"
+    REMOTE_COMPILATION = "REMOTE_COMPILATION"
+
+
 class Config(BaseSettings):
     CENTML_COMPILER_TIMEOUT: int = 10
     CENTML_COMPILER_MAX_RETRIES: int = 3
@@ -30,6 +35,11 @@ class Config(BaseSettings):
 
     # If the server response is smaller than this, don't gzip it
     CENTML_MINIMUM_GZIP_SIZE: int = 1000
+
+    CENTML_MODE: OperationMode = OperationMode.REMOTE_COMPILATION
+    CENTML_PREDICTION_DATA_FILE: str = 'tests/sample_data.csv'
+    CENTML_PREDICTION_GPUS: str = "A10G,A100SXM440GB"
+    CENTML_PROMETHEUS_PORT: int = 8000
 
 
 settings = Config()
