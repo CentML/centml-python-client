@@ -14,11 +14,11 @@ from centml.compiler.config import settings, CompilationStatus
 from centml.compiler.utils import get_server_compiled_forward_path
 
 app = FastAPI()
-app.add_middleware(GZipMiddleware, minimum_size=settings.MINIMUM_GZIP_SIZE)  # type: ignore
+app.add_middleware(GZipMiddleware, minimum_size=settings.CENTML_MINIMUM_GZIP_SIZE)  # type: ignore
 
 
 def get_status(model_id: str):
-    if not os.path.isdir(os.path.join(settings.SERVER_BASE_PATH, model_id)):
+    if not os.path.isdir(os.path.join(settings.CENTML_SERVER_BASE_PATH, model_id)):
         return CompilationStatus.NOT_FOUND
 
     if not os.path.isfile(get_server_compiled_forward_path(model_id)):
@@ -50,7 +50,7 @@ def background_compile(model_id: str, tfx_graph, example_inputs):
         # To avoid this, we write to a tmp file and rename it to the correct path after saving.
         save_path = get_server_compiled_forward_path(model_id)
         tmp_path = save_path + ".tmp"
-        torch.save(compiled_graph_module, tmp_path, pickle_protocol=settings.PICKLE_PROTOCOL)
+        torch.save(compiled_graph_module, tmp_path, pickle_protocol=settings.CENTML_PICKLE_PROTOCOL)
         os.rename(tmp_path, save_path)
     except Exception as e:
         logging.getLogger(__name__).exception(f"Saving graph module failed: {e}")
@@ -93,7 +93,7 @@ async def compile_model_handler(model_id: str, model: UploadFile, inputs: Upload
         return Response(status_code=200)
 
     # This effectively sets the model's status to COMPILING
-    os.makedirs(os.path.join(settings.SERVER_BASE_PATH, model_id))
+    os.makedirs(os.path.join(settings.CENTML_SERVER_BASE_PATH, model_id))
 
     tfx_graph, example_inputs = read_upload_files(model_id, model, inputs)
 

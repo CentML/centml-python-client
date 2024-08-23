@@ -119,7 +119,7 @@ class TestDownloadModel(SetUpGraphModule):
 
 
 class TestWaitForStatus(SetUpGraphModule):
-    @patch("centml.compiler.config.settings.COMPILING_SLEEP_TIME", new=0)
+    @patch("centml.compiler.config.settings.CENTML_COMPILER_SLEEP_TIME", new=0)
     @patch("centml.compiler.backend.requests")
     @patch("logging.Logger.exception")
     def test_invalid_status(self, mock_logger, mock_requests):
@@ -132,13 +132,13 @@ class TestWaitForStatus(SetUpGraphModule):
             self.runner._wait_for_status(model_id)
 
         mock_requests.get.assert_called()
-        assert mock_requests.get.call_count == settings.MAX_RETRIES + 1
-        assert len(mock_logger.call_args_list) == settings.MAX_RETRIES + 1
+        assert mock_requests.get.call_count == settings.CENTML_COMPILER_MAX_RETRIES + 1
+        assert len(mock_logger.call_args_list) == settings.CENTML_COMPILER_MAX_RETRIES + 1
         print(mock_logger.call_args_list)
         assert mock_logger.call_args_list[0].startswith("Status check failed:")
         assert "Waiting for status: compilation failed too many times.\n" == str(context.exception)
 
-    @patch("centml.compiler.config.settings.COMPILING_SLEEP_TIME", new=0)
+    @patch("centml.compiler.config.settings.CENTML_COMPILER_SLEEP_TIME", new=0)
     @patch("centml.compiler.backend.requests")
     @patch("logging.Logger.exception")
     def test_exception_in_status(self, mock_logger, mock_requests):
@@ -150,11 +150,11 @@ class TestWaitForStatus(SetUpGraphModule):
             self.runner._wait_for_status(model_id)
 
         mock_requests.get.assert_called()
-        assert mock_requests.get.call_count == settings.MAX_RETRIES + 1
+        assert mock_requests.get.call_count == settings.CENTML_COMPILER_MAX_RETRIES + 1
         mock_logger.assert_called_with(f"Status check failed:\n{exception_message}")
         assert str(context.exception) == "Waiting for status: compilation failed too many times.\n"
 
-    @patch("centml.compiler.config.settings.COMPILING_SLEEP_TIME", new=0)
+    @patch("centml.compiler.config.settings.CENTML_COMPILER_SLEEP_TIME", new=0)
     @patch("centml.compiler.backend.Runner._compile_model")
     @patch("centml.compiler.backend.requests")
     def test_max_tries(self, mock_requests, mock_compile):
@@ -167,10 +167,10 @@ class TestWaitForStatus(SetUpGraphModule):
         with self.assertRaises(Exception) as context:
             self.runner._wait_for_status(model_id)
 
-        self.assertEqual(mock_compile.call_count, settings.MAX_RETRIES + 1)
+        self.assertEqual(mock_compile.call_count, settings.CENTML_COMPILER_MAX_RETRIES + 1)
         self.assertIn("Waiting for status: compilation failed too many times", str(context.exception))
 
-    @patch("centml.compiler.config.settings.COMPILING_SLEEP_TIME", new=0)
+    @patch("centml.compiler.config.settings.CENTML_COMPILER_SLEEP_TIME", new=0)
     @patch("centml.compiler.backend.requests")
     def test_wait_on_compilation(self, mock_requests):
         # Mock the status check
@@ -186,7 +186,7 @@ class TestWaitForStatus(SetUpGraphModule):
         # _wait_for_status should return True when compilation DONE
         assert self.runner._wait_for_status(model_id)
 
-    @patch("centml.compiler.config.settings.COMPILING_SLEEP_TIME", new=0)
+    @patch("centml.compiler.config.settings.CENTML_COMPILER_SLEEP_TIME", new=0)
     @patch("centml.compiler.backend.requests")
     @patch("centml.compiler.backend.Runner._compile_model")
     @patch("logging.Logger.exception")
@@ -206,10 +206,10 @@ class TestWaitForStatus(SetUpGraphModule):
             self.runner._wait_for_status(model_id)
 
         mock_requests.get.assert_called()
-        assert mock_requests.get.call_count == settings.MAX_RETRIES + 1
+        assert mock_requests.get.call_count == settings.CENTML_COMPILER_MAX_RETRIES + 1
 
         mock_compile.assert_called()
-        assert mock_compile.call_count == settings.MAX_RETRIES + 1
+        assert mock_compile.call_count == settings.CENTML_COMPILER_MAX_RETRIES + 1
 
         mock_logger.assert_called_with(f"Submitting compilation failed:\n{exception_message}")
         assert str(context.exception) == "Waiting for status: compilation failed too many times.\n"
