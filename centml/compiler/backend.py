@@ -59,8 +59,8 @@ class Runner:
 
         # torch.save saves a zip file full of pickled files with the model's states.
         try:
-            torch.save(self.module, self.serialized_model_path, pickle_protocol=settings.PICKLE_PROTOCOL)
-            torch.save(self.inputs, self.serialized_input_path, pickle_protocol=settings.PICKLE_PROTOCOL)
+            torch.save(self.module, self.serialized_model_path, pickle_protocol=settings.CENTML_PICKLE_PROTOCOL)
+            torch.save(self.inputs, self.serialized_input_path, pickle_protocol=settings.CENTML_PICKLE_PROTOCOL)
         except Exception as e:
             raise Exception(f"Failed to save module or inputs with torch.save: {e}") from e
 
@@ -80,7 +80,7 @@ class Runner:
 
     def _download_model(self, model_id: str):
         download_response = requests.get(
-            url=f"{settings.CENTML_SERVER_URL}/download/{model_id}", timeout=settings.TIMEOUT
+            url=f"{settings.CENTML_SERVER_URL}/download/{model_id}", timeout=settings.CENTML_COMPILER_TIMEOUT
         )
         if download_response.status_code != HTTPStatus.OK:
             raise Exception(
@@ -106,7 +106,7 @@ class Runner:
             compile_response = requests.post(
                 url=f"{settings.CENTML_SERVER_URL}/submit/{model_id}",
                 files={"model": model_file, "inputs": input_file},
-                timeout=settings.TIMEOUT,
+                timeout=settings.CENTML_COMPILER_TIMEOUT,
             )
         if compile_response.status_code != HTTPStatus.OK:
             raise Exception(
@@ -120,7 +120,7 @@ class Runner:
             status = None
             try:
                 status_response = requests.get(
-                    f"{settings.CENTML_SERVER_URL}/status/{model_id}", timeout=settings.TIMEOUT
+                    f"{settings.CENTML_SERVER_URL}/status/{model_id}", timeout=settings.CENTML_COMPILER_TIMEOUT
                 )
                 if status_response.status_code != HTTPStatus.OK:
                     raise Exception(
@@ -144,10 +144,10 @@ class Runner:
             else:
                 tries += 1
 
-            if tries > settings.MAX_RETRIES:
+            if tries > settings.CENTML_COMPILER_MAX_RETRIES:
                 raise Exception("Waiting for status: compilation failed too many times.\n")
 
-            time.sleep(settings.COMPILING_SLEEP_TIME)
+            time.sleep(settings.CENTML_COMPILER_SLEEP_TIME)
 
     def remote_compilation_starter(self):
         try:

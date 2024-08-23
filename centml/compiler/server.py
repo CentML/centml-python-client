@@ -50,7 +50,7 @@ def background_compile(model_id: str, tfx_graph, example_inputs):
         # To avoid this, we write to a tmp file and rename it to the correct path after saving.
         save_path = get_server_compiled_forward_path(model_id)
         tmp_path = save_path + ".tmp"
-        torch.save(compiled_graph_module, tmp_path, pickle_protocol=settings.PICKLE_PROTOCOL)
+        torch.save(compiled_graph_module, tmp_path, pickle_protocol=settings.CENTML_PICKLE_PROTOCOL)
         os.rename(tmp_path, save_path)
     except Exception as e:
         logging.getLogger(__name__).exception(f"Saving graph module failed: {e}")

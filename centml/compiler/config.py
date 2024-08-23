@@ -12,7 +12,7 @@ class CompilationStatus(Enum):
 class Config(BaseSettings):
     CENTML_COMPILER_TIMEOUT: int = 10
     CENTML_COMPILER_MAX_RETRIES: int = 3
-    CENTML_COMPILER_COMPILING_SLEEP_TIME: int = 15
+    CENTML_COMPILER_SLEEP_TIME: int = 15
 
     CENTML_CACHE_DIR: str = os.path.expanduser("~/.cache/centml")
     BACKEND_BASE_PATH: str = os.path.join(CENTML_CACHE_DIR, "backend")
