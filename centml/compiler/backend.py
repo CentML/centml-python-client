@@ -54,8 +54,8 @@ class Runner:
 
     def _serialize_model_and_inputs(self):
         self.serialized_model_dir = TemporaryDirectory()  # pylint: disable=consider-using-with
-        self.serialized_model_path = os.path.join(self.serialized_model_dir.name, settings.SERIALIZED_MODEL_FILE)
-        self.serialized_input_path = os.path.join(self.serialized_model_dir.name, settings.SERIALIZED_INPUT_FILE)
+        self.serialized_model_path = os.path.join(self.serialized_model_dir.name, settings.CENTML_SERIALIZED_MODEL_FILE)
+        self.serialized_input_path = os.path.join(self.serialized_model_dir.name, settings.CENTML_SERIALIZED_INPUT_FILE)
 
         # torch.save saves a zip file full of pickled files with the model's states.
         try:
@@ -71,7 +71,7 @@ class Runner:
         sha_hash = hashlib.sha256()
         with open(self.serialized_model_path, "rb") as serialized_model_file:
             # Read in chunks to not load too much into memory
-            for block in iter(lambda: serialized_model_file.read(settings.HASH_CHUNK_SIZE), b""):
+            for block in iter(lambda: serialized_model_file.read(settings.CENTML_HASH_CHUNK_SIZE), b""):
                 sha_hash.update(block)
 
         model_id = sha_hash.hexdigest()

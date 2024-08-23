@@ -14,11 +14,11 @@ from centml.compiler.config import settings, CompilationStatus
 from centml.compiler.utils import get_server_compiled_forward_path
 
 app = FastAPI()
-app.add_middleware(GZipMiddleware, minimum_size=settings.MINIMUM_GZIP_SIZE)  # type: ignore
+app.add_middleware(GZipMiddleware, minimum_size=settings.CENTML_HASH_CHUNK_SIZE)  # type: ignore
 
 
 def get_status(model_id: str):
-    if not os.path.isdir(os.path.join(settings.SERVER_BASE_PATH, model_id)):
+    if not os.path.isdir(os.path.join(settings.CENTML_SERVER_BASE_PATH, model_id)):
         return CompilationStatus.NOT_FOUND
 
     if not os.path.isfile(get_server_compiled_forward_path(model_id)):
@@ -93,7 +93,7 @@ async def compile_model_handler(model_id: str, model: UploadFile, inputs: Upload
         return Response(status_code=200)
 
     # This effectively sets the model's status to COMPILING
-    os.makedirs(os.path.join(settings.SERVER_BASE_PATH, model_id))
+    os.makedirs(os.path.join(settings.CENTML_SERVER_BASE_PATH, model_id))
 
     tfx_graph, example_inputs = read_upload_files(model_id, model, inputs)
 
