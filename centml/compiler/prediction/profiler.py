@@ -83,7 +83,7 @@ class Profiler:
 
             if self.data_collection_mode and t is None:
                 with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
-                    result = operation(*args, **kwargs)
+                    operation(*args, **kwargs)
                 event_time_total = 0
                 for event in prof.key_averages():
                     event_time_total += event.cuda_time_total
