@@ -37,6 +37,18 @@ hf_model_tests = [
     ("google/pegasus-cnn_dailymail", (1, 1024)),
 ]
 
+# GPU bound tests for A100 80GB
+# A10080GB_hf_model_tests = [
+#     ("EleutherAI/gpt-neo-2.7B", (1, 1024)),
+#     ("gpt2-xl", (2, 1024)),
+#     ("meta-llama/Meta-Llama-3.1-8B", (1, 1024)),
+#     ("google/pegasus-cnn_dailymail", (4, 1024)),
+#     ("facebook/bart-large", (4, 1024)),
+#     ("google-bert/bert-large-uncased", (16, 512)),
+#     ("gpt2-medium", (2, 1024)),
+#     ("gpt2-large", (2, 1024)),
+# ]
+
 # Different Batch Sizes for each ResNet Model (torchvision)
 resnet_tests = [1024, 720, 1440]
 
