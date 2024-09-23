@@ -1,30 +1,19 @@
-import argparse
 import csv
 import gc
 import json
-import os
-import random
-import statistics
-import time
 
-import numpy as np
 import torch
 import torchvision.models as models
 from sklearn.neighbors import KDTree
 from torch.profiler import ProfilerActivity, profile, record_function
 from transformers import (
-    AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
-    BertConfig,
-    BertForMaskedLM,
-    GPT2ForSequenceClassification,
-    PegasusConfig,
-    PegasusForCausalLM,
 )
 
 from centml.compiler.prediction.kdtree import KDTreeWithValues
 from centml.compiler.prediction.profiler import Profiler
+from scripts.timer import timed
 
 torch.set_float32_matmul_precision('high')
 torch.set_default_device('cuda')
@@ -50,16 +39,6 @@ hf_model_tests = [
 
 # Different Batch Sizes for each ResNet Model (torchvision)
 resnet_tests = [1024, 720, 1440]
-
-
-def timed(fn):
-    start = torch.cuda.Event(enable_timing=True)
-    end = torch.cuda.Event(enable_timing=True)
-    start.record()
-    result = fn()
-    end.record()
-    torch.cuda.synchronize()
-    return result, start.elapsed_time(end) / 1000
 
 
 def percent_error(observed, true):
