@@ -4,6 +4,8 @@ import torch
 import torch.fx
 from torch.fx.node import Node
 
+from scripts.timer import timed
+
 
 class Profiler:
     def __init__(self, mod, gpu, treeDB, data_collection_mode=False):
@@ -13,11 +15,30 @@ class Profiler:
         self.tree_db = treeDB
         self.gpu = gpu
         self.data_collection_mode = data_collection_mode
+        self.trace_event_idx = 0
 
     def propagate(self, *args):
         args_iter = iter(args)
         env: Dict[str, Node] = {}
-        total_time = 0
+        total_prediction_time = 0
+        actual_time = 0
+        trace_events = []
+        if self.data_collection_mode:
+            # Warmup before profiling
+            for _ in range(10):
+                _, t = timed(lambda: self.mod(*args))
+
+            # actual_time is to compare prediction to execution time of GraphModule
+            actual_time = t
+
+            with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA, torch.profiler.ProfilerActivity.CUDA]) as prof:
+                self.mod(*args)
+            for event in prof.events():
+                # Ignore CPU events for now
+                if event.trace_name is None or event.device_type == torch.autograd.DeviceType.CPU:
+                    continue
+                # Create a mapping of kernel execution times to the corresponding trace events
+                trace_events.append(event.time_range.elapsed_us())            
 
         def load_arg(a):
             return torch.fx.graph.map_arg(a, lambda n: env[n.name])
@@ -81,14 +102,26 @@ class Profiler:
         def get_time_or_profile(key, inp_shapes, operation, *args, **kwargs):
             t = self.tree_db.get(key, inp_shapes)
 
-            if self.data_collection_mode and t is None:
-                with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
+            if self.data_collection_mode:
+                with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA, torch.profiler.ProfilerActivity.CUDA]) as prof:
                     operation(*args, **kwargs)
-                event_time_total = 0
-                for event in prof.key_averages():
-                    event_time_total += event.cuda_time_total
-                t = event_time_total
-                self.tree_db.add(key, inp_shapes, t)
+
+                if t is None:
+                    # New key
+                    event_time_total = 0
+                    for event in prof.events():
+                        if event.trace_name is None or event.device_type == torch.autograd.DeviceType.CPU:
+                            continue
+                        event_time_total += trace_events[self.trace_event_idx]
+                        self.trace_event_idx += 1
+                    t = event_time_total
+                    self.tree_db.add(key, inp_shapes, t)
+                else:
+                    # Existing key, increment trace_event_idx by # of events to maintain mapping to trace_events list
+                    for event in prof.events():
+                        if event.trace_name is None or event.device_type == torch.autograd.DeviceType.CPU:
+                            continue
+                        self.trace_event_idx += 1
 
             return t
 
@@ -110,7 +143,7 @@ class Profiler:
 
                 t = get_time_or_profile(key, inp_shapes, node.target, *args, **kwargs)
 
-                total_time += t
+                total_prediction_time += t
             elif node.op == 'call_method':
                 self_obj, *args = load_arg(node.args)
                 kwargs = load_arg(node.kwargs)
@@ -123,7 +156,7 @@ class Profiler:
 
                 t = get_time_or_profile(key, inp_shapes, getattr(self_obj, node.target), *args, **kwargs)
 
-                total_time += t
+                total_prediction_time += t
             elif node.op == 'call_module':
                 mod = self.modules[node.target]
                 args = load_arg(node.args)
@@ -145,9 +178,12 @@ class Profiler:
 
                 t = get_time_or_profile(key, inp_shapes, mod, *args, **kwargs)
 
-                total_time += t
+                total_prediction_time += t
             elif node.op == 'output':
                 args = load_arg(node.args)
-                return args[0], total_time
+                if self.data_collection_mode:
+                    # Return full graph execution time as well for accuracy comparison
+                    return args[0], total_prediction_time, actual_time
+                return args[0], total_prediction_time
 
             env[node.name] = result
