@@ -165,7 +165,8 @@ def resnet_test(batch_size, custom_backend):
     gc.collect()
     torch.cuda.empty_cache()
 
-
+for model_name, input_size in hf_model_tests:
+    hf_model_test(model_name, input_size, custom_backend)
 
 for batch_size in resnet_tests:
     resnet_test(batch_size, custom_backend)
