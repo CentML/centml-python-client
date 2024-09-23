@@ -47,7 +47,7 @@ hf_model_tests = [
 # ]
 
 # Different Batch Sizes for each ResNet Model (torchvision)
-resnet_tests = [1024, 720, 1440]
+resnet_tests = [512, 720]
 
 
 def percent_error(observed, true):
@@ -65,7 +65,6 @@ class DataCollectionTreeDB:
         self.db[key].add(point, time)
 
     def get(self, key, inp):
-        return None
         if key not in self.db:
             # print("New Key")
             return None
@@ -161,13 +160,12 @@ def resnet_test(batch_size, custom_backend):
     print("Error: ", percent_error(cuda_kernel_time, actual_time))
 
     cuda_kernel_time = 0
+    actual_time = 0
     del model, inp, compiled_model
     gc.collect()
     torch.cuda.empty_cache()
 
 
-for model_name, input_size in hf_model_tests:
-    hf_model_test(model_name, input_size, custom_backend)
 
 for batch_size in resnet_tests:
     resnet_test(batch_size, custom_backend)
