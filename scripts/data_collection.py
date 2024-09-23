@@ -4,8 +4,6 @@ import json
 
 import torch
 import torchvision.models as models
-from sklearn.neighbors import KDTree
-from torch.profiler import ProfilerActivity, profile, record_function
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
