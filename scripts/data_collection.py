@@ -28,7 +28,6 @@ hf_model_tests = [
     ("gpt2-xl", (1, 512)),
     ("google-bert/bert-large-uncased", (8, 512)),
     ("google-bert/bert-large-uncased", (16, 512)),
-    ("meta-llama/Meta-Llama-3.1-8B", (1, 512)),
     ("meta-llama/Meta-Llama-3.1-8B", (1, 256)),
     ("gpt2-medium", (1, 1024)),
     ("facebook/bart-large", (1, 1024)),
@@ -66,6 +65,7 @@ class DataCollectionTreeDB:
         self.db[key].add(point, time)
 
     def get(self, key, inp):
+        return None
         if key not in self.db:
             # print("New Key")
             return None
