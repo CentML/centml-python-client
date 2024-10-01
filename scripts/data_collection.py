@@ -1,30 +1,17 @@
-import argparse
 import csv
 import gc
 import json
-import os
-import random
-import statistics
-import time
 
-import numpy as np
 import torch
 import torchvision.models as models
-from sklearn.neighbors import KDTree
-from torch.profiler import ProfilerActivity, profile, record_function
 from transformers import (
-    AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
-    BertConfig,
-    BertForMaskedLM,
-    GPT2ForSequenceClassification,
-    PegasusConfig,
-    PegasusForCausalLM,
 )
 
 from centml.compiler.prediction.kdtree import KDTreeWithValues
 from centml.compiler.prediction.profiler import Profiler
+from scripts.timer import timed
 
 torch.set_float32_matmul_precision('high')
 torch.set_default_device('cuda')
@@ -41,25 +28,26 @@ hf_model_tests = [
     ("gpt2-xl", (1, 512)),
     ("google-bert/bert-large-uncased", (8, 512)),
     ("google-bert/bert-large-uncased", (16, 512)),
-    ("meta-llama/Meta-Llama-3.1-8B", (1, 512)),
     ("meta-llama/Meta-Llama-3.1-8B", (1, 256)),
     ("gpt2-medium", (1, 1024)),
     ("facebook/bart-large", (1, 1024)),
     ("google/pegasus-cnn_dailymail", (1, 1024)),
 ]
 
+# GPU bound tests for A100 80GB
+# A10080GB_hf_model_tests = [
+#     ("EleutherAI/gpt-neo-2.7B", (1, 1024)),
+#     ("gpt2-xl", (2, 1024)),
+#     ("meta-llama/Meta-Llama-3.1-8B", (1, 1024)),
+#     ("google/pegasus-cnn_dailymail", (4, 1024)),
+#     ("facebook/bart-large", (4, 1024)),
+#     ("google-bert/bert-large-uncased", (16, 512)),
+#     ("gpt2-medium", (2, 1024)),
+#     ("gpt2-large", (2, 1024)),
+# ]
+
 # Different Batch Sizes for each ResNet Model (torchvision)
-resnet_tests = [1024, 720, 1440]
-
-
-def timed(fn):
-    start = torch.cuda.Event(enable_timing=True)
-    end = torch.cuda.Event(enable_timing=True)
-    start.record()
-    result = fn()
-    end.record()
-    torch.cuda.synchronize()
-    return result, start.elapsed_time(end) / 1000
+resnet_tests = [512, 720]
 
 
 def percent_error(observed, true):
@@ -90,7 +78,8 @@ class DataCollectionTreeDB:
 
 
 db = DataCollectionTreeDB()
-added_time = 0
+cuda_kernel_time = 0
+actual_time = 0
 
 
 def custom_backend(gm: torch.fx.GraphModule, inps):
@@ -98,16 +87,19 @@ def custom_backend(gm: torch.fx.GraphModule, inps):
     profiler = Profiler(mod=gm, gpu=CURR_GPU, treeDB=db, data_collection_mode=True)
 
     def forward(*args):
-        global added_time
-        out, t = profiler.propagate(*args)
-        added_time += t
+        global cuda_kernel_time
+        global actual_time
+        out, t, actual_t = profiler.propagate(*args)
+        cuda_kernel_time += t
+        actual_time += actual_t
         return out
 
     return forward
 
 
 def hf_model_test(model_name, input_size, custom_backend):
-    global added_time
+    global cuda_kernel_time
+    global actual_time
     models_without_tokenizer = {"google/pegasus-cnn_dailymail"}
 
     model = AutoModelForCausalLM.from_pretrained(model_name).to("cuda:0")
@@ -131,21 +123,23 @@ def hf_model_test(model_name, input_size, custom_backend):
     compiled_model = torch.compile(model, backend=custom_backend)
     compiled_model(inp)
 
-    added_time /= 1000000
+    cuda_kernel_time /= 1000000
 
     print(f"{model_name}, {input_size}")
-    print("Real time: ", t)
-    print("TOTAL TIME: ", added_time)
-    print("Error: ", percent_error(added_time, t))
+    print("Real time: ", actual_time)
+    print("Kernel execution time: ", cuda_kernel_time)
+    print("Error: ", percent_error(cuda_kernel_time, actual_time))
 
-    added_time = 0
+    cuda_kernel_time = 0
+    actual_time = 0
     del model, inp, compiled_model
     gc.collect()
     torch.cuda.empty_cache()
 
 
 def resnet_test(batch_size, custom_backend):
-    global added_time
+    global cuda_kernel_time
+    global actual_time
     model = models.resnet50(weights=True, num_classes=1000).cuda()
     model.eval()
     inp = torch.randn(batch_size, 3, 128, 128).cuda(0)
@@ -157,16 +151,19 @@ def resnet_test(batch_size, custom_backend):
 
     compiled_model = torch.compile(model, backend=custom_backend)
     compiled_model(inp)
-    print(f"resnet, ({batch_size}, 3, 128, 128)")
-    print("Real time: ", t)
-    print("TOTAL TIME: ", added_time)
-    print("Error: ", percent_error(added_time, t))
 
-    added_time = 0
+    cuda_kernel_time /= 1000000
+
+    print(f"resnet, ({batch_size}, 3, 128, 128)")
+    print("Real time: ", actual_time)
+    print("TOTAL TIME: ", cuda_kernel_time)
+    print("Error: ", percent_error(cuda_kernel_time, actual_time))
+
+    cuda_kernel_time = 0
+    actual_time = 0
     del model, inp, compiled_model
     gc.collect()
     torch.cuda.empty_cache()
-
 
 for model_name, input_size in hf_model_tests:
     hf_model_test(model_name, input_size, custom_backend)
