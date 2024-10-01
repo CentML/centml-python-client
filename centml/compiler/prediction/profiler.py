@@ -20,7 +20,7 @@ class Profiler:
     def propagate(self, *args):
         args_iter = iter(args)
         env: Dict[str, Node] = {}
-        total_prediction_time = 0
+        total_gpu_time = 0
         actual_time = 0
         trace_events = []
         if self.data_collection_mode:
@@ -32,7 +32,7 @@ class Profiler:
             actual_time = t
 
             with torch.profiler.profile(
-                activities=[torch.profiler.ProfilerActivity.CUDA, torch.profiler.ProfilerActivity.CUDA]
+                activities=[torch.profiler.ProfilerActivity.CUDA, torch.profiler.ProfilerActivity.CPU]
             ) as prof:
                 self.mod(*args)
             for event in prof.events():
@@ -106,7 +106,7 @@ class Profiler:
 
             if self.data_collection_mode:
                 with torch.profiler.profile(
-                    activities=[torch.profiler.ProfilerActivity.CUDA, torch.profiler.ProfilerActivity.CUDA]
+                    activities=[torch.profiler.ProfilerActivity.CUDA, torch.profiler.ProfilerActivity.CPU]
                 ) as prof:
                     operation(*args, **kwargs)
 
@@ -147,7 +147,7 @@ class Profiler:
 
                 t = get_time_or_profile(key, inp_shapes, node.target, *args, **kwargs)
 
-                total_prediction_time += t
+                total_gpu_time += t
             elif node.op == 'call_method':
                 self_obj, *args = load_arg(node.args)
                 kwargs = load_arg(node.kwargs)
@@ -160,7 +160,7 @@ class Profiler:
 
                 t = get_time_or_profile(key, inp_shapes, getattr(self_obj, node.target), *args, **kwargs)
 
-                total_prediction_time += t
+                total_gpu_time += t
             elif node.op == 'call_module':
                 mod = self.modules[node.target]
                 args = load_arg(node.args)
@@ -182,12 +182,12 @@ class Profiler:
 
                 t = get_time_or_profile(key, inp_shapes, mod, *args, **kwargs)
 
-                total_prediction_time += t
+                total_gpu_time += t
             elif node.op == 'output':
                 args = load_arg(node.args)
                 if self.data_collection_mode:
                     # Return full graph execution time as well for accuracy comparison
-                    return args[0], total_prediction_time, actual_time
-                return args[0], total_prediction_time
+                    return args[0], total_gpu_time, actual_time
+                return args[0], total_gpu_time
 
             env[node.name] = result
