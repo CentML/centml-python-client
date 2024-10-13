@@ -1,6 +1,6 @@
 import contextlib
-import platform_api_client
-from platform_api_client.models.deployment_status import DeploymentStatus
+import platform_api_python_client
+from platform_api_python_client.models.deployment_status import DeploymentStatus
 
 from centml.sdk import auth
 from centml.sdk.config import settings
@@ -9,12 +9,12 @@ from centml.sdk.utils import client_certs
 
 @contextlib.contextmanager
 def get_api():
-    configuration = platform_api_client.Configuration(
+    configuration = platform_api_python_client.Configuration(
         host=settings.CENTML_PLATFORM_API_URL, access_token=auth.get_centml_token()
     )
 
-    with platform_api_client.ApiClient(configuration) as api_client:
-        api_instance = platform_api_client.EXTERNALApi(api_client)
+    with platform_api_python_client.ApiClient(configuration) as api_client:
+        api_instance = platform_api_python_client.EXTERNALApi(api_client)
 
         yield api_instance
 
@@ -56,7 +56,7 @@ def create_inference(
         # Handle automatic download of client private secrets
         client_certs.save_pem_file(name, triplet.client_private_key, triplet.client_certificate)
     with get_api() as api:
-        req = platform_api_client.CreateInferenceDeploymentRequest(
+        req = platform_api_python_client.CreateInferenceDeploymentRequest(
             name=name,
             image_url=image,
             port=port,
@@ -75,7 +75,7 @@ def create_inference(
 
 def create_compute(name, image, username, password, ssh_key, hw_to_id_map):
     with get_api() as api:
-        req = platform_api_client.CreateComputeDeploymentRequest(
+        req = platform_api_python_client.CreateComputeDeploymentRequest(
             name=name,
             image_url=image,
             hardware_instance_id=hw_to_id_map,
@@ -88,7 +88,7 @@ def create_compute(name, image, username, password, ssh_key, hw_to_id_map):
 
 def update_status(id, new_status):
     with get_api() as api:
-        status_req = platform_api_client.DeploymentStatusRequest(status=new_status)
+        status_req = platform_api_python_client.DeploymentStatusRequest(status=new_status)
         api.update_deployment_status_deployments_status_deployment_id_put(id, status_req)
 
 

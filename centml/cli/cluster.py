@@ -2,9 +2,8 @@ import sys
 from typing import Dict
 import click
 from tabulate import tabulate
-import platform_api_client
-from platform_api_client.models.endpoint_ready_state import EndpointReadyState
-from platform_api_client.models.deployment_status import DeploymentStatus
+import platform_api_python_client
+from platform_api_python_client.models.deployment_status import DeploymentStatus
 from centml.sdk import api
 
 
@@ -60,8 +59,8 @@ class HardwarePricingTier(click.ParamType):
 hardware_pricing_tier_instance = HardwarePricingTier()
 
 depl_type_map = {
-    "inference": platform_api_client.DeploymentType.INFERENCE,
-    "compute": platform_api_client.DeploymentType.COMPUTE,
+    "inference": platform_api_python_client.DeploymentType.INFERENCE,
+    "compute": platform_api_python_client.DeploymentType.COMPUTE,
 }
 
 
@@ -124,9 +123,9 @@ def ls(type):
 @click.argument("type", type=click.Choice(list(depl_type_map.keys())))
 @click.argument("id", type=int)
 def get(type, id):
-    if type == platform_api_client.DeploymentType.INFERENCE:
+    if type == platform_api_python_client.DeploymentType.INFERENCE:
         deployment = api.get_inference(id)
-    elif type == platform_api_client.DeploymentType.COMPUTE:
+    elif type == platform_api_python_client.DeploymentType.COMPUTE:
         deployment = api.get_compute(id)
     else:
         sys.exit("Please enter correct deployment type")
@@ -150,7 +149,7 @@ def get(type, id):
     )
 
     click.echo("Additional deployment configurations:")
-    if type == platform_api_client.DeploymentType.INFERENCE:
+    if type == platform_api_python_client.DeploymentType.INFERENCE:
         click.echo(
             tabulate(
                 [
@@ -164,7 +163,7 @@ def get(type, id):
                 disable_numparse=True,
             )
         )
-    elif type == platform_api_client.DeploymentType.COMPUTE:
+    elif type == platform_api_python_client.DeploymentType.COMPUTE:
         click.echo(
             tabulate(
                 [
