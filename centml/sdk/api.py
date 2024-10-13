@@ -10,7 +10,7 @@ from centml.sdk.utils import client_certs
 @contextlib.contextmanager
 def get_api():
     configuration = platform_api_client.Configuration(
-        host=settings.PLATFORM_API_URL, access_token=auth.get_centml_token()
+        host=settings.CENTML_PLATFORM_API_URL, access_token=auth.get_centml_token()
     )
 
     with platform_api_client.ApiClient(configuration) as api_client:

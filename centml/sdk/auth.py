@@ -9,7 +9,7 @@ from centml.sdk.config import settings
 
 
 def refresh_centml_token(refresh_token):
-    api_key = settings.FIREBASE_API_KEY
+    api_key = settings.CENTML_FIREBASE_API_KEY
 
     cred = requests.post(
         f"https://securetoken.googleapis.com/v1/token?key={api_key}",
