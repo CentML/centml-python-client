@@ -27,7 +27,7 @@ def ccluster():
 
 ccluster.add_command(ls)
 ccluster.add_command(get)
-ccluster.add_command(create)
+#ccluster.add_command(create)
 ccluster.add_command(delete)
 ccluster.add_command(pause)
 ccluster.add_command(resume)
