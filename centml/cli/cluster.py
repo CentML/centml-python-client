@@ -67,7 +67,7 @@ def _get_ready_status(cclient, deployment):
 
 
 @click.command(help="List all deployments")
-@click.argument("type", type=click.Choice(depl_name_to_type_map.keys()), required=False, default=None)
+@click.argument("type", type=click.Choice(list(depl_name_to_type_map.keys())), required=False, default=None)
 def ls(type):
     with get_centml_client() as cclient:
         depl_type = depl_name_to_type_map[type] if type in depl_name_to_type_map else None
@@ -88,7 +88,7 @@ def ls(type):
 
 
 @click.command(help="Get deployment details")
-@click.argument("type", type=click.Choice(depl_name_to_type_map.keys()))
+@click.argument("type", type=click.Choice(list(depl_name_to_type_map.keys())))
 @click.argument("id", type=int)
 @handle_exception
 def get(type, id):
