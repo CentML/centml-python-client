@@ -1,5 +1,4 @@
--r requirements.txt
-
+torch==2.3.1
 black>=23.10.0
 pylint>=3.0.1
 pytest>=7.4.0
@@ -11,5 +10,3 @@ parameterized>=0.9.0
 mypy==1.5.1
 types-requests==2.31.0.2
 types-tabulate>=0.9.0
-prometheus-client>=0.20.0
-

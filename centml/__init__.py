@@ -1,3 +1,1 @@
-from .compile import compile
-
-__all__ = ["compile"]
+from centml.compiler.main import compile
