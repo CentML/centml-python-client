@@ -1,6 +1,2 @@
+from platform_api_python_client import *
 from . import api, auth
-
-__all__ = [
-    "api",
-    "auth",
-]

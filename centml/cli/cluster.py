@@ -1,28 +1,38 @@
 import sys
+from functools import wraps
 from typing import Dict
 import click
 from tabulate import tabulate
-import platform_api_python_client
-from platform_api_python_client.models.deployment_status import DeploymentStatus
-from platform_api_python_client.models.health_status import HealthStatus
-from centml.sdk import api
+from centml.sdk import (
+    DeploymentType,
+    DeploymentStatus,
+    HealthStatus,
+    ApiException,
+)
+from centml.sdk.api import get_centml_client
 
 
-# Custom class to parse key-value pairs for env variables for inference deployment
-class InferenceEnvType(click.ParamType):
-    name = "key_value"
+depl_name_to_type_map = {
+    "inference": DeploymentType.INFERENCE_V2,
+    "compute": DeploymentType.COMPUTE_V2,
+    "cserve": DeploymentType.CSERVE,
+}
+depl_type_to_name_map = {v: k for k, v in depl_name_to_type_map.items()}
 
-    def convert(self, value, param, ctx):
+
+def handle_exception(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
         try:
-            key, val = value.split('=', 1)
-            return key, val
-        except ValueError:
-            self.fail(f"{value} is not a valid key=value pair", param, ctx)
-            return None  # to avoid warning from lint for inconsistent return statements
+            return func(*args, **kwargs)
+        except ApiException as e:
+            click.echo(f"Error: {e.reason}")
+
+    return wrapper
 
 
-def get_hw_to_id_map(cluster_id):
-    response = api.get_hardware_instances(cluster_id)
+def _get_hw_to_id_map(cclient, cluster_id):
+    response = cclient.get_hardware_instances(cluster_id)
 
     # Initialize hashmap for hardware to id or vice versa mapping
     hw_to_id_map: Dict[str, int] = {}
@@ -34,23 +44,15 @@ def get_hw_to_id_map(cluster_id):
     return hw_to_id_map, id_to_hw_map
 
 
-depl_name_to_type_map = {
-    "inference": platform_api_python_client.DeploymentType.INFERENCE_V2,
-    "compute": platform_api_python_client.DeploymentType.COMPUTE_V2,
-    "cserve": platform_api_python_client.DeploymentType.CSERVE,
-}
-depl_type_to_name_map = {v: k for k, v in depl_name_to_type_map.items()}
-
-
-def format_ssh_key(ssh_key):
+def _format_ssh_key(ssh_key):
     if not ssh_key:
         return "No SSH Key Found"
     return ssh_key[:10] + '...'
 
 
-def get_ready_status(deployment):
+def _get_ready_status(cclient, deployment):
     api_status = deployment.status
-    service_status = api.get_status(deployment.id).service_status if deployment.status == DeploymentStatus.ACTIVE else None
+    service_status = cclient.get_status(deployment.id).service_status if deployment.status == DeploymentStatus.ACTIVE else None
 
     status_styles = {
         (DeploymentStatus.PAUSED, None): ("paused", "yellow", "black"),
@@ -69,120 +71,124 @@ def get_ready_status(deployment):
 @click.command(help="List all deployments")
 @click.argument("type", type=click.Choice(depl_name_to_type_map.keys()), required=False, default=None)
 def ls(type):
-    depl_type = depl_name_to_type_map[type] if type in depl_name_to_type_map else None
-    deployments = api.get(depl_type)
-    rows = [
-        [d.id, d.name, depl_type_to_name_map[d.type], d.status.value, d.created_at.strftime("%Y-%m-%d %H:%M:%S")]
-        for d in deployments
-    ]
+    with get_centml_client() as cclient:
+        depl_type = depl_name_to_type_map[type] if type in depl_name_to_type_map else None
+        deployments = cclient.get(depl_type)
+        rows = [
+            [d.id, d.name, depl_type_to_name_map[d.type], d.status.value, d.created_at.strftime("%Y-%m-%d %H:%M:%S")]
+            for d in deployments
+        ]
 
-    click.echo(
-        tabulate(
-            rows,
-            headers=["ID", "Name", "Type", "Status", "Created at"],
-            tablefmt="rounded_outline",
-            disable_numparse=True,
+        click.echo(
+            tabulate(
+                rows,
+                headers=["ID", "Name", "Type", "Status", "Created at"],
+                tablefmt="rounded_outline",
+                disable_numparse=True,
+            )
         )
-    )
 
 
 @click.command(help="Get deployment details")
 @click.argument("type", type=click.Choice(depl_name_to_type_map.keys()))
 @click.argument("id", type=int)
+@handle_exception
 def get(type, id):
-    depl_type = depl_name_to_type_map[type]
+    with get_centml_client() as cclient:
+        depl_type = depl_name_to_type_map[type]
 
-    if depl_type == platform_api_python_client.DeploymentType.INFERENCE_V2:
-        deployment = api.get_inference(id)
-    elif depl_type == platform_api_python_client.DeploymentType.COMPUTE_V2:
-        deployment = api.get_compute(id)
-    elif depl_type == platform_api_python_client.DeploymentType.CSERVE:
-        deployment = api.get_cserve(id)
-    else:
-        sys.exit("Please enter correct deployment type")
+        if depl_type == DeploymentType.INFERENCE_V2:
+            deployment = cclient.get_inference(id)
+        elif depl_type == DeploymentType.COMPUTE_V2:
+            deployment = cclient.get_compute(id)
+        elif depl_type == DeploymentType.CSERVE:
+            deployment = cclient.get_cserve(id)
+        else:
+            sys.exit("Please enter correct deployment type")
 
-    ready_status = get_ready_status(deployment)
-    _, id_to_hw_map = get_hw_to_id_map(deployment.cluster_id)
-    hw = id_to_hw_map[deployment.hardware_instance_id]
+        ready_status = _get_ready_status(cclient, deployment)
+        _, id_to_hw_map = _get_hw_to_id_map(cclient, deployment.cluster_id)
+        hw = id_to_hw_map[deployment.hardware_instance_id]
 
-    click.echo(
-        tabulate(
-            [
-                ("Name", deployment.name),
-                ("Status", ready_status),
-                ("Endpoint", deployment.endpoint_url),
-                ("Created at", deployment.created_at.strftime("%Y-%m-%d %H:%M:%S")),
-                ("Hardware", f"{hw.name} ({hw.num_gpu}x {hw.gpu_type})"),
-                ("Cost", f"{hw.cost_per_hr/100} credits/hr"),
-            ],
-            tablefmt="rounded_outline",
-            disable_numparse=True,
-        )
-    )
-
-    click.echo("Additional deployment configurations:")
-    if depl_type == platform_api_python_client.DeploymentType.INFERENCE_V2:
         click.echo(
             tabulate(
                 [
-                    ("Image", deployment.image_url),
-                    ("Container port", deployment.container_port),
-                    ("Healthcheck", deployment.healthcheck or "/"),
-                    ("Replicas", {"min": deployment.min_scale, "max": deployment.max_scale}),
-                    ("Environment variables", deployment.env_vars or "None"),
-                    ("Max concurrency", deployment.concurrency or "None"),
-                ],
-                tablefmt="rounded_outline",
-                disable_numparse=True,
-            )
-        )
-    elif depl_type == platform_api_python_client.DeploymentType.COMPUTE_V2:
-        click.echo(
-            tabulate(
-                [
-                    ("Username", "centml"),
-                    ("SSH key", format_ssh_key(deployment.ssh_public_key)),
-                ],
-                tablefmt="rounded_outline",
-                disable_numparse=True,
-            )
-        )
-    elif depl_type == platform_api_python_client.DeploymentType.CSERVE:
-        click.echo(
-            tabulate(
-                [
-                    ("Hugging face model", deployment.model),
-                    ("Parallelism", {"tensor": deployment.tensor_parallel_size, "pipeline": deployment.pipeline_parallel_size}),
-                    ("Replicas", {"min": deployment.min_scale, "max": deployment.max_scale}),
-                    ("Max concurrency", deployment.concurrency or "None"),
+                    ("Name", deployment.name),
+                    ("Status", ready_status),
+                    ("Endpoint", deployment.endpoint_url),
+                    ("Created at", deployment.created_at.strftime("%Y-%m-%d %H:%M:%S")),
+                    ("Hardware", f"{hw.name} ({hw.num_gpu}x {hw.gpu_type})"),
+                    ("Cost", f"{hw.cost_per_hr/100} credits/hr"),
                 ],
                 tablefmt="rounded_outline",
                 disable_numparse=True,
             )
         )
 
-
-@click.group(help="Create a new deployment")
-def create():
-    pass
+        click.echo("Additional deployment configurations:")
+        if depl_type == DeploymentType.INFERENCE_V2:
+            click.echo(
+                tabulate(
+                    [
+                        ("Image", deployment.image_url),
+                        ("Container port", deployment.container_port),
+                        ("Healthcheck", deployment.healthcheck or "/"),
+                        ("Replicas", {"min": deployment.min_scale, "max": deployment.max_scale}),
+                        ("Environment variables", deployment.env_vars or "None"),
+                        ("Max concurrency", deployment.concurrency or "None"),
+                    ],
+                    tablefmt="rounded_outline",
+                    disable_numparse=True,
+                )
+            )
+        elif depl_type == DeploymentType.COMPUTE_V2:
+            click.echo(
+                tabulate(
+                    [
+                        ("Username", "centml"),
+                        ("SSH key", format_ssh_key(deployment.ssh_public_key)),
+                    ],
+                    tablefmt="rounded_outline",
+                    disable_numparse=True,
+                )
+            )
+        elif depl_type == DeploymentType.CSERVE:
+            click.echo(
+                tabulate(
+                    [
+                        ("Hugging face model", deployment.model),
+                        ("Parallelism", {"tensor": deployment.tensor_parallel_size, "pipeline": deployment.pipeline_parallel_size}),
+                        ("Replicas", {"min": deployment.min_scale, "max": deployment.max_scale}),
+                        ("Max concurrency", deployment.concurrency or "None"),
+                    ],
+                    tablefmt="rounded_outline",
+                    disable_numparse=True,
+                )
+            )
 
 
 @click.command(help="Delete a deployment")
 @click.argument("id", type=int)
+@handle_exception
 def delete(id):
-    api.delete(id)
-    click.echo("Deployment has been deleted")
+    with get_centml_client() as cclient:
+        cclient.delete(id)
+        click.echo("Deployment has been deleted")
 
 
 @click.command(help="Pause a deployment")
 @click.argument("id", type=int)
+@handle_exception
 def pause(id):
-    api.pause(id)
-    click.echo("Deployment has been paused")
+    with get_centml_client() as cclient:
+        cclient.pause(id)
+        click.echo("Deployment has been paused")
 
 
 @click.command(help="Resume a deployment")
 @click.argument("id", type=int)
+@handle_exception
 def resume(id):
-    api.resume(id)
-    click.echo("Deployment has been resumed")
+    with get_centml_client() as cclient:
+        cclient.resume(id)
+        click.echo("Deployment has been resumed")

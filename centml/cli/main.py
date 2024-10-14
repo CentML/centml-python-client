@@ -1,7 +1,7 @@
 import click
 
 from centml.cli.login import login, logout
-from centml.cli.cluster import ls, get, create, delete, pause, resume
+from centml.cli.cluster import ls, get, delete, pause, resume
 
 
 @click.group()
