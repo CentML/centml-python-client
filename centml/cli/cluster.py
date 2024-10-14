@@ -3,12 +3,7 @@ from functools import wraps
 from typing import Dict
 import click
 from tabulate import tabulate
-from centml.sdk import (
-    DeploymentType,
-    DeploymentStatus,
-    HealthStatus,
-    ApiException,
-)
+from centml.sdk import DeploymentType, DeploymentStatus, HealthStatus, ApiException, HardwareInstanceResponse
 from centml.sdk.api import get_centml_client
 
 
@@ -27,6 +22,7 @@ def handle_exception(func):
             return func(*args, **kwargs)
         except ApiException as e:
             click.echo(f"Error: {e.reason}")
+            return None
 
     return wrapper
 
@@ -52,7 +48,9 @@ def _format_ssh_key(ssh_key):
 
 def _get_ready_status(cclient, deployment):
     api_status = deployment.status
-    service_status = cclient.get_status(deployment.id).service_status if deployment.status == DeploymentStatus.ACTIVE else None
+    service_status = (
+        cclient.get_status(deployment.id).service_status if deployment.status == DeploymentStatus.ACTIVE else None
+    )
 
     status_styles = {
         (DeploymentStatus.PAUSED, None): ("paused", "yellow", "black"),
@@ -144,10 +142,7 @@ def get(type, id):
         elif depl_type == DeploymentType.COMPUTE_V2:
             click.echo(
                 tabulate(
-                    [
-                        ("Username", "centml"),
-                        ("SSH key", format_ssh_key(deployment.ssh_public_key)),
-                    ],
+                    [("Username", "centml"), ("SSH key", _format_ssh_key(deployment.ssh_public_key))],
                     tablefmt="rounded_outline",
                     disable_numparse=True,
                 )
@@ -157,7 +152,10 @@ def get(type, id):
                 tabulate(
                     [
                         ("Hugging face model", deployment.model),
-                        ("Parallelism", {"tensor": deployment.tensor_parallel_size, "pipeline": deployment.pipeline_parallel_size}),
+                        (
+                            "Parallelism",
+                            {"tensor": deployment.tensor_parallel_size, "pipeline": deployment.pipeline_parallel_size},
+                        ),
                         ("Replicas", {"min": deployment.min_scale, "max": deployment.max_scale}),
                         ("Max concurrency", deployment.concurrency or "None"),
                     ],

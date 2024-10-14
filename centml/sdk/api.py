@@ -1,7 +1,6 @@
 from contextlib import contextmanager
 
 import platform_api_python_client
-from platform_api_python_client.rest import ApiException
 from platform_api_python_client import (
     DeploymentStatus,
     CreateInferenceDeploymentV2Request,
@@ -11,7 +10,6 @@ from platform_api_python_client import (
 
 from centml.sdk import auth
 from centml.sdk.config import settings
-from centml.sdk.utils import client_certs
 
 
 class CentMLClient:
@@ -35,22 +33,13 @@ class CentMLClient:
     def get_cserve(self, id):
         return self._api.get_cserve_deployment_deployments_v2_cserve_deployment_id_get(id)
 
-    def create_inference(
-        self,
-        request: CreateInferenceDeploymentV2Request,
-    ):
+    def create_inference(self, request: CreateInferenceDeploymentV2Request):
         return self._api.create_inference_deployment_deployments_v2_inference_post(request)
 
-    def create_compute(
-        self,
-        request: CreateComputeDeploymentV2Request,
-    ):
+    def create_compute(self, request: CreateComputeDeploymentV2Request):
         return self._api.create_compute_deployment_deployments_compute_post(request)
 
-    def create_cserve(
-        self,
-        request: CreateCServeDeploymentRequest,
-    ):
+    def create_cserve(self, request: CreateCServeDeploymentRequest):
         return self._api.create_cserve_deployment_deployments_v2_cserve_post(request)
 
     def _update_status(self, id, new_status):
