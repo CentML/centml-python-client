@@ -5,6 +5,8 @@ setup(
     version='0.1.0',
     packages=find_packages(),
     python_requires="<3.12",
+    long_description=open('README.md').read(),
+    long_description_content_type='text/markdown',
     entry_points={
         "console_scripts": [
             "centml = centml.cli:cli",
