@@ -1,11 +1,7 @@
 import builtins
 from typing import Callable, Dict, Optional, Union
 
-import torch
-
-from centml.compiler.backend import centml_dynamo_backend
 from centml.compiler.config import OperationMode, settings
-from centml.compiler.prediction.backend import centml_prediction_backend, get_gauge
 
 
 def compile(
@@ -17,8 +13,11 @@ def compile(
     options: Optional[Dict[str, Union[str, builtins.int, builtins.bool]]] = None,
     disable: builtins.bool = False,
 ) -> Callable:
+    import torch
 
     if settings.CENTML_MODE == OperationMode.REMOTE_COMPILATION:
+        from centml.compiler.backend import centml_dynamo_backend
+
         # Return the remote-compiled model
         compiled_model = torch.compile(
             model,
@@ -31,6 +30,8 @@ def compile(
         )
         return compiled_model
     elif settings.CENTML_MODE == OperationMode.PREDICTION:
+        from centml.compiler.prediction.backend import centml_prediction_backend, get_gauge
+
         # Proceed with prediction workflow
         compiled_model = torch.compile(
             model,
