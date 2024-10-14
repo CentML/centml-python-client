@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='centml',
-    version='0.1.0',
+    version='0.2.0',
     packages=find_packages(),
     python_requires="<3.12",
     long_description=open('README.md').read(),
@@ -25,6 +25,6 @@ setup(
         "prometheus-client>=0.20.0",
         "scipy>=1.6.0",
         "scikit-learn>=1.5.1",
-        "platform-api-python-client==0.1.0",
+        "platform-api-python-client==0.2.0",
     ],
 )
