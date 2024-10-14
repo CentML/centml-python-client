@@ -25,7 +25,6 @@ setup(
         "prometheus-client>=0.20.0",
         "scipy>=1.6.0",
         "scikit-learn>=1.5.1",
-        "platform_api_python_client @ git+https://github.com/CentML/platform_api_python_client.git@v0.1-rc1",
+        "platform-api-python-client==0.1.0",
     ],
 )
-
