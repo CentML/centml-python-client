@@ -53,14 +53,25 @@ llm_tests = [
 
 # Tests for larger GPUs (A100, H100, etc.)
 # large_llm_tests = [
+#     ("google/gemma-7b", (1, 256)),
+#     ("google/gemma-7b", (1, 512)),
+#     ("google/gemma-7b", (1, 1024)),
+#     ("microsoft/phi-2", (1,1024)),
+#     ("microsoft/phi-2", (1,2048)),
+#     ("microsoft/phi-2", (2,1024)),
 #     ("EleutherAI/gpt-neo-2.7B", (1, 1024)),
 #     ("gpt2-xl", (2, 1024)),
+#     ("gpt2-xl", (4, 512)),
 #     ("meta-llama/Meta-Llama-3.1-8B", (1, 1024)),
+#     ("meta-llama/Meta-Llama-3.1-8B", (1, 512)),
 #     ("google/pegasus-cnn_dailymail", (4, 1024)),
 #     ("facebook/bart-large", (4, 1024)),
+#     ("facebook/bart-large", (2, 1024)),
 #     ("google-bert/bert-large-uncased", (16, 512)),
 #     ("gpt2-medium", (2, 1024)),
+#     ("gpt2-medium", (4, 512)),
 #     ("gpt2-large", (2, 1024)),
+#     ("gpt2-large", (4, 512)),
 # ]
 
 # Different Batch Sizes for each image classification model
