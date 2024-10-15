@@ -5,6 +5,7 @@ from unittest.mock import patch, MagicMock
 import torch
 from parameterized import parameterized_class
 from torch.fx import GraphModule
+import centml
 from centml.compiler.backend import Runner
 from centml.compiler.config import CompilationStatus, settings
 from .test_helpers import MODEL_SUITE
@@ -42,12 +43,12 @@ class TestGetModelId(SetUpGraphModule):
     @patch("centml.compiler.backend.get_backend_compiled_forward_path", side_effect=Exception("Exiting early"))
     def test_model_id_consistency(self, mock_get_path):
         # self.model and self.inputs come from @parameterized_class
-        model_compiled_1 = torch.compile(self.model, backend="centml")
+        model_compiled_1 = centml.compile(self.model)
         model_compiled_1(self.inputs)
         hash_1 = mock_get_path.call_args[0][0]
         torch._dynamo.reset()  # Reset the dynamo cache to force recompilation
 
-        model_compiled_2 = torch.compile(self.model, backend="centml")
+        model_compiled_2 = centml.compile(self.model)
         model_compiled_2(self.inputs)
         hash_2 = mock_get_path.call_args[0][0]
         torch._dynamo.reset()
@@ -68,12 +69,12 @@ class TestGetModelId(SetUpGraphModule):
             return modified
 
         # self.model and self.inputs come from @parameterized_class
-        model_compiled_1 = torch.compile(self.model, backend="centml")
+        model_compiled_1 = centml.compile(self.model)
         model_compiled_1(self.inputs)
         hash_1 = mock_get_path.call_args[0][0]
 
         model_2 = get_modified_model(self.model)
-        model_compiled_2 = torch.compile(model_2, backend="centml")
+        model_compiled_2 = centml.compile(model_2)
         model_compiled_2(self.inputs)
         hash_2 = mock_get_path.call_args[0][0]
 
@@ -232,7 +233,7 @@ class TestRemoteCompilation(TestCase):
         with patch("threading.Thread.start", new=start_func), patch(
             "centml.compiler.backend.Runner.__call__", new=self.model.forward
         ):
-            compiled_model = torch.compile(self.model, backend="centml")
+            compiled_model = centml.compile(self.model)
             compiled_model(self.inputs)
 
         torch._dynamo.reset()
