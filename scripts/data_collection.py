@@ -3,11 +3,14 @@ import gc
 import json
 
 import torch
-import torchvision.models as models
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
+    AutoModelForImageClassification,
+    AutoModelForObjectDetection
 )
+
+
 
 from centml.compiler.prediction.kdtree import KDTreeWithValues
 from centml.compiler.prediction.profiler import Profiler
@@ -21,21 +24,35 @@ CURR_GPU = "A10G"
 OUTPUT_FILE = 'data.csv'
 
 # Different HuggingFace Models + Different Input Sizes
-hf_model_tests = [
-    ("EleutherAI/gpt-neo-2.7B", (1, 512)),
+llm_tests = [
+    ("google/gemma-7b", (1, 128)),
+    ("microsoft/phi-2", (1,512)),
+    ("microsoft/phi-2", (2,512)),
+    ("facebook/bart-large", (1, 1024)),
+    ("facebook/bart-large", (2, 512)),
     ("gpt2-xl", (1, 1024)),
-    ("gpt2-large", (1, 1024)),
+    ("gpt2-xl", (1, 720)),
     ("gpt2-xl", (1, 512)),
+    ("gpt2-xl", (2, 512)),
+    ("gpt2-xl", (4, 256)),
+    ("EleutherAI/gpt-neo-2.7B", (1, 512)),
+    ("EleutherAI/gpt-neo-2.7B", (1, 256)),
+    ("gpt2-large", (1, 1024)),
+    ("gpt2-large", (1, 720)),
+    ("gpt2-large", (1, 512)),
     ("google-bert/bert-large-uncased", (8, 512)),
     ("google-bert/bert-large-uncased", (16, 512)),
     ("meta-llama/Meta-Llama-3.1-8B", (1, 256)),
     ("gpt2-medium", (1, 1024)),
-    ("facebook/bart-large", (1, 1024)),
+    ("gpt2-medium", (1, 512)),
+    ("gpt2-medium", (2, 512)),
     ("google/pegasus-cnn_dailymail", (1, 1024)),
+    ("google/pegasus-cnn_dailymail", (1, 512)),
+    ("google/pegasus-cnn_dailymail", (2, 512)),
 ]
 
-# GPU bound tests for A100 80GB
-# A10080GB_hf_model_tests = [
+# Tests for larger GPUs (A100, H100, etc.)
+# large_llm_tests = [
 #     ("EleutherAI/gpt-neo-2.7B", (1, 1024)),
 #     ("gpt2-xl", (2, 1024)),
 #     ("meta-llama/Meta-Llama-3.1-8B", (1, 1024)),
@@ -46,8 +63,24 @@ hf_model_tests = [
 #     ("gpt2-large", (2, 1024)),
 # ]
 
-# Different Batch Sizes for each ResNet Model (torchvision)
-resnet_tests = [512, 720]
+# Different Batch Sizes for each image classification model
+image_classification_tests = [
+    ("google/efficientnet-b0", 512),
+    ("google/efficientnet-b0", 256),
+    ("google/efficientnet-b0", 128),
+    ("google/vit-base-patch16-224", 128),
+    ("microsoft/resnet-50", 256),
+    ("microsoft/resnet-50", 512),
+]
+
+# Different Batch Sizes for each object detection model
+object_detection_tests = [
+    ("hustvl/yolos-tiny", 128),
+    ("hustvl/yolos-tiny", 256),
+    ("hustvl/yolos-tiny", 512),
+    ("facebook/detr-resnet-50", 128),
+    ("facebook/detr-resnet-50", 256),
+]
 
 
 def percent_error(observed, true):
@@ -97,7 +130,7 @@ def custom_backend(gm: torch.fx.GraphModule, inps):
     return forward
 
 
-def hf_model_test(model_name, input_size, custom_backend):
+def llm_test(model_name, input_size, custom_backend):
     global cuda_kernel_time
     global actual_time
     models_without_tokenizer = {"google/pegasus-cnn_dailymail"}
@@ -137,10 +170,41 @@ def hf_model_test(model_name, input_size, custom_backend):
     torch.cuda.empty_cache()
 
 
-def resnet_test(batch_size, custom_backend):
+def image_classification_test(model_name, batch_size, custom_backend):
     global cuda_kernel_time
     global actual_time
-    model = models.resnet50(weights=True, num_classes=1000).cuda()
+    model = AutoModelForImageClassification.from_pretrained(model_name).to("cuda:0")
+    model.eval()
+    if model_name == "google/vit-base-patch16-224":
+        inp = torch.randn(batch_size, 3, 224, 224).cuda(0)
+    else:
+        inp = torch.randn(batch_size, 3, 128, 128).cuda(0)
+
+    with torch.inference_mode():
+        for _ in range(10):
+            _, t = timed(lambda: model(inp))
+            print(t)
+
+    compiled_model = torch.compile(model, backend=custom_backend)
+    compiled_model(inp)
+
+    cuda_kernel_time /= 1000000
+
+    print(f"{model_name}, {batch_size}")
+    print("Real time: ", actual_time)
+    print("TOTAL TIME: ", cuda_kernel_time)
+    print("Error: ", percent_error(cuda_kernel_time, actual_time))
+
+    cuda_kernel_time = 0
+    actual_time = 0
+    del model, inp, compiled_model
+    gc.collect()
+    torch.cuda.empty_cache()
+
+def object_detection_test(model_name, batch_size, custom_backend):
+    global cuda_kernel_time
+    global actual_time
+    model = AutoModelForObjectDetection.from_pretrained(model_name).to("cuda:0")
     model.eval()
     inp = torch.randn(batch_size, 3, 128, 128).cuda(0)
 
@@ -154,7 +218,7 @@ def resnet_test(batch_size, custom_backend):
 
     cuda_kernel_time /= 1000000
 
-    print(f"resnet, ({batch_size}, 3, 128, 128)")
+    print(f"{model_name}, {batch_size}")
     print("Real time: ", actual_time)
     print("TOTAL TIME: ", cuda_kernel_time)
     print("Error: ", percent_error(cuda_kernel_time, actual_time))
@@ -165,11 +229,17 @@ def resnet_test(batch_size, custom_backend):
     gc.collect()
     torch.cuda.empty_cache()
 
-for model_name, input_size in hf_model_tests:
-    hf_model_test(model_name, input_size, custom_backend)
+# for model_name, input_size in large_llm_tests:
+#     llm_test(model_name, input_size, custom_backend)
 
-for batch_size in resnet_tests:
-    resnet_test(batch_size, custom_backend)
+for model_name, input_size in llm_tests:
+    llm_test(model_name, input_size, custom_backend)
+
+for model_name, batch_size in object_detection_tests:
+    object_detection_test(model_name, batch_size, custom_backend)
+
+for model_name, batch_size in image_classification_tests:
+    image_classification_test(model_name, batch_size, custom_backend)
 
 # Write to CSV
 with open(OUTPUT_FILE, 'w', newline='') as csvfile:
