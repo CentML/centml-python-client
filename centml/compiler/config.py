@@ -38,7 +38,7 @@ class Config(BaseSettings):
 
     CENTML_MODE: OperationMode = OperationMode.REMOTE_COMPILATION
     CENTML_PREDICTION_DATA_FILE: str = 'tests/sample_data.csv'
-    CENTML_PREDICTION_GPUS: str = "A10G,A100SXM480GB"
+    CENTML_PREDICTION_GPUS: str = "A10G,A100SXM440GB,L4"
     CENTML_PROMETHEUS_PORT: int = 8000
 
 
