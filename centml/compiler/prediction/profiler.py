@@ -32,7 +32,7 @@ class Profiler:
             actual_time = t
 
             with torch.profiler.profile(
-                activities=[torch.profiler.ProfilerActivity.CUDA, torch.profiler.ProfilerActivity.CPU]
+                activities=[torch.profiler.ProfilerActivity.CUDA]
             ) as prof:
                 self.mod(*args)
             for event in prof.events():
@@ -106,7 +106,7 @@ class Profiler:
 
             if self.data_collection_mode:
                 with torch.profiler.profile(
-                    activities=[torch.profiler.ProfilerActivity.CUDA, torch.profiler.ProfilerActivity.CPU]
+                    activities=[torch.profiler.ProfilerActivity.CUDA]
                 ) as prof:
                     operation(*args, **kwargs)
 
