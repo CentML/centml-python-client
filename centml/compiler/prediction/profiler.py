@@ -31,9 +31,7 @@ class Profiler:
             # actual_time is to compare prediction to execution time of GraphModule
             actual_time = t
 
-            with torch.profiler.profile(
-                activities=[torch.profiler.ProfilerActivity.CUDA]
-            ) as prof:
+            with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
                 self.mod(*args)
             for event in prof.events():
                 # Ignore CPU events for now
@@ -105,9 +103,7 @@ class Profiler:
             t = self.tree_db.get(key, inp_shapes)
 
             if self.data_collection_mode:
-                with torch.profiler.profile(
-                    activities=[torch.profiler.ProfilerActivity.CUDA]
-                ) as prof:
+                with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
                     operation(*args, **kwargs)
 
                 if t is None:
