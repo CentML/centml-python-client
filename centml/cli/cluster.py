@@ -59,7 +59,11 @@ def _get_ready_status(cclient, deployment):
         (DeploymentStatus.ACTIVE, ServiceStatus.INITIALIZING): ("starting", "black", "white"),
         (DeploymentStatus.ACTIVE, ServiceStatus.MISSING): ("starting", "black", "white"),
         (DeploymentStatus.ACTIVE, ServiceStatus.ERROR): ("error", "red", "black"),
-        (DeploymentStatus.ACTIVE, ServiceStatus.CREATECONTAINERCONFIGERROR): ("createContainerConfigError", "red", "black"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.CREATECONTAINERCONFIGERROR): (
+            "createContainerConfigError",
+            "red",
+            "black",
+        ),
         (DeploymentStatus.ACTIVE, ServiceStatus.CRASHLOOPBACKOFF): ("crashLoopBackOff", "red", "black"),
         (DeploymentStatus.ACTIVE, ServiceStatus.IMAGEPULLBACKOFF): ("imagePullBackOff", "red", "black"),
         (DeploymentStatus.ACTIVE, ServiceStatus.PROGRESSDEADLINEEXCEEDED): ("progressDeadlineExceeded", "red", "black"),
