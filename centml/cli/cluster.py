@@ -3,7 +3,7 @@ from functools import wraps
 from typing import Dict
 import click
 from tabulate import tabulate
-from centml.sdk import DeploymentType, DeploymentStatus, HealthStatus, ApiException, HardwareInstanceResponse
+from centml.sdk import DeploymentType, DeploymentStatus, ServiceStatus, ApiException, HardwareInstanceResponse
 from centml.sdk.api import get_centml_client
 
 
@@ -55,10 +55,14 @@ def _get_ready_status(cclient, deployment):
     status_styles = {
         (DeploymentStatus.PAUSED, None): ("paused", "yellow", "black"),
         (DeploymentStatus.DELETED, None): ("deleted", "white", "black"),
-        (DeploymentStatus.ACTIVE, HealthStatus.HEALTHY): ("ready", "green", "black"),
-        (DeploymentStatus.ACTIVE, HealthStatus.PROGRESSING): ("starting", "black", "white"),
-        (DeploymentStatus.ACTIVE, HealthStatus.DEGRADED): ("starting", "black", "white"),
-        (DeploymentStatus.ACTIVE, HealthStatus.MISSING): ("not found", "cyan"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.HEALTHY): ("ready", "green", "black"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.INITIALIZING): ("starting", "black", "white"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.MISSING): ("starting", "black", "white"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.ERROR): ("error", "red", "black"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.CREATECONTAINERCONFIGERROR): ("createContainerConfigError", "red", "black"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.CRASHLOOPBACKOFF): ("crashLoopBackOff", "red", "black"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.IMAGEPULLBACKOFF): ("imagePullBackOff", "red", "black"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.PROGRESSDEADLINEEXCEEDED): ("progressDeadlineExceeded", "red", "black"),
     }
 
     style = status_styles.get((api_status, service_status), ("unknown", "black", "white"))

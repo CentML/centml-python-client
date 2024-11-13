@@ -25,6 +25,6 @@ setup(
         "prometheus-client>=0.20.0",
         "scipy>=1.6.0",
         "scikit-learn>=1.5.1",
-        "platform-api-python-client==0.2.0",
+        "platform-api-python-client==0.3.1",
     ],
 )

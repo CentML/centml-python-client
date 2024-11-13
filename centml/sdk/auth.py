@@ -51,12 +51,12 @@ def get_centml_token():
     if not cred:
         sys.exit("CentML credentials not found. Please login...")
 
-    exp_time = int(jwt.decode(cred["access_token"], options={"verify_signature": False})["exp"])
+    exp_time = int(jwt.decode(cred["idToken"], options={"verify_signature": False})["exp"])
 
     if time.time() >= exp_time - 100:
-        cred = refresh_centml_token(cred["refresh_token"])
+        cred = refresh_centml_token(cred["refreshToken"])
 
-    return cred["access_token"]
+    return cred["idToken"]
 
 
 def remove_centml_cred():
