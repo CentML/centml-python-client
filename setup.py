@@ -1,5 +1,14 @@
 from setuptools import setup, find_packages
 
+REQUIRES = []
+with open('requirements.txt') as f:
+    for line in f:
+        line, _, _ = line.partition('#')
+        line = line.strip()
+        if not line or line.startswith('setuptools'):
+            continue
+        REQUIRES.append(line)
+
 setup(
     name='centml',
     version='0.2.0',
@@ -13,18 +22,5 @@ setup(
             "ccluster = centml.cli:ccluster",
         ],
     },
-    install_requires=[
-        "fastapi>=0.103.0",
-        "uvicorn>=0.23.0",
-        "python-multipart>=0.0.6",
-        "pydantic-settings==2.0.*",
-        "Requests==2.32.2",
-        "tabulate>=0.9.0",
-        "pyjwt>=2.8.0",
-        "cryptography==43.0.1",
-        "prometheus-client>=0.20.0",
-        "scipy>=1.6.0",
-        "scikit-learn>=1.5.1",
-        "platform-api-python-client==0.3.1",
-    ],
+    install_requires=REQUIRES
 )
