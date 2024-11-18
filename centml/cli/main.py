@@ -1,7 +1,7 @@
 import click
 
 from centml.cli.login import login, logout
-from centml.cli.cluster import ls, get, delete, pause, resume
+from centml.cli.cluster import add_cluster, ls, get, delete, pause, remove_cluster, resume
 
 
 @click.group()
@@ -30,6 +30,8 @@ ccluster.add_command(get)
 ccluster.add_command(delete)
 ccluster.add_command(pause)
 ccluster.add_command(resume)
+ccluster.add_command(add_cluster)
+ccluster.add_command(remove_cluster)
 
 
 cli.add_command(ccluster, name="cluster")
