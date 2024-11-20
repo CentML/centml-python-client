@@ -28,7 +28,7 @@ def store_centml_cred(token_file):
     try:
         with open(token_file, 'r') as f:
             os.makedirs(settings.CENTML_CONFIG_PATH, exist_ok=True)
-            refresh_token = json.load(f)["refreshToken"]
+            refresh_token = json.load(f)["refresh_token"]
 
             refresh_centml_token(refresh_token)
     except Exception:
@@ -51,12 +51,12 @@ def get_centml_token():
     if not cred:
         sys.exit("CentML credentials not found. Please login...")
 
-    exp_time = int(jwt.decode(cred["idToken"], options={"verify_signature": False})["exp"])
+    exp_time = int(jwt.decode(cred["id_token"], options={"verify_signature": False})["exp"])
 
     if time.time() >= exp_time - 100:
-        cred = refresh_centml_token(cred["refreshToken"])
+        cred = refresh_centml_token(cred["refresh_token"])
 
-    return cred["idToken"]
+    return cred["id_token"]
 
 
 def remove_centml_cred():
