@@ -145,7 +145,7 @@ def get(name):
                 tabulate(
                     [
                         ("Image", deployment.image_url),
-                        ("Container port", deployment.container_port),
+                        ("Container port", deployment.port),
                         ("Healthcheck", deployment.healthcheck or "/"),
                         ("Replicas", {"min": deployment.min_scale, "max": deployment.max_scale}),
                         ("Environment variables", deployment.env_vars or "None"),
@@ -199,13 +199,13 @@ def create():
         if not clusters:
             click.echo("No clusters available. Please ensure you have a cluster setup.")
             return
-        cluster_names = [c.name for c in clusters]
+        cluster_names = [c.display_name for c in clusters]
         cluster_name = click.prompt(
             "Select a cluster",
             type=click.Choice(cluster_names),
             show_choices=True
         )
-        cluster_id = next(c.id for c in clusters if c.name == cluster_name)
+        cluster_id = next(c.id for c in clusters if c.display_name == cluster_name)
 
         # Hardware selection
         hw_resp = cclient.get_hardware_instances(cluster_id)
@@ -229,7 +229,7 @@ def create():
         # Depending on type:
         if depl_type == DeploymentType.INFERENCE_V2:
             image = click.prompt("Enter the image URL")
-            container_port = click.prompt("Enter the container port", default=8080, type=int)
+            port = click.prompt("Enter the container port", default=8080, type=int)
             healthcheck = click.prompt("Enter healthcheck endpoint (default '/')", default="/", show_default=True)
             env_vars_str = click.prompt("Enter environment variables in KEY=VALUE format (comma separated) or leave blank", default="", show_default=False)
             env_vars = {}
@@ -245,7 +245,7 @@ def create():
                 cluster_id=cluster_id,
                 hardware_instance_id=hw_id,
                 image_url=image,
-                container_port=container_port,
+                port=port,
                 healthcheck=healthcheck,
                 min_scale=min_scale,
                 max_scale=max_scale,
