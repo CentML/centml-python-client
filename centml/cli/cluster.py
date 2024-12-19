@@ -96,21 +96,29 @@ def ls(type):
 
 
 @click.command(help="Get deployment details")
-@click.argument("type", type=click.Choice(list(depl_name_to_type_map.keys())))
-@click.argument("id", type=int)
+@click.argument("name", type=str)
 @handle_exception
-def get(type, id):
+def get(name):
     with get_centml_client() as cclient:
-        depl_type = depl_name_to_type_map[type]
+        # Retrieve all deployments and search for the given name
+        deployments = cclient.get(None)
+        deployment = next((d for d in deployments if d.name == name), None)
 
+        if deployment is None:
+            sys.exit(f"Deployment with name '{name}' not found.")
+
+        depl_type = deployment.type
+        depl_id = deployment.id
+
+        # Now retrieve the full deployment details based on the type
         if depl_type == DeploymentType.INFERENCE_V2:
-            deployment = cclient.get_inference(id)
+            deployment = cclient.get_inference(depl_id)
         elif depl_type == DeploymentType.COMPUTE_V2:
-            deployment = cclient.get_compute(id)
+            deployment = cclient.get_compute(depl_id)
         elif depl_type == DeploymentType.CSERVE:
-            deployment = cclient.get_cserve(id)
+            deployment = cclient.get_cserve(depl_id)
         else:
-            sys.exit("Please enter correct deployment type")
+            sys.exit("Unknown deployment type.")
 
         ready_status = _get_ready_status(cclient, deployment)
         _, id_to_hw_map = _get_hw_to_id_map(cclient, deployment.cluster_id)
@@ -137,7 +145,7 @@ def get(type, id):
                 tabulate(
                     [
                         ("Image", deployment.image_url),
-                        ("Container port", deployment.container_port),
+                        ("Container port", deployment.port),
                         ("Healthcheck", deployment.healthcheck or "/"),
                         ("Replicas", {"min": deployment.min_scale, "max": deployment.max_scale}),
                         ("Environment variables", deployment.env_vars or "None"),
@@ -171,6 +179,120 @@ def get(type, id):
                     disable_numparse=True,
                 )
             )
+
+
+@click.command(help="Create a new deployment")
+@handle_exception
+def create():
+    with get_centml_client() as cclient:
+        # Prompt for general fields
+        name = click.prompt("Enter a name for the deployment")
+        dtype_str = click.prompt(
+            "Select a deployment type",
+            type=click.Choice(list(depl_name_to_type_map.keys())),
+            show_choices=True
+        )
+        depl_type = depl_name_to_type_map[dtype_str]
+
+        # Select cluster
+        clusters = cclient.get_clusters().results
+        if not clusters:
+            click.echo("No clusters available. Please ensure you have a cluster setup.")
+            return
+        cluster_names = [c.display_name for c in clusters]
+        cluster_name = click.prompt(
+            "Select a cluster",
+            type=click.Choice(cluster_names),
+            show_choices=True
+        )
+        cluster_id = next(c.id for c in clusters if c.display_name == cluster_name)
+
+        # Hardware selection
+        hw_resp = cclient.get_hardware_instances(cluster_id)
+        if not hw_resp:
+            click.echo("No hardware instances available for this cluster.")
+            return
+        hw_names = [h.name for h in hw_resp]
+        hw_name = click.prompt(
+            "Select a hardware instance",
+            type=click.Choice(hw_names),
+            show_choices=True
+        )
+        hw_id = next(h.id for h in hw_resp if h.name == hw_name)
+
+        # Common fields
+        min_scale = click.prompt("Minimum number of replicas", default=1, type=int)
+        max_scale = click.prompt("Maximum number of replicas", default=1, type=int)
+        concurrency = click.prompt("Max concurrency (or leave blank)", default="", show_default=False)
+        concurrency = int(concurrency) if concurrency else None
+
+        # Depending on type:
+        if depl_type == DeploymentType.INFERENCE_V2:
+            image = click.prompt("Enter the image URL")
+            port = click.prompt("Enter the container port", default=8080, type=int)
+            healthcheck = click.prompt("Enter healthcheck endpoint (default '/')", default="/", show_default=True)
+            env_vars_str = click.prompt("Enter environment variables in KEY=VALUE format (comma separated) or leave blank", default="", show_default=False)
+            env_vars = {}
+            if env_vars_str.strip():
+                for kv in env_vars_str.split(","):
+                    k, v = kv.strip().split("=")
+                    env_vars[k] = v
+
+            # Construct the inference request
+            from platform_api_python_client import CreateInferenceDeploymentRequest
+            req = CreateInferenceDeploymentRequest(
+                name=name,
+                cluster_id=cluster_id,
+                hardware_instance_id=hw_id,
+                image_url=image,
+                port=port,
+                healthcheck=healthcheck,
+                min_scale=min_scale,
+                max_scale=max_scale,
+                concurrency=concurrency,
+                env_vars=env_vars if env_vars else None
+            )
+            created = cclient.create_inference(req)
+            click.echo(f"Inference deployment created with ID: {created.id}")
+
+        elif depl_type == DeploymentType.COMPUTE_V2:
+            # For compute deployments, we might ask for a public SSH key
+            ssh_key = click.prompt("Enter your public SSH key", default="", show_default=False)
+
+            from platform_api_python_client import CreateComputeDeploymentRequest
+            req = CreateComputeDeploymentRequest(
+                name=name,
+                cluster_id=cluster_id,
+                hardware_instance_id=hw_id,
+                ssh_public_key=ssh_key if ssh_key.strip() else None
+            )
+            created = cclient.create_compute(req)
+            click.echo(f"Compute deployment created with ID: {created.id}")
+
+        elif depl_type == DeploymentType.CSERVE:
+            # For cserve deployments, ask for model and parallelism
+            model = click.prompt("Enter the Hugging Face model", default="facebook/opt-1.3b")
+            tensor_parallel_size = click.prompt("Tensor parallel size", default=1, type=int)
+            pipeline_parallel_size = click.prompt("Pipeline parallel size", default=1, type=int)
+            # concurrency asked above
+
+            from platform_api_python_client import CreateCServeDeploymentRequest
+            req = CreateCServeDeploymentRequest(
+                name=name,
+                cluster_id=cluster_id,
+                hardware_instance_id=hw_id,
+                model=model,
+                tensor_parallel_size=tensor_parallel_size,
+                pipeline_parallel_size=pipeline_parallel_size,
+                min_scale=min_scale,
+                max_scale=max_scale,
+                concurrency=concurrency
+            )
+            created = cclient.create_cserve(req)
+            click.echo(f"CServe deployment created with ID: {created.id}")
+
+        else:
+            click.echo("Unknown deployment type.")
 
 
 @click.command(help="Delete a deployment")
