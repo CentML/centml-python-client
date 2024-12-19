@@ -5,6 +5,24 @@ from centml.cli.cluster import ls, get, delete, pause, resume
 
 
 @click.group()
+# this is the version and prog name set in setup.py
+@click.version_option(
+    prog_name="CentML CLI",
+    message=f"""
+     ______              __   __  ___ __ 
+    / ____/___   ____   / /_ /  |/  // / 
+   / /    / _ \\ / __ \\ / __// /|_/ // /  
+  / /___ /  __// / / // /_ / /  / // /___
+  \\____/ \\___//_/ /_/ \\__//_/  /_//_____/
+                                         
+    🚀 Welcome to %(prog)s v%(version)s 🚀
+
+     ✨ AI Deployment Made Simple ✨
+📚 Documentation: https://docs.centml.ai/
+🛠  Need help? Reach out to support@centml.ai
+"""
+)
+
 def cli():
     pass
 

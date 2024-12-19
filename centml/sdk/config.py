@@ -13,7 +13,7 @@ class Config(BaseSettings):
     CENTML_CRED_FILE: str = "credentials.json"
     CENTML_CRED_FILE_PATH: str = CENTML_CONFIG_PATH + "/" + CENTML_CRED_FILE
 
-    CENTML_PLATFORM_API_URL: str = "https://api.centml.com"
+    CENTML_PLATFORM_API_URL: str = "http://localhost:16000"
 
     CENTML_FIREBASE_API_KEY: str = "AIzaSyChPXy41cIAxS_Nd8oaYKyP_oKkIucobtY"
 
