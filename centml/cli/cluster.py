@@ -96,21 +96,29 @@ def ls(type):
 
 
 @click.command(help="Get deployment details")
-@click.argument("type", type=click.Choice(list(depl_name_to_type_map.keys())))
-@click.argument("id", type=int)
+@click.argument("name", type=str)
 @handle_exception
-def get(type, id):
+def get(name):
     with get_centml_client() as cclient:
-        depl_type = depl_name_to_type_map[type]
+        # Retrieve all deployments and search for the given name
+        deployments = cclient.get(None)
+        deployment = next((d for d in deployments if d.name == name), None)
 
+        if deployment is None:
+            sys.exit(f"Deployment with name '{name}' not found.")
+
+        depl_type = deployment.type
+        depl_id = deployment.id
+
+        # Now retrieve the full deployment details based on the type
         if depl_type == DeploymentType.INFERENCE_V2:
-            deployment = cclient.get_inference(id)
+            deployment = cclient.get_inference(depl_id)
         elif depl_type == DeploymentType.COMPUTE_V2:
-            deployment = cclient.get_compute(id)
+            deployment = cclient.get_compute(depl_id)
         elif depl_type == DeploymentType.CSERVE:
-            deployment = cclient.get_cserve(id)
+            deployment = cclient.get_cserve(depl_id)
         else:
-            sys.exit("Please enter correct deployment type")
+            sys.exit("Unknown deployment type.")
 
         ready_status = _get_ready_status(cclient, deployment)
         _, id_to_hw_map = _get_hw_to_id_map(cclient, deployment.cluster_id)
