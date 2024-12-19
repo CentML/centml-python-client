@@ -14,7 +14,7 @@ from centml.cli.cluster import ls, get, delete, pause, resume
    / /    / _ \\ / __ \\ / __// /|_/ // /  
   / /___ /  __// / / // /_ / /  / // /___
   \\____/ \\___//_/ /_/ \\__//_/  /_//_____/
-                                         
+
     🚀 Welcome to %(prog)s v%(version)s 🚀
 
      ✨ AI Deployment Made Simple ✨
