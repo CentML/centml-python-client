@@ -226,11 +226,38 @@ def create():
         concurrency = click.prompt("Max concurrency (or leave blank)", default="", show_default=False)
         concurrency = int(concurrency) if concurrency else None
 
-        # Depending on type:
         if depl_type == DeploymentType.INFERENCE_V2:
-            image = click.prompt("Enter the image URL")
-            port = click.prompt("Enter the container port", default=8080, type=int)
-            healthcheck = click.prompt("Enter healthcheck endpoint (default '/')", default="/", show_default=True)
+            # Retrieve prebuilt images for inference deployments
+            prebuilt_images = cclient.get_prebuilt_images(depl_type=depl_type)
+            image_choices = [img.image_name for img in prebuilt_images.results] if prebuilt_images.results else []
+
+            chosen_image = click.prompt(
+                "Select a prebuilt image or provide a custom image URL",
+                type=click.Choice(image_choices),
+                show_choices=True
+            )
+
+            if chosen_image == "Other":
+                image = click.prompt("Enter the image URL")
+                port = click.prompt("Enter the container port", default=8080, type=int)
+                healthcheck = click.prompt("Enter healthcheck endpoint (default '/')", default="/", show_default=True)
+            else:
+                # Find the selected prebuilt image details
+                selected_prebuilt = next(img for img in prebuilt_images.results if img.image_name == chosen_image)
+                image = selected_prebuilt.image_name
+                # Use the prebuilt image port and healthcheck as defaults
+                port = click.prompt(
+                    "Enter the container port",
+                    default=selected_prebuilt.port,
+                    type=int
+                )
+                default_healthcheck = selected_prebuilt.healthcheck if selected_prebuilt.healthcheck else "/"
+                healthcheck = click.prompt(
+                    "Enter healthcheck endpoint (default '/')",
+                    default=default_healthcheck,
+                    show_default=True
+                )
+
             env_vars_str = click.prompt("Enter environment variables in KEY=VALUE format (comma separated) or leave blank", default="", show_default=False)
             env_vars = {}
             if env_vars_str.strip():
@@ -260,10 +287,15 @@ def create():
             ssh_key = click.prompt("Enter your public SSH key", default="", show_default=False)
 
             from platform_api_python_client import CreateComputeDeploymentRequest
+            # If compute deployments also use prebuilt images and require image_url,
+            # we could similarly fetch them and prompt just like inference above.
+            # For now, if the schema doesn't require image_url for compute:
             req = CreateComputeDeploymentRequest(
                 name=name,
                 cluster_id=cluster_id,
                 hardware_instance_id=hw_id,
+                # If needed, you can do similar logic for prebuilt images here:
+                # image_url = ...
                 ssh_public_key=ssh_key if ssh_key.strip() else None
             )
             created = cclient.create_compute(req)
@@ -274,9 +306,9 @@ def create():
             model = click.prompt("Enter the Hugging Face model", default="facebook/opt-1.3b")
             tensor_parallel_size = click.prompt("Tensor parallel size", default=1, type=int)
             pipeline_parallel_size = click.prompt("Pipeline parallel size", default=1, type=int)
-            # concurrency asked above
 
             from platform_api_python_client import CreateCServeDeploymentRequest
+            # If cserve deployments also require images, we could do similar logic here.
             req = CreateCServeDeploymentRequest(
                 name=name,
                 cluster_id=cluster_id,
