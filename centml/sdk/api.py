@@ -61,6 +61,14 @@ class CentMLClient:
     def get_hardware_instances(self, cluster_id):
         return self._api.get_hardware_instances_hardware_instances_get(cluster_id).results
 
+    def get_prebuilt_images(self, depl_type: DeploymentType = None):
+        """Get Prebuilt Images
+
+        :param depl_type: DeploymentType, optional
+        :return: ListPrebuiltImageResponse
+        """
+        return self._api.get_prebuilt_images_prebuilt_images_get(type=depl_type)
+
 
 @contextmanager
 def get_centml_client():
