@@ -21,7 +21,7 @@ def handle_exception(func):
         try:
             return func(*args, **kwargs)
         except ApiException as e:
-            click.echo(f"Error: {e.reason}")
+            click.echo(f"Error: {e.body or e.reason}")
             return None
 
     return wrapper
@@ -253,7 +253,7 @@ def create():
                 env_vars=env_vars if env_vars else None
             )
             created = cclient.create_inference(req)
-            click.echo(f"Inference deployment created with ID: {created.id}")
+            click.echo(f"Inference deployment {name} created with ID: {created.id}")
 
         elif depl_type == DeploymentType.COMPUTE_V2:
             # For compute deployments, we might ask for a public SSH key
@@ -267,7 +267,7 @@ def create():
                 ssh_public_key=ssh_key if ssh_key.strip() else None
             )
             created = cclient.create_compute(req)
-            click.echo(f"Compute deployment created with ID: {created.id}")
+            click.echo(f"Compute deployment {name} created with ID: {created.id}")
 
         elif depl_type == DeploymentType.CSERVE:
             # For cserve deployments, ask for model and parallelism
@@ -289,7 +289,7 @@ def create():
                 concurrency=concurrency
             )
             created = cclient.create_cserve(req)
-            click.echo(f"CServe deployment created with ID: {created.id}")
+            click.echo(f"CServe deployment {name} created with ID: {created.id}")
 
         else:
             click.echo("Unknown deployment type.")
