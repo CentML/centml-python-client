@@ -2,6 +2,7 @@ from contextlib import contextmanager
 
 import platform_api_python_client
 from platform_api_python_client import (
+    DeploymentType,
     DeploymentStatus,
     CreateInferenceDeploymentRequest,
     CreateComputeDeploymentRequest,
@@ -62,11 +63,6 @@ class CentMLClient:
         return self._api.get_hardware_instances_hardware_instances_get(cluster_id).results
 
     def get_prebuilt_images(self, depl_type: DeploymentType = None):
-        """Get Prebuilt Images
-
-        :param depl_type: DeploymentType, optional
-        :return: ListPrebuiltImageResponse
-        """
         return self._api.get_prebuilt_images_prebuilt_images_get(type=depl_type)
 
 
