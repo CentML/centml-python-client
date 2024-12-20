@@ -1,10 +1,28 @@
 import click
 
 from centml.cli.login import login, logout
-from centml.cli.cluster import ls, get, delete, pause, resume
+from centml.cli.cluster import ls, get, delete, pause, resume, create
 
 
 @click.group()
+# this is the version and prog name set in setup.py
+@click.version_option(
+    prog_name="CentML CLI",
+    message=f"""
+     ______              __   __  ___ __ 
+    / ____/___   ____   / /_ /  |/  // / 
+   / /    / _ \\ / __ \\ / __// /|_/ // /  
+  / /___ /  __// / / // /_ / /  / // /___
+  \\____/ \\___//_/ /_/ \\__//_/  /_//_____/
+
+    🚀 Welcome to %(prog)s v%(version)s 🚀
+
+     ✨ AI Deployment Made Simple ✨
+📚 Documentation: https://docs.centml.ai/
+🛠  Need help? Reach out to support@centml.ai
+"""
+)
+
 def cli():
     pass
 
@@ -27,6 +45,7 @@ def ccluster():
 
 ccluster.add_command(ls)
 ccluster.add_command(get)
+ccluster.add_command(create)
 ccluster.add_command(delete)
 ccluster.add_command(pause)
 ccluster.add_command(resume)

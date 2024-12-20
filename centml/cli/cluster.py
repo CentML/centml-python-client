@@ -21,7 +21,7 @@ def handle_exception(func):
         try:
             return func(*args, **kwargs)
         except ApiException as e:
-            click.echo(f"Error: {e.reason}")
+            click.echo(f"Error: {e.body or e.reason}")
             return None
 
     return wrapper
@@ -96,21 +96,29 @@ def ls(type):
 
 
 @click.command(help="Get deployment details")
-@click.argument("type", type=click.Choice(list(depl_name_to_type_map.keys())))
-@click.argument("id", type=int)
+@click.argument("name", type=str)
 @handle_exception
-def get(type, id):
+def get(name):
     with get_centml_client() as cclient:
-        depl_type = depl_name_to_type_map[type]
+        # Retrieve all deployments and search for the given name
+        deployments = cclient.get(None)
+        deployment = next((d for d in deployments if d.name == name), None)
 
+        if deployment is None:
+            sys.exit(f"Deployment with name '{name}' not found.")
+
+        depl_type = deployment.type
+        depl_id = deployment.id
+
+        # Now retrieve the full deployment details based on the type
         if depl_type == DeploymentType.INFERENCE_V2:
-            deployment = cclient.get_inference(id)
+            deployment = cclient.get_inference(depl_id)
         elif depl_type == DeploymentType.COMPUTE_V2:
-            deployment = cclient.get_compute(id)
+            deployment = cclient.get_compute(depl_id)
         elif depl_type == DeploymentType.CSERVE:
-            deployment = cclient.get_cserve(id)
+            deployment = cclient.get_cserve(depl_id)
         else:
-            sys.exit("Please enter correct deployment type")
+            sys.exit("Unknown deployment type.")
 
         ready_status = _get_ready_status(cclient, deployment)
         _, id_to_hw_map = _get_hw_to_id_map(cclient, deployment.cluster_id)
@@ -171,6 +179,158 @@ def get(type, id):
                     disable_numparse=True,
                 )
             )
+
+
+@click.command(help="Create a new deployment")
+@handle_exception
+def create():
+    with get_centml_client() as cclient:
+        # Prompt for general fields
+        name = click.prompt("Enter a name for the deployment")
+        dtype_str = click.prompt(
+            "Select a deployment type",
+            type=click.Choice(list(depl_name_to_type_map.keys())),
+            show_choices=True,
+            default=list(depl_name_to_type_map.keys())[0]
+        )
+        depl_type = depl_name_to_type_map[dtype_str]
+
+        # Select cluster
+        clusters = cclient.get_clusters().results
+        if not clusters:
+            click.echo("No clusters available. Please ensure you have a cluster setup.")
+            return
+        cluster_names = [c.display_name for c in clusters]
+        cluster_name = click.prompt(
+            "Select a cluster",
+            type=click.Choice(cluster_names),
+            show_choices=True,
+            default=cluster_names[0]
+        )
+        cluster_id = next(c.id for c in clusters if c.display_name == cluster_name)
+
+        # Hardware selection
+        hw_resp = cclient.get_hardware_instances(cluster_id)
+        if not hw_resp:
+            click.echo("No hardware instances available for this cluster.")
+            return
+        hw_names = [h.name for h in hw_resp]
+        hw_name = click.prompt(
+            "Select a hardware instance",
+            type=click.Choice(hw_names),
+            show_choices=True,
+            default=hw_names[0]
+        )
+        hw_id = next(h.id for h in hw_resp if h.name == hw_name)
+
+        if depl_type == DeploymentType.INFERENCE_V2:
+            # Retrieve prebuilt images for inference deployments
+            prebuilt_images = cclient.get_prebuilt_images(depl_type=depl_type)
+            image_choices = [img.image_name for img in prebuilt_images.results] if prebuilt_images.results else []
+            image_choices.append("Other")
+
+            chosen_image = click.prompt(
+                "Select a prebuilt image or choose 'Other' to provide a custom image URL",
+                type=click.Choice(image_choices),
+                show_choices=True,
+                default=image_choices[0]
+            )
+
+            if chosen_image == "Other":
+                image = click.prompt("Enter the custom image URL")
+                port = click.prompt("Enter the container port for the image", default=8080, type=int)
+                healthcheck = click.prompt("Enter healthcheck endpoint (default '/') for the image", default="/", show_default=True)
+            else:
+                # Find the selected prebuilt image details
+                selected_prebuilt = next(img for img in prebuilt_images.results if img.image_name == chosen_image)
+                image = selected_prebuilt.image_name
+                # Use the prebuilt image port and healthcheck as defaults
+                port = selected_prebuilt.port
+                healthcheck = selected_prebuilt.healthcheck if selected_prebuilt.healthcheck else "/"
+
+            env_vars_str = click.prompt("Enter environment variables in KEY=VALUE format (comma separated) or leave blank", default="", show_default=False)
+            env_vars = {}
+            if env_vars_str.strip():
+                for kv in env_vars_str.split(","):
+                    k, v = kv.strip().split("=")
+                    env_vars[k] = v
+
+            # Common fields
+            min_scale = click.prompt("Minimum number of replicas", default=1, type=int)
+            max_scale = click.prompt("Maximum number of replicas", default=1, type=int)
+            concurrency = click.prompt("Max concurrency (or leave blank)", default="", show_default=False)
+            concurrency = int(concurrency) if concurrency else None
+
+            # Construct the inference request
+            from platform_api_python_client import CreateInferenceDeploymentRequest
+            req = CreateInferenceDeploymentRequest(
+                name=name,
+                cluster_id=cluster_id,
+                hardware_instance_id=hw_id,
+                image_url=image,
+                port=port,
+                healthcheck=healthcheck,
+                min_scale=min_scale,
+                max_scale=max_scale,
+                concurrency=concurrency,
+                env_vars=env_vars if env_vars else None
+            )
+            created = cclient.create_inference(req)
+            click.echo(f"Inference deployment {name} created with ID: {created.id}")
+
+        elif depl_type == DeploymentType.COMPUTE_V2:
+            
+            # Retrieve prebuilt images for inference deployments
+            prebuilt_images = cclient.get_prebuilt_images(depl_type=depl_type)
+            image_choices = [img.image_name for img in prebuilt_images.results] if prebuilt_images.results else []
+            
+            # Right now we don't support custom compute images
+            # TODO: add image tags to the url, right now its required by compute but not inference
+            chosen_image = click.prompt(
+                "Select a prebuilt image",
+                type=click.Choice(image_choices),
+                show_choices=True,
+                default=image_choices[0]
+            )
+                
+            # For compute deployments, we might ask for a public SSH key
+            ssh_key = click.prompt("Enter your public SSH key", default="", show_default=False)
+            #jupyter = click.prompt("Enable Jupyter Notebook on this compute deployment?", default="n", show_default=False)
+
+            from platform_api_python_client import CreateComputeDeploymentRequest
+            req = CreateComputeDeploymentRequest(
+                name=name,
+                cluster_id=cluster_id,
+                hardware_instance_id=hw_id,
+                image_url = chosen_image,
+                ssh_public_key=ssh_key if ssh_key.strip() else None
+            )
+            created = cclient.create_compute(req)
+            click.echo(f"Compute deployment {name} created with ID: {created.id}")
+
+        elif depl_type == DeploymentType.CSERVE:
+            # For cserve deployments, ask for model and parallelism
+            model = click.prompt("Enter the Hugging Face model", default="facebook/opt-1.3b")
+            tensor_parallel_size = click.prompt("Tensor parallel size", default=1, type=int)
+            pipeline_parallel_size = click.prompt("Pipeline parallel size", default=1, type=int)
+
+            from platform_api_python_client import CreateCServeDeploymentRequest
+            req = CreateCServeDeploymentRequest(
+                name=name,
+                cluster_id=cluster_id,
+                hardware_instance_id=hw_id,
+                model=model,
+                tensor_parallel_size=tensor_parallel_size,
+                pipeline_parallel_size=pipeline_parallel_size,
+                min_scale=min_scale,
+                max_scale=max_scale,
+                concurrency=concurrency
+            )
+            created = cclient.create_cserve(req)
+            click.echo(f"CServe deployment {name} created with ID: {created.id}")
+
+        else:
+            click.echo("Unknown deployment type.")
 
 
 @click.command(help="Delete a deployment")
