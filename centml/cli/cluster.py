@@ -190,7 +190,8 @@ def create():
         dtype_str = click.prompt(
             "Select a deployment type",
             type=click.Choice(list(depl_name_to_type_map.keys())),
-            show_choices=True
+            show_choices=True,
+            default=list(depl_name_to_type_map.keys())[0]
         )
         depl_type = depl_name_to_type_map[dtype_str]
 
@@ -203,7 +204,8 @@ def create():
         cluster_name = click.prompt(
             "Select a cluster",
             type=click.Choice(cluster_names),
-            show_choices=True
+            show_choices=True,
+            default=cluster_names[0]
         )
         cluster_id = next(c.id for c in clusters if c.display_name == cluster_name)
 
@@ -216,47 +218,35 @@ def create():
         hw_name = click.prompt(
             "Select a hardware instance",
             type=click.Choice(hw_names),
-            show_choices=True
+            show_choices=True,
+            default=hw_names[0]
         )
         hw_id = next(h.id for h in hw_resp if h.name == hw_name)
-
-        # Common fields
-        min_scale = click.prompt("Minimum number of replicas", default=1, type=int)
-        max_scale = click.prompt("Maximum number of replicas", default=1, type=int)
-        concurrency = click.prompt("Max concurrency (or leave blank)", default="", show_default=False)
-        concurrency = int(concurrency) if concurrency else None
 
         if depl_type == DeploymentType.INFERENCE_V2:
             # Retrieve prebuilt images for inference deployments
             prebuilt_images = cclient.get_prebuilt_images(depl_type=depl_type)
             image_choices = [img.image_name for img in prebuilt_images.results] if prebuilt_images.results else []
+            image_choices.append("Other")
 
             chosen_image = click.prompt(
-                "Select a prebuilt image or provide a custom image URL",
+                "Select a prebuilt image or choose 'Other' to provide a custom image URL",
                 type=click.Choice(image_choices),
-                show_choices=True
+                show_choices=True,
+                default=image_choices[0]
             )
 
             if chosen_image == "Other":
-                image = click.prompt("Enter the image URL")
-                port = click.prompt("Enter the container port", default=8080, type=int)
-                healthcheck = click.prompt("Enter healthcheck endpoint (default '/')", default="/", show_default=True)
+                image = click.prompt("Enter the custom image URL")
+                port = click.prompt("Enter the container port for the image", default=8080, type=int)
+                healthcheck = click.prompt("Enter healthcheck endpoint (default '/') for the image", default="/", show_default=True)
             else:
                 # Find the selected prebuilt image details
                 selected_prebuilt = next(img for img in prebuilt_images.results if img.image_name == chosen_image)
                 image = selected_prebuilt.image_name
                 # Use the prebuilt image port and healthcheck as defaults
-                port = click.prompt(
-                    "Enter the container port",
-                    default=selected_prebuilt.port,
-                    type=int
-                )
-                default_healthcheck = selected_prebuilt.healthcheck if selected_prebuilt.healthcheck else "/"
-                healthcheck = click.prompt(
-                    "Enter healthcheck endpoint (default '/')",
-                    default=default_healthcheck,
-                    show_default=True
-                )
+                port = selected_prebuilt.port
+                healthcheck = selected_prebuilt.healthcheck if selected_prebuilt.healthcheck else "/"
 
             env_vars_str = click.prompt("Enter environment variables in KEY=VALUE format (comma separated) or leave blank", default="", show_default=False)
             env_vars = {}
@@ -264,6 +254,12 @@ def create():
                 for kv in env_vars_str.split(","):
                     k, v = kv.strip().split("=")
                     env_vars[k] = v
+
+            # Common fields
+            min_scale = click.prompt("Minimum number of replicas", default=1, type=int)
+            max_scale = click.prompt("Maximum number of replicas", default=1, type=int)
+            concurrency = click.prompt("Max concurrency (or leave blank)", default="", show_default=False)
+            concurrency = int(concurrency) if concurrency else None
 
             # Construct the inference request
             from platform_api_python_client import CreateInferenceDeploymentRequest
@@ -283,19 +279,30 @@ def create():
             click.echo(f"Inference deployment {name} created with ID: {created.id}")
 
         elif depl_type == DeploymentType.COMPUTE_V2:
+            
+            # Retrieve prebuilt images for inference deployments
+            prebuilt_images = cclient.get_prebuilt_images(depl_type=depl_type)
+            image_choices = [img.image_name for img in prebuilt_images.results] if prebuilt_images.results else []
+            
+            # Right now we don't support custom compute images
+            # TODO: add image tags to the url, right now its required by compute but not inference
+            chosen_image = click.prompt(
+                "Select a prebuilt image",
+                type=click.Choice(image_choices),
+                show_choices=True,
+                default=image_choices[0]
+            )
+                
             # For compute deployments, we might ask for a public SSH key
             ssh_key = click.prompt("Enter your public SSH key", default="", show_default=False)
+            #jupyter = click.prompt("Enable Jupyter Notebook on this compute deployment?", default="n", show_default=False)
 
             from platform_api_python_client import CreateComputeDeploymentRequest
-            # If compute deployments also use prebuilt images and require image_url,
-            # we could similarly fetch them and prompt just like inference above.
-            # For now, if the schema doesn't require image_url for compute:
             req = CreateComputeDeploymentRequest(
                 name=name,
                 cluster_id=cluster_id,
                 hardware_instance_id=hw_id,
-                # If needed, you can do similar logic for prebuilt images here:
-                # image_url = ...
+                image_url = chosen_image,
                 ssh_public_key=ssh_key if ssh_key.strip() else None
             )
             created = cclient.create_compute(req)
@@ -308,7 +315,6 @@ def create():
             pipeline_parallel_size = click.prompt("Pipeline parallel size", default=1, type=int)
 
             from platform_api_python_client import CreateCServeDeploymentRequest
-            # If cserve deployments also require images, we could do similar logic here.
             req = CreateCServeDeploymentRequest(
                 name=name,
                 cluster_id=cluster_id,
