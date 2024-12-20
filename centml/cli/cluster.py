@@ -145,7 +145,7 @@ def get(name):
                 tabulate(
                     [
                         ("Image", deployment.image_url),
-                        ("Container port", deployment.port),
+                        ("Container port", deployment.container_port),
                         ("Healthcheck", deployment.healthcheck or "/"),
                         ("Replicas", {"min": deployment.min_scale, "max": deployment.max_scale}),
                         ("Environment variables", deployment.env_vars or "None"),
