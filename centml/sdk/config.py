@@ -17,5 +17,4 @@ class Config(BaseSettings):
 
     CENTML_FIREBASE_API_KEY: str = os.getenv("CENTML_FIREBASE_API_KEY") or "AIzaSyChPXy41cIAxS_Nd8oaYKyP_oKkIucobtY" 
 
-
 settings = Config()
