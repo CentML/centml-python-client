@@ -195,54 +195,59 @@ def create():
         )
         depl_type = depl_name_to_type_map[dtype_str]
 
-        # Select cluster
+        # Select cluster using a numbered list
         clusters = cclient.get_clusters().results
         if not clusters:
             click.echo("No clusters available. Please ensure you have a cluster setup.")
             return
-        cluster_names = [c.display_name for c in clusters]
-        cluster_name = click.prompt(
-            "Select a cluster", type=click.Choice(cluster_names), show_choices=True, default=cluster_names[0]
-        )
-        cluster_id = next(c.id for c in clusters if c.display_name == cluster_name)
 
-        # Hardware selection
+        click.echo("Available clusters:")
+        for idx, cluster in enumerate(clusters, start=1):
+            click.echo(f"{idx}. {cluster.display_name}")
+        cluster_choice = click.prompt("Select a cluster by number", type=int, default=1)
+        selected_cluster = clusters[cluster_choice - 1]
+        cluster_id = selected_cluster.id
+
+        # Hardware selection using a numbered list
         hw_resp = cclient.get_hardware_instances(cluster_id)
         if not hw_resp:
             click.echo("No hardware instances available for this cluster.")
             return
-        hw_names = [h.name for h in hw_resp]
-        hw_name = click.prompt(
-            "Select a hardware instance", type=click.Choice(hw_names), show_choices=True, default=hw_names[0]
-        )
-        hw_id = next(h.id for h in hw_resp if h.name == hw_name)
+
+        click.echo("Available hardware instances:")
+        for idx, hw in enumerate(hw_resp, start=1):
+            click.echo(f"{idx}. {hw.name}")
+        hw_choice = click.prompt("Select a hardware instance by number", type=int, default=1)
+        selected_hw = hw_resp[hw_choice - 1]
+        hw_id = selected_hw.id
 
         if depl_type == DeploymentType.INFERENCE_V2:
             # Retrieve prebuilt images for inference deployments
             prebuilt_images = cclient.get_prebuilt_images(depl_type=depl_type)
-            image_choices = [img.image_name for img in prebuilt_images.results] if prebuilt_images.results else []
+            # Build list of image labels
+            image_choices = [img.label for img in prebuilt_images.results] if prebuilt_images.results else []
             image_choices.append("Other")
 
-            chosen_image = click.prompt(
-                "Select a prebuilt image or choose 'Other' to provide a custom image URL",
+            chosen_label = click.prompt(
+                "Select a prebuilt image label or choose 'Other' to provide a custom image URL",
                 type=click.Choice(image_choices),
                 show_choices=True,
                 default=image_choices[0],
             )
 
-            if chosen_image == "Other":
+            if chosen_label == "Other":
                 image = click.prompt("Enter the custom image URL")
                 port = click.prompt("Enter the container port for the image", default=8080, type=int)
                 healthcheck = click.prompt(
                     "Enter healthcheck endpoint (default '/') for the image", default="/", show_default=True
                 )
             else:
-                # Find the selected prebuilt image details
-                selected_prebuilt = next(img for img in prebuilt_images.results if img.image_name == chosen_image)
-                image = selected_prebuilt.image_name
-                # Use the prebuilt image port and healthcheck as defaults
+                # Find the prebuilt image with the matching label
+                selected_prebuilt = next(img for img in prebuilt_images.results if img.label == chosen_label)
+                image = selected_prebuilt.image_name  # Use the image_name from the selected prebuilt image
                 port = selected_prebuilt.port
                 healthcheck = selected_prebuilt.healthcheck if selected_prebuilt.healthcheck else "/"
+
 
             env_vars_str = click.prompt(
                 "Enter environment variables in KEY=VALUE format (comma separated) or leave blank",
@@ -254,6 +259,12 @@ def create():
                 for kv in env_vars_str.split(","):
                     k, v = kv.strip().split("=")
                     env_vars[k] = v
+
+            # Prompt for command and command arguments (optional)
+            command_str = click.prompt("Enter command (space-separated) or leave blank", default="", show_default=False)
+            command = command_str.split() if command_str.strip() else []
+            command_args_str = click.prompt("Enter command arguments (space-separated) or leave blank", default="", show_default=False)
+            command_args = command_args_str.split() if command_args_str.strip() else []
 
             # Common fields
             min_scale = click.prompt("Minimum number of replicas", default=1, type=int)
@@ -275,7 +286,10 @@ def create():
                 max_scale=max_scale,
                 concurrency=concurrency,
                 env_vars=env_vars if env_vars else None,
+                command=command,
+                command_args=command_args,
             )
+            print(req)
             created = cclient.create_inference(req)
             click.echo(f"Inference deployment {name} created with ID: {created.id}")
 
