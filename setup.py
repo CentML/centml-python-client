@@ -13,7 +13,7 @@ setup(
     name='centml',
     version='0.3.0',
     packages=find_packages(),
-    python_requires="<3.13",
+    python_requires=">=3.10",
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
     entry_points={
