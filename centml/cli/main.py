@@ -8,7 +8,7 @@ from centml.cli.cluster import ls, get, delete, pause, resume, create
 # this is the version and prog name set in setup.py
 @click.version_option(
     prog_name="CentML CLI",
-    message=f"""
+    message="""
      ______              __   __  ___ __ 
     / ____/___   ____   / /_ /  |/  // / 
    / /    / _ \\ / __ \\ / __// /|_/ // /  

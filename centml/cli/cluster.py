@@ -292,7 +292,8 @@ def create():
 
             # For compute deployments, we might ask for a public SSH key
             ssh_key = click.prompt("Enter your public SSH key", default="", show_default=False)
-            # jupyter = click.prompt("Enable Jupyter Notebook on this compute deployment?", default="n", show_default=False)
+            # jupyter = click.prompt("Enable Jupyter Notebook on this compute deployment?",
+            # default="n", show_default=False)
 
             from platform_api_python_client import CreateComputeDeploymentRequest
 
