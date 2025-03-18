@@ -20,9 +20,8 @@ from centml.cli.cluster import ls, get, delete, pause, resume, create
      ✨ AI Deployment Made Simple ✨
 📚 Documentation: https://docs.centml.ai/
 🛠  Need help? Reach out to support@centml.ai
-"""
+""",
 )
-
 def cli():
     pass
 
