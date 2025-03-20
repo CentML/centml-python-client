@@ -260,11 +260,13 @@ def create():
                     k, v = kv.strip().split("=")
                     env_vars[k] = v
 
-            # Prompt for command and command arguments (optional)
-            command_str = click.prompt("Enter command (space-separated) or leave blank", default="", show_default=False)
-            command = command_str.split() if command_str.strip() else []
-            command_args_str = click.prompt("Enter command arguments (space-separated) or leave blank", default="", show_default=False)
-            command_args = command_args_str.split() if command_args_str.strip() else []
+            command_str = click.prompt(
+                "Enter command (space-separated) or leave blank",
+                default="",
+                show_default=False
+            )
+
+            command = command_str.strip() if command_str.strip() else None
 
             # Common fields
             min_scale = click.prompt("Minimum number of replicas", default=1, type=int)
@@ -287,7 +289,6 @@ def create():
                 concurrency=concurrency,
                 env_vars=env_vars if env_vars else None,
                 command=command,
-                command_args=command_args,
             )
             print(req)
             created = cclient.create_inference(req)
