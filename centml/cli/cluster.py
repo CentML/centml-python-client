@@ -224,9 +224,12 @@ def create():
         if depl_type == DeploymentType.INFERENCE_V2:
             # Retrieve prebuilt images for inference deployments
             prebuilt_images = cclient.get_prebuilt_images(depl_type=depl_type)
+
             # Build list of image labels
             image_choices = [img.label for img in prebuilt_images.results] if prebuilt_images.results else []
-            image_choices.append("Other")
+
+            # Right now we disable this other option to get a MVP out quickly.
+            #image_choices.append("Other")
 
             chosen_label = click.prompt(
                 "Select a prebuilt image label or choose 'Other' to provide a custom image URL",
@@ -244,7 +247,15 @@ def create():
             else:
                 # Find the prebuilt image with the matching label
                 selected_prebuilt = next(img for img in prebuilt_images.results if img.label == chosen_label)
-                image = selected_prebuilt.image_name  # Use the image_name from the selected prebuilt image
+                # Prompt the user to select a tag from the available tags
+                tag = click.prompt(
+                    "Select a tag for the image",
+                    type=click.Choice(selected_prebuilt.tags),
+                    show_choices=True,
+                    default=selected_prebuilt.tags[0],
+                )
+                # Combine the image URL with the chosen tag
+                image = f"{selected_prebuilt.image_name}:{tag}"
                 port = selected_prebuilt.port
                 healthcheck = selected_prebuilt.healthcheck if selected_prebuilt.healthcheck else "/"
 
@@ -290,25 +301,42 @@ def create():
                 env_vars=env_vars if env_vars else None,
                 command=command,
             )
-            print(req)
+
             created = cclient.create_inference(req)
             click.echo(f"Inference deployment {name} created with ID: {created.id}")
 
         elif depl_type == DeploymentType.COMPUTE_V2:
-            # Retrieve prebuilt images for inference deployments
+            # Retrieve prebuilt images for compute deployments
             prebuilt_images = cclient.get_prebuilt_images(depl_type=depl_type)
-            image_choices = [img.image_name for img in prebuilt_images.results] if prebuilt_images.results else []
+            # Build list of image labels
+            image_choices = [img.label for img in prebuilt_images.results] if prebuilt_images.results else []
 
-            # Right now we don't support custom compute images
-            # TODO: add image tags to the url, right now its required by compute but not inference
-            chosen_image = click.prompt(
-                "Select a prebuilt image", type=click.Choice(image_choices), show_choices=True, default=image_choices[0]
+            chosen_label = click.prompt(
+                "Select a prebuilt image label",
+                type=click.Choice(image_choices),
+                show_choices=True,
+                default=image_choices[0],
             )
 
+            selected_prebuilt = next(img for img in prebuilt_images.results if img.label == chosen_label)
+
+            # Find the prebuilt image with the matching label
+            selected_prebuilt = next(img for img in prebuilt_images.results if img.label == chosen_label)
+            # Prompt the user to select a tag from the available tags
+            tag = click.prompt(
+                "Select a tag for the image",
+                type=click.Choice(selected_prebuilt.tags),
+                show_choices=True,
+                default=selected_prebuilt.tags[0],
+            )
+            # Combine the image URL with the chosen tag
+            image_url = f"{selected_prebuilt.image_name}:{tag}"
+
             # For compute deployments, we might ask for a public SSH key
-            ssh_key = click.prompt("Enter your public SSH key", default="", show_default=False)
-            # jupyter = click.prompt("Enable Jupyter Notebook on this compute deployment?",
-            # default="n", show_default=False)
+            ssh_key = click.prompt("Enter your public SSH key")
+
+            # Right now we not support this on prod platform, just unify the feature
+            #jupyter = click.prompt("Enable Jupyter Notebook on this compute deployment?", type=bool,default=False, show_default=False)
 
             from platform_api_python_client import CreateComputeDeploymentRequest
 
@@ -316,9 +344,11 @@ def create():
                 name=name,
                 cluster_id=cluster_id,
                 hardware_instance_id=hw_id,
-                image_url=chosen_image,
-                ssh_public_key=ssh_key if ssh_key.strip() else None,
-            )
+                image_url=image_url,
+                ssh_public_key=ssh_key,  # we require this
+                #enable_jupyter=jupyter,
+                )
+
             created = cclient.create_compute(req)
             click.echo(f"Compute deployment {name} created with ID: {created.id}")
 
