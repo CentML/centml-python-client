@@ -64,7 +64,7 @@ class CentMLClient:
             cluster_id=cluster_id if cluster_id else None
         ).results
 
-    def get_prebuilt_images(self, depl_type: DeploymentType = None):
+    def get_prebuilt_images(self, depl_type: DeploymentType):
         return self._api.get_prebuilt_images_prebuilt_images_get(type=depl_type)
 
     def get_cserve_recipe(self):
