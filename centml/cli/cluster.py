@@ -94,6 +94,7 @@ def ls(type):
             )
         )
 
+
 # TODO: Status for Cserve seems to be broken
 @click.command(help="Get deployment details")
 @click.argument("name", type=str)
@@ -188,12 +189,16 @@ def create():
         # Prompt for general fields
         name = click.prompt("Enter a name for the deployment")
 
-        dtype_str = click.prompt(
-            "Select a deployment type",
-            type=click.Choice(list(depl_name_to_type_map.keys())),
-            show_choices=True,
-            default=list(depl_name_to_type_map.keys())[0],
-        )
+        # --- Deployment Type Selection (Indexed) ---
+        deploy_types = list(depl_name_to_type_map.keys())
+        click.echo("Select a deployment type:")
+        for idx, dtype in enumerate(deploy_types, start=1):
+            click.echo(f"{idx}. {dtype}")
+        dtype_index = click.prompt("Enter the deployment type number", type=int, default=1)
+        if dtype_index < 1 or dtype_index > len(deploy_types):
+            click.echo("Invalid selection.")
+            return
+        dtype_str = deploy_types[dtype_index - 1]
         depl_type = depl_name_to_type_map[dtype_str]
 
         if depl_type == DeploymentType.INFERENCE_V2:
@@ -226,19 +231,17 @@ def create():
 
             # Retrieve prebuilt images for inference deployments
             prebuilt_images = cclient.get_prebuilt_images(depl_type=depl_type)
-
-            # Build list of image labels
             image_choices = [img.label for img in prebuilt_images.results] if prebuilt_images.results else []
-
-            # Right now we disable this other option to get a MVP out quickly.
-            #image_choices.append("Other")
-
-            chosen_label = click.prompt(
-                "Select a prebuilt image label or choose 'Other' to provide a custom image URL",
-                type=click.Choice(image_choices),
-                show_choices=True,
-                default=image_choices[0],
-            )
+            # Enable custom image selection by adding "Other" to the list.
+            image_choices.append("Other")
+            click.echo("Available prebuilt image labels:")
+            for idx, label in enumerate(image_choices, start=1):
+                click.echo(f"{idx}. {label}")
+            choice_index = click.prompt("Select a prebuilt image label by number", type=int, default=1)
+            if choice_index < 1 or choice_index > len(image_choices):
+                click.echo("Invalid selection.")
+                return
+            chosen_label = image_choices[choice_index - 1]
 
             if chosen_label == "Other":
                 image = click.prompt("Enter the custom image URL")
@@ -249,18 +252,19 @@ def create():
             else:
                 # Find the prebuilt image with the matching label
                 selected_prebuilt = next(img for img in prebuilt_images.results if img.label == chosen_label)
-                # Prompt the user to select a tag from the available tags
-                tag = click.prompt(
-                    "Select a tag for the image",
-                    type=click.Choice(selected_prebuilt.tags),
-                    show_choices=True,
-                    default=selected_prebuilt.tags[0],
-                )
+                # Prompt the user to select a tag from the available tags (indexed)
+                click.echo("Available tags for the selected image:")
+                for idx, tag in enumerate(selected_prebuilt.tags, start=1):
+                    click.echo(f"{idx}. {tag}")
+                tag_index = click.prompt("Select a tag for the image by number", type=int, default=1)
+                if tag_index < 1 or tag_index > len(selected_prebuilt.tags):
+                    click.echo("Invalid tag selection.")
+                    return
+                tag = selected_prebuilt.tags[tag_index - 1]
                 # Combine the image URL with the chosen tag
                 image = f"{selected_prebuilt.image_name}:{tag}"
                 port = selected_prebuilt.port
                 healthcheck = selected_prebuilt.healthcheck if selected_prebuilt.healthcheck else "/"
-
 
             env_vars_str = click.prompt(
                 "Enter environment variables in KEY=VALUE format (comma separated) or leave blank",
@@ -336,35 +340,30 @@ def create():
 
             # Retrieve prebuilt images for compute deployments
             prebuilt_images = cclient.get_prebuilt_images(depl_type=depl_type)
-            # Build list of image labels
             image_choices = [img.label for img in prebuilt_images.results] if prebuilt_images.results else []
-
-            chosen_label = click.prompt(
-                "Select a prebuilt image label",
-                type=click.Choice(image_choices),
-                show_choices=True,
-                default=image_choices[0],
-            )
+            click.echo("Available prebuilt image labels:")
+            for idx, label in enumerate(image_choices, start=1):
+                click.echo(f"{idx}. {label}")
+            choice_index = click.prompt("Select a prebuilt image label by number", type=int, default=1)
+            if choice_index < 1 or choice_index > len(image_choices):
+                click.echo("Invalid selection.")
+                return
+            chosen_label = image_choices[choice_index - 1]
 
             selected_prebuilt = next(img for img in prebuilt_images.results if img.label == chosen_label)
-
-            # Find the prebuilt image with the matching label
-            selected_prebuilt = next(img for img in prebuilt_images.results if img.label == chosen_label)
-            # Prompt the user to select a tag from the available tags
-            tag = click.prompt(
-                "Select a tag for the image",
-                type=click.Choice(selected_prebuilt.tags),
-                show_choices=True,
-                default=selected_prebuilt.tags[0],
-            )
-            # Combine the image URL with the chosen tag
+            # Prompt the user to select a tag from the available tags (indexed)
+            click.echo("Available tags for the selected image:")
+            for idx, tag in enumerate(selected_prebuilt.tags, start=1):
+                click.echo(f"{idx}. {tag}")
+            tag_index = click.prompt("Select a tag for the image by number", type=int, default=1)
+            if tag_index < 1 or tag_index > len(selected_prebuilt.tags):
+                click.echo("Invalid tag selection.")
+                return
+            tag = selected_prebuilt.tags[tag_index - 1]
             image_url = f"{selected_prebuilt.image_name}:{tag}"
 
             # For compute deployments, we might ask for a public SSH key
             ssh_key = click.prompt("Enter your public SSH key")
-
-            # Right now we not support this on prod platform, just unify the feature
-            #jupyter = click.prompt("Enable Jupyter Notebook on this compute deployment?", type=bool,default=False, show_default=False)
 
             from platform_api_python_client import CreateComputeDeploymentRequest
 
@@ -373,9 +372,8 @@ def create():
                 cluster_id=cluster_id,
                 hardware_instance_id=hw_id,
                 image_url=image_url,
-                ssh_public_key=ssh_key,  # we require this
-                #enable_jupyter=jupyter,
-                )
+                ssh_public_key=ssh_key,
+            )
 
             created = cclient.create_compute(req)
             click.echo(f"Compute deployment {name} created with ID: {created.id}")
@@ -431,7 +429,6 @@ def create():
                 sys.exit(1)
 
             # Display the hardware instance information to the user.
-
             credits = selected_hw.cost_per_hr / 100.0            # e.g., 360 -> 3.60 credits per hour
             vram_gib = selected_hw.accelerator_memory / 1024       # e.g., 81920 MB -> 80 GiB VRAM
             memory_gib = selected_hw.memory / 1024                 # e.g., 239616 MB -> 234 GiB memory
@@ -453,34 +450,34 @@ def create():
             recipe_dict.pop("additional_properties", None)
 
             recipe_payload = {
-            "model": recipe_dict.get("model"),
-            "is_embedding_model": recipe_dict.get("is_embedding_model"),
-            "dtype": recipe_dict.get("dtype"),
-            "tokenizer": recipe_dict.get("tokenizer"),
-            "block_size": recipe_dict.get("block_size"),
-            "swap_space": recipe_dict.get("swap_space"),
-            "cache_dtype": recipe_dict.get("cache_dtype"),
-            "spec_tokens": recipe_dict.get("spec_tokens"),
-            "gpu_mem_util": recipe_dict.get("gpu_mem_util"),
-            "max_num_seqs": recipe_dict.get("max_num_seqs"),
-            "quantization": recipe_dict.get("quantization"),
-            "max_model_len": recipe_dict.get("max_model_len"),
-            "offloading_num": int(recipe_dict.get("offloading_num")),
-            "use_flashinfer": recipe_dict.get("use_flashinfer"),
-            "eager_execution": recipe_dict.get("eager_execution"),
-            "spec_draft_model": recipe_dict.get("spec_draft_model"),
-            "spec_max_seq_len": recipe_dict.get("spec_max_seq_len"),
-            "use_prefix_caching": recipe_dict.get("use_prefix_caching"),
-            "num_scheduler_steps": recipe_dict.get("num_scheduler_steps"),
-            "spec_max_batch_size": recipe_dict.get("spec_max_batch_size"),
-            "use_chunked_prefill": recipe_dict.get("use_chunked_prefill"),
-            "chunked_prefill_size": recipe_dict.get("chunked_prefill_size"),
-            "tensor_parallel_size": recipe_dict.get("tensor_parallel_size"),
-            "max_seq_len_to_capture": recipe_dict.get("max_seq_len_to_capture"),
-            "pipeline_parallel_size": recipe_dict.get("pipeline_parallel_size"),
-            "spec_prompt_lookup_max": recipe_dict.get("spec_prompt_lookup_max"),
-            "spec_prompt_lookup_min": recipe_dict.get("spec_prompt_lookup_min"),
-            "distributed_executor_backend": recipe_dict.get("distributed_executor_backend"),
+                "model": recipe_dict.get("model"),
+                "is_embedding_model": recipe_dict.get("is_embedding_model"),
+                "dtype": recipe_dict.get("dtype"),
+                "tokenizer": recipe_dict.get("tokenizer"),
+                "block_size": recipe_dict.get("block_size"),
+                "swap_space": recipe_dict.get("swap_space"),
+                "cache_dtype": recipe_dict.get("cache_dtype"),
+                "spec_tokens": recipe_dict.get("spec_tokens"),
+                "gpu_mem_util": recipe_dict.get("gpu_mem_util"),
+                "max_num_seqs": recipe_dict.get("max_num_seqs"),
+                "quantization": recipe_dict.get("quantization"),
+                "max_model_len": recipe_dict.get("max_model_len"),
+                "offloading_num": int(recipe_dict.get("offloading_num")),
+                "use_flashinfer": recipe_dict.get("use_flashinfer"),
+                "eager_execution": recipe_dict.get("eager_execution"),
+                "spec_draft_model": recipe_dict.get("spec_draft_model"),
+                "spec_max_seq_len": recipe_dict.get("spec_max_seq_len"),
+                "use_prefix_caching": recipe_dict.get("use_prefix_caching"),
+                "num_scheduler_steps": recipe_dict.get("num_scheduler_steps"),
+                "spec_max_batch_size": recipe_dict.get("spec_max_batch_size"),
+                "use_chunked_prefill": recipe_dict.get("use_chunked_prefill"),
+                "chunked_prefill_size": recipe_dict.get("chunked_prefill_size"),
+                "tensor_parallel_size": recipe_dict.get("tensor_parallel_size"),
+                "max_seq_len_to_capture": recipe_dict.get("max_seq_len_to_capture"),
+                "pipeline_parallel_size": recipe_dict.get("pipeline_parallel_size"),
+                "spec_prompt_lookup_max": recipe_dict.get("spec_prompt_lookup_max"),
+                "spec_prompt_lookup_min": recipe_dict.get("spec_prompt_lookup_min"),
+                "distributed_executor_backend": recipe_dict.get("distributed_executor_backend"),
             }
 
             # --- Additional Prompts ---
@@ -529,7 +526,6 @@ def create():
 
             created = cclient.create_cserve(req)
             click.echo(f"CServe deployment {name} created with ID: {created.id}")
-
 
         else:
             click.echo("Unknown deployment type.")
