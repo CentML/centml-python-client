@@ -59,12 +59,14 @@ class CentMLClient:
     def get_clusters(self):
         return self._api.get_clusters_clusters_get()
 
-    def get_hardware_instances(self, cluster_id):
-        return self._api.get_hardware_instances_hardware_instances_get(cluster_id).results
+    def get_hardware_instances(self, cluster_id = None):
+        return self._api.get_hardware_instances_hardware_instances_get(cluster_id = cluster_id if cluster_id else None).results
 
     def get_prebuilt_images(self, depl_type: DeploymentType = None):
         return self._api.get_prebuilt_images_prebuilt_images_get(type=depl_type)
 
+    def get_cserve_recipe(self):
+        return self._api.get_cserve_recipe_deployments_cserve_recipes_get().results
 
 @contextmanager
 def get_centml_client():

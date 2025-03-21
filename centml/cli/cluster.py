@@ -187,6 +187,7 @@ def create():
     with get_centml_client() as cclient:
         # Prompt for general fields
         name = click.prompt("Enter a name for the deployment")
+
         dtype_str = click.prompt(
             "Select a deployment type",
             type=click.Choice(list(depl_name_to_type_map.keys())),
@@ -195,33 +196,34 @@ def create():
         )
         depl_type = depl_name_to_type_map[dtype_str]
 
-        # Select cluster using a numbered list
-        clusters = cclient.get_clusters().results
-        if not clusters:
-            click.echo("No clusters available. Please ensure you have a cluster setup.")
-            return
-
-        click.echo("Available clusters:")
-        for idx, cluster in enumerate(clusters, start=1):
-            click.echo(f"{idx}. {cluster.display_name}")
-        cluster_choice = click.prompt("Select a cluster by number", type=int, default=1)
-        selected_cluster = clusters[cluster_choice - 1]
-        cluster_id = selected_cluster.id
-
-        # Hardware selection using a numbered list
-        hw_resp = cclient.get_hardware_instances(cluster_id)
-        if not hw_resp:
-            click.echo("No hardware instances available for this cluster.")
-            return
-
-        click.echo("Available hardware instances:")
-        for idx, hw in enumerate(hw_resp, start=1):
-            click.echo(f"{idx}. {hw.name}")
-        hw_choice = click.prompt("Select a hardware instance by number", type=int, default=1)
-        selected_hw = hw_resp[hw_choice - 1]
-        hw_id = selected_hw.id
-
         if depl_type == DeploymentType.INFERENCE_V2:
+
+            # Select cluster using a numbered list
+            clusters = cclient.get_clusters().results
+            if not clusters:
+                click.echo("No clusters available. Please ensure you have a cluster setup.")
+                return
+
+            click.echo("Available clusters:")
+            for idx, cluster in enumerate(clusters, start=1):
+                click.echo(f"{idx}. {cluster.display_name}")
+            cluster_choice = click.prompt("Select a cluster by number", type=int, default=1)
+            selected_cluster = clusters[cluster_choice - 1]
+            cluster_id = selected_cluster.id
+
+            # Hardware selection using a numbered list
+            hw_resp = cclient.get_hardware_instances(cluster_id)
+            if not hw_resp:
+                click.echo("No hardware instances available for this cluster.")
+                return
+
+            click.echo("Available hardware instances:")
+            for idx, hw in enumerate(hw_resp, start=1):
+                click.echo(f"{idx}. {hw.name}")
+            hw_choice = click.prompt("Select a hardware instance by number", type=int, default=1)
+            selected_hw = hw_resp[hw_choice - 1]
+            hw_id = selected_hw.id
+
             # Retrieve prebuilt images for inference deployments
             prebuilt_images = cclient.get_prebuilt_images(depl_type=depl_type)
 
@@ -306,6 +308,32 @@ def create():
             click.echo(f"Inference deployment {name} created with ID: {created.id}")
 
         elif depl_type == DeploymentType.COMPUTE_V2:
+            # Select cluster using a numbered list
+            clusters = cclient.get_clusters().results
+            if not clusters:
+                click.echo("No clusters available. Please ensure you have a cluster setup.")
+                return
+
+            click.echo("Available clusters:")
+            for idx, cluster in enumerate(clusters, start=1):
+                click.echo(f"{idx}. {cluster.display_name}")
+            cluster_choice = click.prompt("Select a cluster by number", type=int, default=1)
+            selected_cluster = clusters[cluster_choice - 1]
+            cluster_id = selected_cluster.id
+
+            # Hardware selection using a numbered list
+            hw_resp = cclient.get_hardware_instances(cluster_id)
+            if not hw_resp:
+                click.echo("No hardware instances available for this cluster.")
+                return
+
+            click.echo("Available hardware instances:")
+            for idx, hw in enumerate(hw_resp, start=1):
+                click.echo(f"{idx}. {hw.name}")
+            hw_choice = click.prompt("Select a hardware instance by number", type=int, default=1)
+            selected_hw = hw_resp[hw_choice - 1]
+            hw_id = selected_hw.id
+
             # Retrieve prebuilt images for compute deployments
             prebuilt_images = cclient.get_prebuilt_images(depl_type=depl_type)
             # Build list of image labels
@@ -353,26 +381,110 @@ def create():
             click.echo(f"Compute deployment {name} created with ID: {created.id}")
 
         elif depl_type == DeploymentType.CSERVE:
-            # For cserve deployments, ask for model and parallelism
-            model = click.prompt("Enter the Hugging Face model", default="facebook/opt-1.3b")
-            tensor_parallel_size = click.prompt("Tensor parallel size", default=1, type=int)
-            pipeline_parallel_size = click.prompt("Pipeline parallel size", default=1, type=int)
+            # Keep things simple, only use recipe.
+            # Retrieve the recipe and hardware instances
+            recipe = cclient.get_cserve_recipe()
+            models = [r.model for r in recipe] if recipe else []
 
+            if not models:
+                click.echo("No models found in the recipe.")
+                sys.exit(1)
+
+            # --- Model Selection (Indexed) ---
+            click.echo("Select a model:")
+            for idx, m in enumerate(models, start=1):
+                click.echo(f"{idx}. {m}")
+            model_index = click.prompt("Enter the model number", type=int, default=1)
+            if model_index < 1 or model_index > len(models):
+                click.echo("Invalid model selection.")
+                sys.exit(1)
+            selected_model = models[model_index - 1]
+
+            # --- Performance Option Selection (Indexed) ---
+            perf_options = ["fastest", "cheapest", "best_value"]
+            click.echo("Select performance option:")
+            for idx, option in enumerate(perf_options, start=1):
+                click.echo(f"{idx}. {option}")
+            perf_index = click.prompt("Enter the performance option number", type=int, default=1)
+            if perf_index < 1 or perf_index > len(perf_options):
+                click.echo("Invalid performance selection.")
+                sys.exit(1)
+            selected_perf_option = perf_options[perf_index - 1]
+
+            # Retrieve the recipe response for the selected model
+            selected_response = next((r for r in recipe if r.model == selected_model), None)
+            if not selected_response:
+                click.echo("Selected model not found in recipe.")
+                sys.exit(1)
+
+            # Get the performance-specific recipe (this is a CServeRecipePerf instance)
+            selected_perf = getattr(selected_response, selected_perf_option)
+
+            # Retrieve the hardware instance ID from the selected performance option
+            hardware_instance_id = selected_perf.hardware_instance_id
+
+            # Get hardware instance details using cclient.get_hardware_instances()
+            hw_instances = cclient.get_hardware_instances()
+            selected_hw = next((hw for hw in hw_instances["results"] if hw["id"] == hardware_instance_id), None)
+            if not selected_hw:
+                click.echo(f"Hardware instance with id {hardware_instance_id} not found.")
+                sys.exit(1)
+
+            # Display the hardware instance information to the user
+            click.echo("Selected Hardware Instance:")
+            for key, value in selected_hw.items():
+                click.echo(f"{key}: {value}")
+
+            # Use the cluster_id from the hardware instance (no need to prompt the user)
+            cluster_id = selected_hw["cluster_id"]
+
+            # --- Additional Prompts ---
+            # Prompt for Hugging Face token (if required)
+            hf_token = click.prompt(
+                "Enter your Hugging Face token or leave blank (if your model isn't private)",
+                default="",
+                show_default=False,
+            )
+
+            # Prompt for environment variables
+            env_vars_str = click.prompt(
+                "Enter environment variables in KEY=VALUE format (comma separated) or leave blank",
+                default="",
+                show_default=False,
+            )
+            env_vars = {}
+            if env_vars_str.strip():
+                for kv in env_vars_str.split(","):
+                    try:
+                        k, v = kv.strip().split("=")
+                        env_vars[k] = v
+                    except ValueError:
+                        click.echo(f"Skipping invalid env var: {kv}")
+
+            # Prompt for scaling and concurrency settings
+            min_scale = click.prompt("Minimum number of replicas", default=1, type=int)
+            max_scale = click.prompt("Maximum number of replicas", default=1, type=int)
+            concurrency_input = click.prompt("Max concurrency (or leave blank)", default="", show_default=False)
+            concurrency = int(concurrency_input) if concurrency_input else None
+
+            # --- Create the Deployment Request ---
             from platform_api_python_client import CreateCServeDeploymentRequest
 
             req = CreateCServeDeploymentRequest(
                 name=name,
                 cluster_id=cluster_id,
-                hardware_instance_id=hw_id,
-                model=model,
-                tensor_parallel_size=tensor_parallel_size,
-                pipeline_parallel_size=pipeline_parallel_size,
+                hardware_instance_id=hardware_instance_id,
+                recipe=selected_perf.recipe,  # The underlying CServeV2Recipe instance
+                hf_token=hf_token if hf_token.strip() else None,
                 min_scale=min_scale,
                 max_scale=max_scale,
                 concurrency=concurrency,
+                env_vars=env_vars if env_vars else None,
             )
+
             created = cclient.create_cserve(req)
             click.echo(f"CServe deployment {name} created with ID: {created.id}")
+
 
         else:
             click.echo("Unknown deployment type.")
