@@ -277,11 +277,7 @@ def create():
                     k, v = kv.strip().split("=")
                     env_vars[k] = v
 
-            command_str = click.prompt(
-                "Enter command (space-separated) or leave blank",
-                default="",
-                show_default=False
-            )
+            command_str = click.prompt("Enter command (space-separated) or leave blank", default="", show_default=False)
 
             command = command_str.strip() if command_str.strip() else None
 
@@ -429,13 +425,14 @@ def create():
                 sys.exit(1)
 
             # Display the hardware instance information to the user.
-            credits = selected_hw.cost_per_hr / 100.0            # e.g., 360 -> 3.60 credits per hour
-            vram_gib = selected_hw.accelerator_memory / 1024       # e.g., 81920 MB -> 80 GiB VRAM
-            memory_gib = selected_hw.memory / 1024                 # e.g., 239616 MB -> 234 GiB memory
-            cpu_cores = selected_hw.cpu / 1000                     # e.g., 26000 millicores -> 26 cores
+            credits = selected_hw.cost_per_hr / 100.0  # e.g., 360 -> 3.60 credits per hour
+            vram_gib = selected_hw.accelerator_memory / 1024  # e.g., 81920 MB -> 80 GiB VRAM
+            memory_gib = selected_hw.memory / 1024  # e.g., 239616 MB -> 234 GiB memory
+            cpu_cores = selected_hw.cpu / 1000  # e.g., 26000 millicores -> 26 cores
 
             click.echo("Selected Hardware Instance:")
-            click.echo(f"{credits:.2f} credits per hour,\n{vram_gib:.0f}GiB VRAM,\nMemory {memory_gib:.0f}GiB,\nCPU {cpu_cores:.0f} cores")
+            click.echo(f"{credits:.2f} credits per hour,\n{vram_gib:.0f}GiB VRAM,")
+            click.echo(f"Memory {memory_gib:.0f}GiB,\nCPU {cpu_cores:.0f} cores")
 
             # Use the cluster_id from the hardware instance (no need to prompt the user)
             cluster_id = selected_hw.cluster_id
