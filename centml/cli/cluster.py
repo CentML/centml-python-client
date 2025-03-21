@@ -425,18 +425,63 @@ def create():
 
             # Get hardware instance details using cclient.get_hardware_instances()
             hw_instances = cclient.get_hardware_instances()
-            selected_hw = next((hw for hw in hw_instances["results"] if hw["id"] == hardware_instance_id), None)
+            selected_hw = next((hw for hw in hw_instances if hw.id == hardware_instance_id), None)
             if not selected_hw:
                 click.echo(f"Hardware instance with id {hardware_instance_id} not found.")
                 sys.exit(1)
 
-            # Display the hardware instance information to the user
+            # Display the hardware instance information to the user.
+
+            credits = selected_hw.cost_per_hr / 100.0            # e.g., 360 -> 3.60 credits per hour
+            vram_gib = selected_hw.accelerator_memory / 1024       # e.g., 81920 MB -> 80 GiB VRAM
+            memory_gib = selected_hw.memory / 1024                 # e.g., 239616 MB -> 234 GiB memory
+            cpu_cores = selected_hw.cpu / 1000                     # e.g., 26000 millicores -> 26 cores
+
             click.echo("Selected Hardware Instance:")
-            for key, value in selected_hw.items():
-                click.echo(f"{key}: {value}")
+            click.echo(f"{credits:.2f} credits per hour,\n{vram_gib:.0f}GiB VRAM,\nMemory {memory_gib:.0f}GiB,\nCPU {cpu_cores:.0f} cores")
 
             # Use the cluster_id from the hardware instance (no need to prompt the user)
-            cluster_id = selected_hw["cluster_id"]
+            cluster_id = selected_hw.cluster_id
+
+            # Convert the recipe to a dict
+            recipe_dict = selected_perf.recipe.dict()
+
+            # Merge additional_properties into the top-level dictionary for required keys.
+            additional = recipe_dict.get("additional_properties", {})
+            recipe_dict.update(additional)
+            # Optionally remove the additional_properties key if it's no longer needed
+            recipe_dict.pop("additional_properties", None)
+
+            recipe_payload = {
+            "model": recipe_dict.get("model"),
+            "is_embedding_model": recipe_dict.get("is_embedding_model"),
+            "dtype": recipe_dict.get("dtype"),
+            "tokenizer": recipe_dict.get("tokenizer"),
+            "block_size": recipe_dict.get("block_size"),
+            "swap_space": recipe_dict.get("swap_space"),
+            "cache_dtype": recipe_dict.get("cache_dtype"),
+            "spec_tokens": recipe_dict.get("spec_tokens"),
+            "gpu_mem_util": recipe_dict.get("gpu_mem_util"),
+            "max_num_seqs": recipe_dict.get("max_num_seqs"),
+            "quantization": recipe_dict.get("quantization"),
+            "max_model_len": recipe_dict.get("max_model_len"),
+            "offloading_num": int(recipe_dict.get("offloading_num")),
+            "use_flashinfer": recipe_dict.get("use_flashinfer"),
+            "eager_execution": recipe_dict.get("eager_execution"),
+            "spec_draft_model": recipe_dict.get("spec_draft_model"),
+            "spec_max_seq_len": recipe_dict.get("spec_max_seq_len"),
+            "use_prefix_caching": recipe_dict.get("use_prefix_caching"),
+            "num_scheduler_steps": recipe_dict.get("num_scheduler_steps"),
+            "spec_max_batch_size": recipe_dict.get("spec_max_batch_size"),
+            "use_chunked_prefill": recipe_dict.get("use_chunked_prefill"),
+            "chunked_prefill_size": recipe_dict.get("chunked_prefill_size"),
+            "tensor_parallel_size": recipe_dict.get("tensor_parallel_size"),
+            "max_seq_len_to_capture": recipe_dict.get("max_seq_len_to_capture"),
+            "pipeline_parallel_size": recipe_dict.get("pipeline_parallel_size"),
+            "spec_prompt_lookup_max": recipe_dict.get("spec_prompt_lookup_max"),
+            "spec_prompt_lookup_min": recipe_dict.get("spec_prompt_lookup_min"),
+            "distributed_executor_backend": recipe_dict.get("distributed_executor_backend"),
+            }
 
             # --- Additional Prompts ---
             # Prompt for Hugging Face token (if required)
@@ -474,7 +519,7 @@ def create():
                 name=name,
                 cluster_id=cluster_id,
                 hardware_instance_id=hardware_instance_id,
-                recipe=selected_perf.recipe,  # The underlying CServeV2Recipe instance
+                recipe=recipe_payload,
                 hf_token=hf_token if hf_token.strip() else None,
                 min_scale=min_scale,
                 max_scale=max_scale,
