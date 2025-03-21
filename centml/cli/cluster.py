@@ -94,7 +94,7 @@ def ls(type):
             )
         )
 
-
+# TODO: Status for Cserve seems to be broken
 @click.command(help="Get deployment details")
 @click.argument("name", type=str)
 @handle_exception
@@ -536,27 +536,42 @@ def create():
 
 
 @click.command(help="Delete a deployment")
-@click.argument("id", type=int)
+@click.argument("name", type=str)
 @handle_exception
-def delete(id):
+def delete(name):
     with get_centml_client() as cclient:
-        cclient.delete(id)
-        click.echo("Deployment has been deleted")
+        # Retrieve all deployments and search for the given name
+        deployments = cclient.get(None)
+        deployment = next((d for d in deployments if d.name == name), None)
+        if deployment is None:
+            sys.exit(f"Deployment with name '{name}' not found.")
+        cclient.delete(deployment.id)
+        click.echo(f"Deployment {name} has been deleted")
 
 
 @click.command(help="Pause a deployment")
-@click.argument("id", type=int)
+@click.argument("name", type=str)
 @handle_exception
-def pause(id):
+def pause(name):
     with get_centml_client() as cclient:
-        cclient.pause(id)
-        click.echo("Deployment has been paused")
+        # Retrieve all deployments and search for the given name
+        deployments = cclient.get(None)
+        deployment = next((d for d in deployments if d.name == name), None)
+        if deployment is None:
+            sys.exit(f"Deployment with name '{name}' not found.")
+        cclient.pause(deployment.id)
+        click.echo(f"Deployment {name} has been paused")
 
 
 @click.command(help="Resume a deployment")
-@click.argument("id", type=int)
+@click.argument("name", type=str)
 @handle_exception
-def resume(id):
+def resume(name):
     with get_centml_client() as cclient:
-        cclient.resume(id)
-        click.echo("Deployment has been resumed")
+        # Retrieve all deployments and search for the given name
+        deployments = cclient.get(None)
+        deployment = next((d for d in deployments if d.name == name), None)
+        if deployment is None:
+            sys.exit(f"Deployment with name '{name}' not found.")
+        cclient.resume(deployment.id)
+        click.echo(f"Deployment {name} has been resumed")
