@@ -177,10 +177,13 @@ def get(type, id):
             click.echo(
                 tabulate(
                     [
-                        ("Hugging face model", deployment.model),
+                        ("Hugging face model", deployment.recipe.model),
                         (
                             "Parallelism",
-                            {"tensor": deployment.tensor_parallel_size, "pipeline": deployment.pipeline_parallel_size},
+                            {
+                                "tensor": deployment.recipe.additional_properties['tensor_parallel_size'],
+                                "pipeline": deployment.recipe.additional_properties['pipeline_parallel_size'],
+                            },
                         ),
                         ("Replicas", {"min": deployment.min_scale, "max": deployment.max_scale}),
                         ("Max concurrency", deployment.concurrency or "None"),
