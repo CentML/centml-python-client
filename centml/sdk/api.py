@@ -70,6 +70,13 @@ class CentMLClient:
     def get_cserve_recipe(self, model=None, hf_token=None):
         return self._api.get_cserve_recipe_deployments_cserve_recipes_get(model=model, hf_token=hf_token).results
 
+    def get_cluster_id(self, hardware_instance_id):
+        hardware_instance = list(filter(lambda h: h.id==hardware_instance_id, self.get_hardware_instances()))[0]
+        if hardware_instance:
+            return hardware_instance.cluster_id
+        else:
+            raise Exception(f"Invalid hardware instance id {hardware_instance_id}")
+
 
 @contextmanager
 def get_centml_client():
