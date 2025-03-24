@@ -7,13 +7,22 @@ from centml.sdk import DeploymentType, DeploymentStatus, ServiceStatus, ApiExcep
 from centml.sdk.api import get_centml_client
 
 
-depl_name_to_type_map = {
-    "inference": DeploymentType.INFERENCE_V2,
-    "compute": DeploymentType.COMPUTE_V2,
-    "cserve": DeploymentType.CSERVE,
+depl_type_to_name_map = {
+    DeploymentType.INFERENCE: 'inference',
+    DeploymentType.COMPUTE: 'compute',
+    DeploymentType.COMPILATION: 'compilation',
+    DeploymentType.INFERENCE_V2: 'inference',
+    DeploymentType.COMPUTE_V2: 'compute',
+    DeploymentType.CSERVE: 'cserve',
+    DeploymentType.CSERVE_V2: 'cserve',
+    DeploymentType.RAG: 'rag',
 }
-depl_type_to_name_map = {v: k for k, v in depl_name_to_type_map.items()}
-
+depl_name_to_type_map = {
+    'inference': DeploymentType.INFERENCE_V2,
+    'cserve': DeploymentType.CSERVE_V2,
+    'compute': DeploymentType.COMPUTE_V2,
+    'rag': DeploymentType.RAG,
+}
 
 def handle_exception(func):
     @wraps(func)
@@ -21,7 +30,7 @@ def handle_exception(func):
         try:
             return func(*args, **kwargs)
         except ApiException as e:
-            click.echo(f"Error: {e.reason}")
+            click.echo(f"Error: {e.body or e.reason}")
             return None
 
     return wrapper
@@ -43,7 +52,7 @@ def _get_hw_to_id_map(cclient, cluster_id):
 def _format_ssh_key(ssh_key):
     if not ssh_key:
         return "No SSH Key Found"
-    return ssh_key[:10] + '...'
+    return ssh_key[:10] + "..."
 
 
 def _get_ready_status(cclient, deployment):
@@ -80,10 +89,10 @@ def ls(type):
     with get_centml_client() as cclient:
         depl_type = depl_name_to_type_map[type] if type in depl_name_to_type_map else None
         deployments = cclient.get(depl_type)
-        rows = [
-            [d.id, d.name, depl_type_to_name_map[d.type], d.status.value, d.created_at.strftime("%Y-%m-%d %H:%M:%S")]
-            for d in deployments
-        ]
+        rows = []
+        for d in deployments:
+            if d.type in depl_type_to_name_map:
+                rows.append([d.id, d.name, depl_type_to_name_map[d.type], d.status.value, d.created_at.strftime("%Y-%m-%d %H:%M:%S")])
 
         click.echo(
             tabulate(
@@ -124,7 +133,7 @@ def get(type, id):
                     ("Endpoint", deployment.endpoint_url),
                     ("Created at", deployment.created_at.strftime("%Y-%m-%d %H:%M:%S")),
                     ("Hardware", f"{hw.name} ({hw.num_gpu}x {hw.gpu_type})"),
-                    ("Cost", f"{hw.cost_per_hr/100} credits/hr"),
+                    ("Cost", f"{hw.cost_per_hr / 100} credits/hr"),
                 ],
                 tablefmt="rounded_outline",
                 disable_numparse=True,
