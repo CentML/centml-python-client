@@ -1,34 +1,46 @@
 import time
 import centml
 from centml.sdk.api import get_centml_client
-from centml.sdk import DeploymentType, CreateCServeV2DeploymentRequest
+from centml.sdk import DeploymentType, CreateCServeV2DeploymentRequest, CServeV2Recipe
 
-with get_centml_client() as cclient:
-    # Get fastest recipe for the Qwen model
-    fastest = cclient.get_cserve_recipe(model="Qwen/Qwen2-VL-7B-Instruct")[0].fastest
+def get_fastest_cserve_config(model):
+    return cclient.get_cserve_recipe(model=model)[0].fastest
 
-    # Modify the recipe if necessary
-    fastest.recipe.additional_properties["max_num_seqs"] = 512
+def get_default_cserve_config(model):
+    return CServeV2Recipe(model=model)
 
-    # Create CServeV2 deployment
-    request = CreateCServeV2DeploymentRequest(
-        name="qwen-fastest",
-        cluster_id=cclient.get_cluster_id(fastest.hardware_instance_id),
-        hardware_instance_id=fastest.hardware_instance_id,
-        recipe=fastest.recipe,
-        min_scale=1,
-        max_scale=1,
-        env_vars={},
-    )
-    response = cclient.create_cserve(request)
-    print("Create deployment response: ", response)
+def main():
+    with get_centml_client() as cclient:
+        # Get fastest recipe for the Qwen model
+        qwen_config = get_fastest_config(model="Qwen/Qwen2-VL-7B-Instruct")
 
-    # Get deployment details
-    deployment = cclient.get_cserve(response.id)
-    print("Deployment details: ", deployment)
+        # Modify the recipe if necessary
+        qwen_config.recipe.additional_properties["max_num_seqs"] = 512
 
-    # Pause the deployment
-    cclient.pause(deployment.id)
+        # Create CServeV2 deployment
+        request = CreateCServeV2DeploymentRequest(
+            name="qwen-fastest",
+            cluster_id=cclient.get_cluster_id(qwen_config.hardware_instance_id),
+            hardware_instance_id=qwen_config.hardware_instance_id,
+            recipe=qwen_config.recipe,
+            min_scale=1,
+            max_scale=1,
+            env_vars={},
+        )
+        response = cclient.create_cserve(request)
+        print("Create deployment response: ", response)
 
-    # Delete the deployment
-    cclient.delete(deployment.id)
+        # Get deployment details
+        deployment = cclient.get_cserve(response.id)
+        print("Deployment details: ", deployment)
+
+        '''
+        # Pause the deployment
+        cclient.pause(deployment.id)
+
+        # Delete the deployment
+        cclient.delete(deployment.id)
+        '''
+
+if __name__ == "__main__":
+    main()
