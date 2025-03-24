@@ -24,6 +24,7 @@ depl_name_to_type_map = {
     'rag': DeploymentType.RAG,
 }
 
+
 def handle_exception(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -92,7 +93,15 @@ def ls(type):
         rows = []
         for d in deployments:
             if d.type in depl_type_to_name_map:
-                rows.append([d.id, d.name, depl_type_to_name_map[d.type], d.status.value, d.created_at.strftime("%Y-%m-%d %H:%M:%S")])
+                rows.append(
+                    [
+                        d.id,
+                        d.name,
+                        depl_type_to_name_map[d.type],
+                        d.status.value,
+                        d.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+                    ]
+                )
 
         click.echo(
             tabulate(
