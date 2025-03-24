@@ -52,7 +52,7 @@ def _get_hw_to_id_map(cclient, cluster_id):
 def _format_ssh_key(ssh_key):
     if not ssh_key:
         return "No SSH Key Found"
-    return ssh_key[:10] + "..."
+    return ssh_key[:32] + "..."
 
 
 def _get_ready_status(cclient, deployment):
@@ -116,7 +116,7 @@ def get(type, id):
             deployment = cclient.get_inference(id)
         elif depl_type == DeploymentType.COMPUTE_V2:
             deployment = cclient.get_compute(id)
-        elif depl_type == DeploymentType.CSERVE:
+        elif depl_type == DeploymentType.CSERVE_V2:
             deployment = cclient.get_cserve(id)
         else:
             sys.exit("Please enter correct deployment type")
@@ -164,7 +164,7 @@ def get(type, id):
                     disable_numparse=True,
                 )
             )
-        elif depl_type == DeploymentType.CSERVE:
+        elif depl_type == DeploymentType.CSERVE_V2:
             click.echo(
                 tabulate(
                     [
