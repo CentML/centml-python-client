@@ -3,7 +3,7 @@ import centml
 from centml.sdk.api import get_centml_client
 from centml.sdk import DeploymentType, CreateCServeV2DeploymentRequest, CServeV2Recipe
 
-def get_fastest_cserve_config(model):
+def get_fastest_cserve_config(cclient, model):
     return cclient.get_cserve_recipe(model=model)[0].fastest
 
 def get_default_cserve_config(model):
@@ -12,7 +12,7 @@ def get_default_cserve_config(model):
 def main():
     with get_centml_client() as cclient:
         # Get fastest recipe for the Qwen model
-        qwen_config = get_fastest_config(model="Qwen/Qwen2-VL-7B-Instruct")
+        qwen_config = get_fastest_cserve_config(cclient, model="Qwen/Qwen2-VL-7B-Instruct")
 
         # Modify the recipe if necessary
         qwen_config.recipe.additional_properties["max_num_seqs"] = 512
