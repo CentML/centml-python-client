@@ -6,7 +6,7 @@ from platform_api_python_client import (
     DeploymentStatus,
     CreateInferenceDeploymentRequest,
     CreateComputeDeploymentRequest,
-    CreateCServeDeploymentRequest,
+    CreateCServeV2DeploymentRequest,
 )
 
 from centml.sdk import auth
@@ -32,7 +32,7 @@ class CentMLClient:
         return self._api.get_compute_deployment_deployments_compute_deployment_id_get(id)
 
     def get_cserve(self, id):
-        return self._api.get_cserve_deployment_deployments_cserve_deployment_id_get(id)
+        return self._api.get_cserve_v2_deployment_deployments_cserve_v2_deployment_id_get(id)
 
     def create_inference(self, request: CreateInferenceDeploymentRequest):
         return self._api.create_inference_deployment_deployments_inference_post(request)
@@ -40,8 +40,8 @@ class CentMLClient:
     def create_compute(self, request: CreateComputeDeploymentRequest):
         return self._api.create_compute_deployment_deployments_compute_post(request)
 
-    def create_cserve(self, request: CreateCServeDeploymentRequest):
-        return self._api.create_cserve_deployment_deployments_cserve_post(request)
+    def create_cserve(self, request: CreateCServeV2DeploymentRequest):
+        return self._api.create_cserve_v2_deployment_deployments_cserve_v2_post(request)
 
     def _update_status(self, id, new_status):
         status_req = platform_api_python_client.DeploymentStatusRequest(status=new_status)
@@ -67,8 +67,8 @@ class CentMLClient:
     def get_prebuilt_images(self, depl_type: DeploymentType):
         return self._api.get_prebuilt_images_prebuilt_images_get(type=depl_type)
 
-    def get_cserve_recipe(self):
-        return self._api.get_cserve_recipe_deployments_cserve_recipes_get().results
+    def get_cserve_recipe(self, model=None, hf_token=None):
+        return self._api.get_cserve_recipe_deployments_cserve_recipes_get(model=model, hf_token=hf_token).results
 
 
 @contextmanager
