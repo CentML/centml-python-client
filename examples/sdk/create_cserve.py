@@ -28,7 +28,7 @@ with get_centml_client() as cclient:
     print("Deployment details: ", deployment)
 
     # Pause the deployment
-    #cclient.pause(deployment.id)
+    cclient.pause(deployment.id)
 
     # Delete the deployment
-    #cclient.delete(deployment.id)
+    cclient.delete(deployment.id)
