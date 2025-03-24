@@ -182,7 +182,7 @@ def get(type, id):
                             "Parallelism",
                             {
                                 "tensor": deployment.recipe.additional_properties['tensor_parallel_size'],
-                                "pipeline": deployment.recipe.additional_properties['pipeline_parallel_size']
+                                "pipeline": deployment.recipe.additional_properties['pipeline_parallel_size'],
                             },
                         ),
                         ("Replicas", {"min": deployment.min_scale, "max": deployment.max_scale}),
