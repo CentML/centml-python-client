@@ -78,6 +78,11 @@ class CentMLClient:
 
         return filtered_hw[0].cluster_id
 
+    def get_user_vault(self, type):
+        items = self._api.get_all_user_vault_items_endpoint_user_vault_get(type).results
+
+        return {i.key: i.value for i in items}
+
 
 @contextmanager
 def get_centml_client():
