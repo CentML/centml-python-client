@@ -19,7 +19,7 @@ def login(token_file):
         choice = click.confirm("Do you want to download the token?")
 
         if choice:
-            click.launch(f"{settings.CENTML_WEB_URL}?isCliAuthenticated=true")
+            click.launch(f"{settings.CENTML_WEB_URL}?isCliMode=true")
         else:
             click.echo("Login unsuccessful")
 
