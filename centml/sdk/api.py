@@ -42,7 +42,7 @@ class CentMLClient:
 
     def create_cserve(self, request: CreateCServeV2DeploymentRequest):
         return self._api.create_cserve_v2_deployment_deployments_cserve_v2_post(request)
-    
+
     def update_inference(self, deployment_id: int, request: CreateInferenceDeploymentRequest):
         return self._api.update_inference_deployment_deployments_inference_put(deployment_id, request)
 
