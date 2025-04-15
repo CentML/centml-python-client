@@ -16,7 +16,7 @@ def refresh_centml_token(refresh_token):
     }
 
     response = requests.post(
-        "https://api.workos.com/user_management/authenticate",
+        "https://auth.centml.com/user_management/authenticate",
         headers={"Content-Type": "application/json; charset=UTF-8"},
         json=payload,
         timeout=3,
