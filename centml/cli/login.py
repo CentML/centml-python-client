@@ -16,7 +16,7 @@ from centml.sdk.config import settings
 
 CLIENT_ID = settings.CENTML_WORKOS_CLIENT_ID
 SERVER_HOST = "127.0.0.1"
-SERVER_PORT = 6789
+SERVER_PORT = 57983
 REDIRECT_URI = f"http://{SERVER_HOST}:{SERVER_PORT}/callback"
 AUTHORIZE_URL = "https://auth.centml.com/user_management/authorize"
 AUTHENTICATE_URL = "https://auth.centml.com/user_management/authenticate"
