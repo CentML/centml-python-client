@@ -9,24 +9,36 @@ from centml.sdk.config import settings
 
 
 def refresh_centml_token(refresh_token):
-    api_key = settings.CENTML_FIREBASE_API_KEY
+    payload = {
+        "client_id": settings.CENTML_WORKOS_CLIENT_ID,
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+    }
 
-    cred = requests.post(
-        f"https://securetoken.googleapis.com/v1/token?key={api_key}",
-        headers={"content-type": "application/json; charset=UTF-8"},
-        data=json.dumps({"grantType": "refresh_token", "refreshToken": refresh_token}),
+    response = requests.post(
+        "https://auth.centml.com/user_management/authenticate",
+        headers={"Content-Type": "application/json; charset=UTF-8"},
+        json=payload,
         timeout=3,
-    ).json()
+    )
+    response_dict = response.json()
 
-    with open(settings.CENTML_CRED_FILE_PATH, 'w') as f:
-        json.dump(cred, f)
+    # If there is an error, we should remove the credentials and the user needs to sign in again.
+    if "error" in response_dict:
+        if os.path.exists(settings.CENTML_CRED_FILE_PATH):
+            os.remove(settings.CENTML_CRED_FILE_PATH)
+        cred = None
+    else:
+        cred = {key: response_dict[key] for key in ("access_token", "refresh_token") if key in response_dict}
+        with open(settings.CENTML_CRED_FILE_PATH, "w") as f:
+            json.dump(cred, f)
 
     return cred
 
 
 def store_centml_cred(token_file):
     try:
-        with open(token_file, 'r') as f:
+        with open(token_file, "r") as f:
             os.makedirs(settings.CENTML_CONFIG_PATH, exist_ok=True)
             refresh_token = json.load(f)["refresh_token"]
 
@@ -39,7 +51,7 @@ def load_centml_cred():
     cred = None
 
     if os.path.exists(settings.CENTML_CRED_FILE_PATH):
-        with open(settings.CENTML_CRED_FILE_PATH, 'r') as f:
+        with open(settings.CENTML_CRED_FILE_PATH, "r") as f:
             cred = json.load(f)
 
     return cred
@@ -47,16 +59,16 @@ def load_centml_cred():
 
 def get_centml_token():
     cred = load_centml_cred()
-
     if not cred:
         sys.exit("CentML credentials not found. Please login...")
-
-    exp_time = int(jwt.decode(cred["id_token"], options={"verify_signature": False})["exp"])
+    exp_time = int(jwt.decode(cred["access_token"], options={"verify_signature": False})["exp"])
 
     if time.time() >= exp_time - 100:
         cred = refresh_centml_token(cred["refresh_token"])
+        if cred is None:
+            sys.exit("Could not refresh credentials. Please login and try again...")
 
-    return cred["id_token"]
+    return cred["access_token"]
 
 
 def remove_centml_cred():
