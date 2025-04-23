@@ -2,6 +2,7 @@ import base64
 import hashlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import os
 import secrets
 import urllib.parse
 import webbrowser
@@ -122,6 +123,7 @@ def login(token_file):
                     cred = {
                         key: response_dict[key] for key in ("access_token", "refresh_token") if key in response_dict
                     }
+                    os.makedirs(os.path.dirname(settings.CENTML_CRED_FILE_PATH), exist_ok=True)
                     with open(settings.CENTML_CRED_FILE_PATH, "w") as f:
                         json.dump(cred, f)
                     click.echo("✅ Login successful")
