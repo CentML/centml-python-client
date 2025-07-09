@@ -7,6 +7,7 @@ from platform_api_python_client import (
     CreateInferenceDeploymentRequest,
     CreateComputeDeploymentRequest,
     CreateCServeV2DeploymentRequest,
+    Metric,
 )
 
 from centml.sdk import auth
@@ -91,6 +92,18 @@ class CentMLClient:
         items = self._api.get_all_user_vault_items_endpoint_user_vault_get(type).results
 
         return {i.key: i.value for i in items}
+
+    # pylint: disable=R0917
+    def get_deployment_usage(
+        self, id: int, metric: Metric, start_time_in_seconds: int, end_time_in_seconds: int, step: int
+    ):
+        return self._api.get_usage_deployments_usage_deployment_id_get(
+            deployment_id=id,
+            metric=metric,
+            start_time_in_seconds=start_time_in_seconds,
+            end_time_in_seconds=end_time_in_seconds,
+            step=step,
+        ).values
 
 
 @contextmanager
