@@ -93,6 +93,7 @@ class CentMLClient:
 
         return {i.key: i.value for i in items}
 
+    # pylint: disable=R0917
     def get_deployment_usage(
         self, id: int, metric: Metric, start_time_in_seconds: int, end_time_in_seconds: int, step: int
     ):
