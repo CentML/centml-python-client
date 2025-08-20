@@ -5,8 +5,7 @@ from centml.sdk import DeploymentType, CreateInferenceDeploymentRequest, UserVau
 
 def main():
     with get_centml_client() as cclient:
-        certs = cclient.get_user_vault(UserVaultType.CERTIFICATES)
-
+       
         request = CreateInferenceDeploymentRequest(
             name="nginx",
             cluster_id=1000,
@@ -15,7 +14,6 @@ def main():
             port=8080,
             min_scale=1,
             max_scale=1,
-            endpoint_certificate_authority=certs["my_cert"],
         )
         response = cclient.create_inference(request)
         print("Create deployment response: ", response)
