@@ -36,8 +36,10 @@ def get_default_cserve_config(cclient, name, model):
 def main():
     with get_centml_client() as cclient:
         ### Get the configurations for the Qwen model
-        qwen_config = get_fastest_cserve_config(cclient, name="qwen-fastest", model="Qwen/Qwen2-VL-7B-Instruct")
-        #qwen_config = get_default_cserve_config(cclient, name="qwen-default", model="Qwen/Qwen2-VL-7B-Instruct")
+        qwen_config = get_fastest_cserve_config(
+            cclient, name="qwen-fastest", model="Qwen/Qwen2-VL-7B-Instruct"
+        )
+        # qwen_config = get_default_cserve_config(cclient, name="qwen-default", model="Qwen/Qwen2-VL-7B-Instruct")
 
         ### Modify the recipe if necessary
         qwen_config.recipe.additional_properties["max_num_seqs"] = 512
@@ -46,17 +48,18 @@ def main():
         response = cclient.create_cserve(qwen_config)
         print("Create deployment response: ", response)
 
-        ### Get deployment details  
+        ### Get deployment details
         deployment = cclient.get_cserve_v3(response.id)
         print("Deployment details: ", deployment)
 
-        '''
+        """
         ### Pause the deployment
         cclient.pause(deployment.id)
 
         ### Delete the deployment
         cclient.delete(deployment.id)
-        '''
+        """
+
 
 if __name__ == "__main__":
     main()

@@ -3,28 +3,34 @@ from functools import wraps
 from typing import Dict
 import click
 from tabulate import tabulate
-from centml.sdk import DeploymentType, DeploymentStatus, ServiceStatus, ApiException, HardwareInstanceResponse
+from centml.sdk import (
+    DeploymentType,
+    DeploymentStatus,
+    ServiceStatus,
+    ApiException,
+    HardwareInstanceResponse,
+)
 from centml.sdk.api import get_centml_client
 
 
 depl_type_to_name_map = {
-    DeploymentType.INFERENCE: 'inference',
-    DeploymentType.COMPUTE: 'compute',
-    DeploymentType.COMPILATION: 'compilation',
-    DeploymentType.INFERENCE_V2: 'inference',
-    DeploymentType.COMPUTE_V2: 'compute',
-    DeploymentType.CSERVE: 'cserve',
-    DeploymentType.CSERVE_V2: 'cserve-v2',
-    DeploymentType.CSERVE_V3: 'cserve',
-    DeploymentType.RAG: 'rag',
+    DeploymentType.INFERENCE: "inference",
+    DeploymentType.COMPUTE: "compute",
+    DeploymentType.COMPILATION: "compilation",
+    DeploymentType.INFERENCE_V2: "inference",
+    DeploymentType.COMPUTE_V2: "compute",
+    DeploymentType.CSERVE: "cserve",
+    DeploymentType.CSERVE_V2: "cserve-v2",
+    DeploymentType.CSERVE_V3: "cserve",
+    DeploymentType.RAG: "rag",
 }
 depl_name_to_type_map = {
-    'inference': DeploymentType.INFERENCE_V2,
-    'cserve': DeploymentType.CSERVE_V3,
-    'cserve-v2': DeploymentType.CSERVE_V2,
-    'cserve-v3': DeploymentType.CSERVE_V3,
-    'compute': DeploymentType.COMPUTE_V2,
-    'rag': DeploymentType.RAG,
+    "inference": DeploymentType.INFERENCE_V2,
+    "cserve": DeploymentType.CSERVE_V3,
+    "cserve-v2": DeploymentType.CSERVE_V2,
+    "cserve-v3": DeploymentType.CSERVE_V3,
+    "compute": DeploymentType.COMPUTE_V2,
+    "rag": DeploymentType.RAG,
 }
 
 
@@ -63,8 +69,12 @@ def _get_replica_info(deployment, depl_type):
     """Extract replica information handling V2/V3 field differences"""
     if depl_type == DeploymentType.CSERVE_V3:
         return {
-            "min": getattr(deployment, 'min_replicas', getattr(deployment, 'min_scale', None)),
-            "max": getattr(deployment, 'max_replicas', getattr(deployment, 'max_scale', None)),
+            "min": getattr(
+                deployment, "min_replicas", getattr(deployment, "min_scale", None)
+            ),
+            "max": getattr(
+                deployment, "max_replicas", getattr(deployment, "max_scale", None)
+            ),
         }
     else:  # V2
         return {"min": deployment.min_scale, "max": deployment.max_scale}
@@ -73,36 +83,67 @@ def _get_replica_info(deployment, depl_type):
 def _get_ready_status(cclient, deployment):
     api_status = deployment.status
     service_status = (
-        cclient.get_status(deployment.id).service_status if deployment.status == DeploymentStatus.ACTIVE else None
+        cclient.get_status(deployment.id).service_status
+        if deployment.status == DeploymentStatus.ACTIVE
+        else None
     )
 
     status_styles = {
         (DeploymentStatus.PAUSED, None): ("paused", "yellow", "black"),
         (DeploymentStatus.DELETED, None): ("deleted", "white", "black"),
         (DeploymentStatus.ACTIVE, ServiceStatus.HEALTHY): ("ready", "green", "black"),
-        (DeploymentStatus.ACTIVE, ServiceStatus.INITIALIZING): ("starting", "black", "white"),
-        (DeploymentStatus.ACTIVE, ServiceStatus.MISSING): ("starting", "black", "white"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.INITIALIZING): (
+            "starting",
+            "black",
+            "white",
+        ),
+        (DeploymentStatus.ACTIVE, ServiceStatus.MISSING): (
+            "starting",
+            "black",
+            "white",
+        ),
         (DeploymentStatus.ACTIVE, ServiceStatus.ERROR): ("error", "red", "black"),
         (DeploymentStatus.ACTIVE, ServiceStatus.CREATECONTAINERCONFIGERROR): (
             "createContainerConfigError",
             "red",
             "black",
         ),
-        (DeploymentStatus.ACTIVE, ServiceStatus.CRASHLOOPBACKOFF): ("crashLoopBackOff", "red", "black"),
-        (DeploymentStatus.ACTIVE, ServiceStatus.IMAGEPULLBACKOFF): ("imagePullBackOff", "red", "black"),
-        (DeploymentStatus.ACTIVE, ServiceStatus.PROGRESSDEADLINEEXCEEDED): ("progressDeadlineExceeded", "red", "black"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.CRASHLOOPBACKOFF): (
+            "crashLoopBackOff",
+            "red",
+            "black",
+        ),
+        (DeploymentStatus.ACTIVE, ServiceStatus.IMAGEPULLBACKOFF): (
+            "imagePullBackOff",
+            "red",
+            "black",
+        ),
+        (DeploymentStatus.ACTIVE, ServiceStatus.PROGRESSDEADLINEEXCEEDED): (
+            "progressDeadlineExceeded",
+            "red",
+            "black",
+        ),
     }
 
-    style = status_styles.get((api_status, service_status), ("unknown", "black", "white"))
+    style = status_styles.get(
+        (api_status, service_status), ("unknown", "black", "white")
+    )
     # Handle foreground and background colors
     return click.style(style[0], fg=style[1], bg=style[2])
 
 
 @click.command(help="List all deployments")
-@click.argument("type", type=click.Choice(list(depl_name_to_type_map.keys())), required=False, default=None)
+@click.argument(
+    "type",
+    type=click.Choice(list(depl_name_to_type_map.keys())),
+    required=False,
+    default=None,
+)
 def ls(type):
     with get_centml_client() as cclient:
-        depl_type = depl_name_to_type_map[type] if type in depl_name_to_type_map else None
+        depl_type = (
+            depl_name_to_type_map[type] if type in depl_name_to_type_map else None
+        )
         deployments = cclient.get(depl_type)
         rows = []
         for d in deployments:
@@ -184,7 +225,10 @@ def get(type, id):
         elif depl_type == DeploymentType.COMPUTE_V2:
             click.echo(
                 tabulate(
-                    [("Username", "centml"), ("SSH key", _format_ssh_key(deployment.ssh_public_key))],
+                    [
+                        ("Username", "centml"),
+                        ("SSH key", _format_ssh_key(deployment.ssh_public_key)),
+                    ],
                     tablefmt="rounded_outline",
                     disable_numparse=True,
                 )
@@ -196,24 +240,34 @@ def get(type, id):
                 (
                     "Parallelism",
                     {
-                        "tensor": deployment.recipe.additional_properties.get('tensor_parallel_size', 'N/A'),
-                        "pipeline": deployment.recipe.additional_properties.get('pipeline_parallel_size', 'N/A'),
+                        "tensor": deployment.recipe.additional_properties.get(
+                            "tensor_parallel_size", "N/A"
+                        ),
+                        "pipeline": deployment.recipe.additional_properties.get(
+                            "pipeline_parallel_size", "N/A"
+                        ),
                     },
                 ),
                 ("Replicas", replica_info),
                 ("Max concurrency", deployment.concurrency or "None"),
             ]
-            
+
             # Add V3-specific rollout information
             if depl_type == DeploymentType.CSERVE_V3:
                 rollout_info = {}
-                if hasattr(deployment, 'max_surge') and deployment.max_surge is not None:
-                    rollout_info['max_surge'] = deployment.max_surge
-                if hasattr(deployment, 'max_unavailable') and deployment.max_unavailable is not None:
-                    rollout_info['max_unavailable'] = deployment.max_unavailable
+                if (
+                    hasattr(deployment, "max_surge")
+                    and deployment.max_surge is not None
+                ):
+                    rollout_info["max_surge"] = deployment.max_surge
+                if (
+                    hasattr(deployment, "max_unavailable")
+                    and deployment.max_unavailable is not None
+                ):
+                    rollout_info["max_unavailable"] = deployment.max_unavailable
                 if rollout_info:
                     display_rows.append(("Rollout strategy", rollout_info))
-            
+
             click.echo(
                 tabulate(
                     display_rows,
