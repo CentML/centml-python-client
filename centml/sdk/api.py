@@ -7,6 +7,7 @@ from platform_api_python_client import (
     CreateInferenceDeploymentRequest,
     CreateComputeDeploymentRequest,
     CreateCServeV2DeploymentRequest,
+    CreateCServeV3DeploymentRequest,
     Metric,
 )
 
@@ -34,6 +35,12 @@ class CentMLClient:
 
     def get_cserve(self, id):
         return self._api.get_cserve_v2_deployment_deployments_cserve_v2_deployment_id_get(id)
+    
+    def get_cserve_v2(self, id):
+        return self._api.get_cserve_v2_deployment_deployments_cserve_v2_deployment_id_get(id)
+    
+    def get_cserve_v3(self, id):
+        return self._api.get_cserve_v3_deployment_deployments_cserve_v3_deployment_id_get(id)
 
     def create_inference(self, request: CreateInferenceDeploymentRequest):
         return self._api.create_inference_deployment_deployments_inference_post(request)
@@ -41,8 +48,17 @@ class CentMLClient:
     def create_compute(self, request: CreateComputeDeploymentRequest):
         return self._api.create_compute_deployment_deployments_compute_post(request)
 
-    def create_cserve(self, request: CreateCServeV2DeploymentRequest):
+    def create_cserve(self, request: CreateCServeV3DeploymentRequest):
+        """Create CServe deployment using V3 API (default)"""
+        return self._api.create_cserve_v3_deployment_deployments_cserve_v3_post(request)
+    
+    def create_cserve_v2(self, request: CreateCServeV2DeploymentRequest):
+        """Create CServe deployment using V2 API (legacy)"""
         return self._api.create_cserve_v2_deployment_deployments_cserve_v2_post(request)
+    
+    def create_cserve_v3(self, request: CreateCServeV3DeploymentRequest):
+        """Create CServe deployment using V3 API"""
+        return self._api.create_cserve_v3_deployment_deployments_cserve_v3_post(request)
 
     def update_inference(self, deployment_id: int, request: CreateInferenceDeploymentRequest):
         return self._api.update_inference_deployment_deployments_inference_put(deployment_id, request)
@@ -50,8 +66,17 @@ class CentMLClient:
     def update_compute(self, deployment_id: int, request: CreateComputeDeploymentRequest):
         return self._api.update_compute_deployment_deployments_compute_put(deployment_id, request)
 
-    def update_cserve(self, deployment_id: int, request: CreateCServeV2DeploymentRequest):
+    def update_cserve(self, deployment_id: int, request: CreateCServeV3DeploymentRequest):
+        """Update CServe deployment using V3 API (default)"""
+        return self._api.update_cserve_v3_deployment_deployments_cserve_v3_put(deployment_id, request)
+    
+    def update_cserve_v2(self, deployment_id: int, request: CreateCServeV2DeploymentRequest):
+        """Update CServe deployment using V2 API (legacy)"""
         return self._api.update_cserve_v2_deployment_deployments_cserve_v2_put(deployment_id, request)
+    
+    def update_cserve_v3(self, deployment_id: int, request: CreateCServeV3DeploymentRequest):
+        """Update CServe deployment using V3 API"""
+        return self._api.update_cserve_v3_deployment_deployments_cserve_v3_put(deployment_id, request)
 
     def _update_status(self, id, new_status):
         status_req = platform_api_python_client.DeploymentStatusRequest(status=new_status)

@@ -1,18 +1,18 @@
 import centml
 from centml.sdk.api import get_centml_client
-from centml.sdk import DeploymentType, CreateCServeV2DeploymentRequest, CServeV2Recipe
+from centml.sdk import DeploymentType, CreateCServeV3DeploymentRequest, CServeV2Recipe
 
 
 def get_fastest_cserve_config(cclient, name, model):
     fastest = cclient.get_cserve_recipe(model=model)[0].fastest
 
-    return CreateCServeV2DeploymentRequest(
+    return CreateCServeV3DeploymentRequest(
         name=name,
         cluster_id=cclient.get_cluster_id(fastest.hardware_instance_id),
         hardware_instance_id=fastest.hardware_instance_id,
         recipe=fastest.recipe,
-        min_scale=1,
-        max_scale=1,
+        min_replicas=1,
+        max_replicas=1,
         env_vars={},
     )
 
@@ -22,13 +22,13 @@ def get_default_cserve_config(cclient, name, model):
 
     hardware_instance = cclient.get_hardware_instances(cluster_id=1001)[0]
 
-    return CreateCServeV2DeploymentRequest(
+    return CreateCServeV3DeploymentRequest(
         name=name,
         cluster_id=hardware_instance.cluster_id,
         hardware_instance_id=hardware_instance.id,
         recipe=default_recipe,
-        min_scale=1,
-        max_scale=1,
+        min_replicas=1,
+        max_replicas=1,
         env_vars={},
     )
 
@@ -42,12 +42,12 @@ def main():
         ### Modify the recipe if necessary
         qwen_config.recipe.additional_properties["max_num_seqs"] = 512
 
-        # Create CServeV2 deployment
+        # Create CServeV3 deployment
         response = cclient.create_cserve(qwen_config)
         print("Create deployment response: ", response)
 
-        ### Get deployment details
-        deployment = cclient.get_cserve(response.id)
+        ### Get deployment details  
+        deployment = cclient.get_cserve_v3(response.id)
         print("Deployment details: ", deployment)
 
         '''

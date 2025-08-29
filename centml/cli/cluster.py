@@ -14,12 +14,15 @@ depl_type_to_name_map = {
     DeploymentType.INFERENCE_V2: 'inference',
     DeploymentType.COMPUTE_V2: 'compute',
     DeploymentType.CSERVE: 'cserve',
-    DeploymentType.CSERVE_V2: 'cserve',
+    DeploymentType.CSERVE_V2: 'cserve-v2',
+    DeploymentType.CSERVE_V3: 'cserve',
     DeploymentType.RAG: 'rag',
 }
 depl_name_to_type_map = {
     'inference': DeploymentType.INFERENCE_V2,
-    'cserve': DeploymentType.CSERVE_V2,
+    'cserve': DeploymentType.CSERVE_V3,
+    'cserve-v2': DeploymentType.CSERVE_V2,
+    'cserve-v3': DeploymentType.CSERVE_V3,
     'compute': DeploymentType.COMPUTE_V2,
     'rag': DeploymentType.RAG,
 }
@@ -54,6 +57,17 @@ def _format_ssh_key(ssh_key):
     if not ssh_key:
         return "No SSH Key Found"
     return ssh_key[:32] + "..."
+
+
+def _get_replica_info(deployment, depl_type):
+    """Extract replica information handling V2/V3 field differences"""
+    if depl_type == DeploymentType.CSERVE_V3:
+        return {
+            "min": getattr(deployment, 'min_replicas', getattr(deployment, 'min_scale', None)),
+            "max": getattr(deployment, 'max_replicas', getattr(deployment, 'max_scale', None)),
+        }
+    else:  # V2
+        return {"min": deployment.min_scale, "max": deployment.max_scale}
 
 
 def _get_ready_status(cclient, deployment):
@@ -126,7 +140,9 @@ def get(type, id):
         elif depl_type == DeploymentType.COMPUTE_V2:
             deployment = cclient.get_compute(id)
         elif depl_type == DeploymentType.CSERVE_V2:
-            deployment = cclient.get_cserve(id)
+            deployment = cclient.get_cserve_v2(id)
+        elif depl_type == DeploymentType.CSERVE_V3:
+            deployment = cclient.get_cserve_v3(id)
         else:
             sys.exit("Please enter correct deployment type")
 
@@ -157,7 +173,7 @@ def get(type, id):
                         ("Image", deployment.image_url),
                         ("Container port", deployment.container_port),
                         ("Healthcheck", deployment.healthcheck or "/"),
-                        ("Replicas", {"min": deployment.min_scale, "max": deployment.max_scale}),
+                        ("Replicas", _get_replica_info(deployment, depl_type)),
                         ("Environment variables", deployment.env_vars or "None"),
                         ("Max concurrency", deployment.concurrency or "None"),
                     ],
@@ -173,21 +189,34 @@ def get(type, id):
                     disable_numparse=True,
                 )
             )
-        elif depl_type == DeploymentType.CSERVE_V2:
+        elif depl_type in [DeploymentType.CSERVE_V2, DeploymentType.CSERVE_V3]:
+            replica_info = _get_replica_info(deployment, depl_type)
+            display_rows = [
+                ("Hugging face model", deployment.recipe.model),
+                (
+                    "Parallelism",
+                    {
+                        "tensor": deployment.recipe.additional_properties.get('tensor_parallel_size', 'N/A'),
+                        "pipeline": deployment.recipe.additional_properties.get('pipeline_parallel_size', 'N/A'),
+                    },
+                ),
+                ("Replicas", replica_info),
+                ("Max concurrency", deployment.concurrency or "None"),
+            ]
+            
+            # Add V3-specific rollout information
+            if depl_type == DeploymentType.CSERVE_V3:
+                rollout_info = {}
+                if hasattr(deployment, 'max_surge') and deployment.max_surge is not None:
+                    rollout_info['max_surge'] = deployment.max_surge
+                if hasattr(deployment, 'max_unavailable') and deployment.max_unavailable is not None:
+                    rollout_info['max_unavailable'] = deployment.max_unavailable
+                if rollout_info:
+                    display_rows.append(("Rollout strategy", rollout_info))
+            
             click.echo(
                 tabulate(
-                    [
-                        ("Hugging face model", deployment.recipe.model),
-                        (
-                            "Parallelism",
-                            {
-                                "tensor": deployment.recipe.additional_properties['tensor_parallel_size'],
-                                "pipeline": deployment.recipe.additional_properties['pipeline_parallel_size'],
-                            },
-                        ),
-                        ("Replicas", {"min": deployment.min_scale, "max": deployment.max_scale}),
-                        ("Max concurrency", deployment.concurrency or "None"),
-                    ],
+                    display_rows,
                     tablefmt="rounded_outline",
                     disable_numparse=True,
                 )
