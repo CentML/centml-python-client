@@ -85,7 +85,7 @@ def save_pem_file(service_name, client_private_key, client_certificate):
 
     try:
         # Save the combined PEM file
-        with open(ca_file_path, "w") as combined_pem_file:
+        with open(ca_file_path, 'w') as combined_pem_file:
             combined_pem_file.write(client_private_key + client_certificate)
         click.echo(f"Combined PEM file for accessing the private endpoint has been saved to {ca_file_path}")
 
