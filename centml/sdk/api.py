@@ -6,6 +6,7 @@ from platform_api_python_client import (
     DeploymentType,
     DeploymentStatus,
     CreateInferenceDeploymentRequest,
+    CreateInferenceV3DeploymentRequest,
     CreateComputeDeploymentRequest,
     CreateCServeV2DeploymentRequest,
     CreateCServeV3DeploymentRequest,
@@ -30,7 +31,21 @@ class CentMLClient:
         return self._api.get_deployment_status_deployments_status_deployment_id_get(id)
 
     def get_inference(self, id):
-        return self._api.get_inference_deployment_deployments_inference_deployment_id_get(id)
+        """Get Inference deployment details - automatically handles both V2 and V3 deployments"""
+        # Try V3 first (recommended), fallback to V2 if deployment is V2
+        try:
+            return self._api.get_inference_v3_deployment_deployments_inference_v3_deployment_id_get(id)
+        except ApiException as e:
+            # If V3 fails with 404 or similar, try V2
+            if e.status in [404, 400]:  # Deployment might be V2 or endpoint not found
+                try:
+                    return self._api.get_inference_deployment_deployments_inference_deployment_id_get(id)
+                except ApiException as v2_error:
+                    # If both fail, raise the original V3 error as it's more likely to be the real issue
+                    raise e
+            else:
+                # For other errors (auth, network, etc.), raise immediately
+                raise
 
     def get_compute(self, id):
         return self._api.get_compute_deployment_deployments_compute_deployment_id_get(id)
@@ -52,8 +67,14 @@ class CentMLClient:
                 # For other errors (auth, network, etc.), raise immediately
                 raise
 
-    def create_inference(self, request: CreateInferenceDeploymentRequest):
+    def create_inference(self, request: CreateInferenceV3DeploymentRequest):
+        return self._api.create_inference_v3_deployment_deployments_inference_v3_post(request)
+
+    def create_inference_v2(self, request: CreateInferenceDeploymentRequest):
         return self._api.create_inference_deployment_deployments_inference_post(request)
+
+    def create_inference_v3(self, request: CreateInferenceV3DeploymentRequest):
+        return self._api.create_inference_v3_deployment_deployments_inference_v3_post(request)
 
     def create_compute(self, request: CreateComputeDeploymentRequest):
         return self._api.create_compute_deployment_deployments_compute_post(request)
@@ -67,8 +88,51 @@ class CentMLClient:
     def create_cserve_v3(self, request: CreateCServeV3DeploymentRequest):
         return self._api.create_cserve_v3_deployment_deployments_cserve_v3_post(request)
 
-    def update_inference(self, deployment_id: int, request: CreateInferenceDeploymentRequest):
-        return self._api.update_inference_deployment_deployments_inference_put(deployment_id, request)
+    def detect_inference_deployment_version(self, deployment_id: int) -> str:
+        """Detect if an inference deployment is V2 or V3 by testing the specific API endpoints"""
+        try:
+            # Try V3 endpoint first
+            self._api.get_inference_v3_deployment_deployments_inference_v3_deployment_id_get(deployment_id)
+            return 'v3'
+        except ApiException as e:
+            if e.status in [404, 400]:  # V3 endpoint doesn't exist for this deployment
+                try:
+                    # Try V2 endpoint
+                    self._api.get_inference_deployment_deployments_inference_deployment_id_get(deployment_id)
+                    return 'v2'
+                except ApiException:
+                    # If both fail, it might not be an inference deployment or doesn't exist
+                    raise ValueError(
+                        f"Deployment {deployment_id} is not a valid inference deployment or does not exist"
+                    )
+            else:
+                # Other error (auth, network, etc.)
+                raise
+
+    def update_inference(
+        self, deployment_id: int, request: Union[CreateInferenceDeploymentRequest, CreateInferenceV3DeploymentRequest]
+    ):
+        """Update Inference deployment - validates request type matches deployment version"""
+        # Detect the deployment version
+        deployment_version = self.detect_inference_deployment_version(deployment_id)
+
+        # Validate request type matches deployment version
+        if isinstance(request, CreateInferenceV3DeploymentRequest):
+            if deployment_version != 'v3':
+                raise ValueError(
+                    f"Deployment {deployment_id} is Inference {deployment_version.upper()}, but you provided a V3 request. Please use CreateInferenceDeploymentRequest instead."
+                )
+            return self._api.update_inference_v3_deployment_deployments_inference_v3_put(deployment_id, request)
+        elif isinstance(request, CreateInferenceDeploymentRequest):
+            if deployment_version != 'v2':
+                raise ValueError(
+                    f"Deployment {deployment_id} is Inference {deployment_version.upper()}, but you provided a V2 request. Please use CreateInferenceV3DeploymentRequest instead."
+                )
+            return self._api.update_inference_deployment_deployments_inference_put(deployment_id, request)
+        else:
+            raise ValueError(
+                f"Unsupported request type: {type(request)}. Expected CreateInferenceDeploymentRequest or CreateInferenceV3DeploymentRequest."
+            )
 
     def update_compute(self, deployment_id: int, request: CreateComputeDeploymentRequest):
         return self._api.update_compute_deployment_deployments_compute_put(deployment_id, request)
