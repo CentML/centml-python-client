@@ -7,22 +7,23 @@ from centml.sdk import DeploymentType, DeploymentStatus, ServiceStatus, ApiExcep
 from centml.sdk.api import get_centml_client
 
 
+# convert deployment type enum to a user friendly name
 depl_type_to_name_map = {
     DeploymentType.INFERENCE: "inference",
     DeploymentType.COMPUTE: "compute",
     DeploymentType.COMPILATION: "compilation",
     DeploymentType.INFERENCE_V2: "inference",
     DeploymentType.COMPUTE_V2: "compute",
+    # For user, they are all cserve.
     DeploymentType.CSERVE: "cserve",
-    DeploymentType.CSERVE_V2: "cserve-v2",
+    DeploymentType.CSERVE_V2: "cserve",
     DeploymentType.CSERVE_V3: "cserve",
     DeploymentType.RAG: "rag",
 }
+# use latest type to for user requests
 depl_name_to_type_map = {
     "inference": DeploymentType.INFERENCE_V2,
     "cserve": DeploymentType.CSERVE_V3,
-    "cserve-v2": DeploymentType.CSERVE_V2,
-    "cserve-v3": DeploymentType.CSERVE_V3,
     "compute": DeploymentType.COMPUTE_V2,
     "rag": DeploymentType.RAG,
 }
@@ -65,6 +66,7 @@ def _get_replica_info(deployment, depl_type):
         return {"min": deployment.min_replicas, "max": deployment.max_replicas,}
     else:  # V2
         return {"min": deployment.min_scale, "max": deployment.max_scale}
+
 
 def _get_ready_status(cclient, deployment):
     api_status = deployment.status
