@@ -8,6 +8,8 @@ from platform_api_python_client import (
     CreateComputeDeploymentRequest,
     CreateCServeV2DeploymentRequest,
     CreateCServeV3DeploymentRequest,
+    CServeV2Recipe,
+    ApiException,
     Metric,
 )
 
@@ -34,13 +36,21 @@ class CentMLClient:
         return self._api.get_compute_deployment_deployments_compute_deployment_id_get(id)
 
     def get_cserve(self, id):
-        return self._api.get_cserve_v3_deployment_deployments_cserve_v3_deployment_id_get(id)
-
-    def get_cserve_v2(self, id):
-        return self._api.get_cserve_v2_deployment_deployments_cserve_v2_deployment_id_get(id)
-
-    def get_cserve_v3(self, id):
-        return self._api.get_cserve_v3_deployment_deployments_cserve_v3_deployment_id_get(id)
+        """Get CServe deployment details - automatically handles both V2 and V3 deployments"""
+        # Try V3 first (recommended), fallback to V2 if deployment is V2
+        try:
+            return self._api.get_cserve_v3_deployment_deployments_cserve_v3_deployment_id_get(id)
+        except ApiException as e:
+            # If V3 fails with 404 or similar, try V2
+            if e.status in [404, 400]:  # Deployment might be V2 or endpoint not found
+                try:
+                    return self._api.get_cserve_v2_deployment_deployments_cserve_v2_deployment_id_get(id)
+                except ApiException as v2_error:
+                    # If both fail, raise the original V3 error as it's more likely to be the real issue
+                    raise e
+            else:
+                # For other errors (auth, network, etc.), raise immediately
+                raise
 
     def create_inference(self, request: CreateInferenceDeploymentRequest):
         return self._api.create_inference_deployment_deployments_inference_post(request)

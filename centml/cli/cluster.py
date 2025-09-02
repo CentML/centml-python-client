@@ -60,12 +60,19 @@ def _format_ssh_key(ssh_key):
     return ssh_key[:32] + "..."
 
 
-def _get_replica_info(deployment, depl_type):
+def _get_replica_info(deployment):
     """Extract replica information handling V2/V3 field differences"""
-    if depl_type == DeploymentType.CSERVE_V3:
-        return {"min": deployment.min_replicas, "max": deployment.max_replicas,}
-    else:  # V2
+    # Check actual deployment object fields rather than depl_type
+    # since unified get_cserve() can return either V2 or V3 objects
+    if hasattr(deployment, 'min_replicas'):
+        # V3 deployment response object
+        return {"min": deployment.min_replicas, "max": deployment.max_replicas}
+    elif hasattr(deployment, 'min_scale'):
+        # V2 deployment response object
         return {"min": deployment.min_scale, "max": deployment.max_scale}
+    else:
+        # Fallback - shouldn't happen
+        return {"min": "N/A", "max": "N/A"}
 
 
 def _get_ready_status(cclient, deployment):
@@ -137,10 +144,8 @@ def get(type, id):
             deployment = cclient.get_inference(id)
         elif depl_type == DeploymentType.COMPUTE_V2:
             deployment = cclient.get_compute(id)
-        elif depl_type == DeploymentType.CSERVE_V2:
-            deployment = cclient.get_cserve_v2(id)
-        elif depl_type == DeploymentType.CSERVE_V3:
-            deployment = cclient.get_cserve_v3(id)
+        elif depl_type in [DeploymentType.CSERVE_V2, DeploymentType.CSERVE_V3]:
+            deployment = cclient.get_cserve(id)  # handles both V2 and V3
         else:
             sys.exit("Please enter correct deployment type")
 
@@ -171,7 +176,7 @@ def get(type, id):
                         ("Image", deployment.image_url),
                         ("Container port", deployment.container_port),
                         ("Healthcheck", deployment.healthcheck or "/"),
-                        ("Replicas", _get_replica_info(deployment, depl_type)),
+                        ("Replicas", _get_replica_info(deployment)),
                         ("Environment variables", deployment.env_vars or "None"),
                         ("Max concurrency", deployment.concurrency or "None"),
                     ],
@@ -188,7 +193,7 @@ def get(type, id):
                 )
             )
         elif depl_type in [DeploymentType.CSERVE_V2, DeploymentType.CSERVE_V3]:
-            replica_info = _get_replica_info(deployment, depl_type)
+            replica_info = _get_replica_info(deployment)
             display_rows = [
                 ("Hugging face model", deployment.recipe.model),
                 (

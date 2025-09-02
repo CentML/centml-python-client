@@ -49,7 +49,7 @@ def main():
         print("Create deployment response: ", response)
 
         ### Get deployment details
-        deployment = cclient.get_cserve_v3(response.id)
+        deployment = cclient.get_cserve(response.id)  # Automatically detects V2
         print("Deployment details: ", deployment)
 
         """
