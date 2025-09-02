@@ -23,7 +23,9 @@ def generate_ca_client_triplet(service_name: str) -> CAClientCertTriplet:
 
     # Details about who we are. For a self-signed certificate, the subject
     # and issuer are always the same.
-    ca_subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"ca.{service_name}.user.centml.ai")])
+    ca_subject = x509.Name(
+        [x509.NameAttribute(NameOID.COMMON_NAME, f"ca.{service_name}.user.centml.ai")]
+    )
 
     ca_certificate = (
         x509.CertificateBuilder()
@@ -44,7 +46,13 @@ def generate_ca_client_triplet(service_name: str) -> CAClientCertTriplet:
     client_private_key = ec.generate_private_key(ec.SECP384R1())
 
     # Information about the client
-    client_subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"client.{service_name}.user.centml.ai")])
+    client_subject = x509.Name(
+        [
+            x509.NameAttribute(
+                NameOID.COMMON_NAME, f"client.{service_name}.user.centml.ai"
+            )
+        ]
+    )
 
     client_certificate = (
         x509.CertificateBuilder()
@@ -63,8 +71,12 @@ def generate_ca_client_triplet(service_name: str) -> CAClientCertTriplet:
     )
 
     return CAClientCertTriplet(
-        certificate_authority=ca_certificate.public_bytes(serialization.Encoding.PEM).decode("ascii"),
-        client_certificate=client_certificate.public_bytes(serialization.Encoding.PEM).decode("ascii"),
+        certificate_authority=ca_certificate.public_bytes(
+            serialization.Encoding.PEM
+        ).decode("ascii"),
+        client_certificate=client_certificate.public_bytes(
+            serialization.Encoding.PEM
+        ).decode("ascii"),
         client_private_key=client_private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
@@ -85,9 +97,11 @@ def save_pem_file(service_name, client_private_key, client_certificate):
 
     try:
         # Save the combined PEM file
-        with open(ca_file_path, 'w') as combined_pem_file:
+        with open(ca_file_path, "w") as combined_pem_file:
             combined_pem_file.write(client_private_key + client_certificate)
-        click.echo(f"Combined PEM file for accessing the private endpoint has been saved to {ca_file_path}")
+        click.echo(
+            f"Combined PEM file for accessing the private endpoint has been saved to {ca_file_path}"
+        )
 
     except Exception as e:
         click.echo(f"Error saving PEM files: {e}")

@@ -29,7 +29,11 @@ def refresh_centml_token(refresh_token):
             os.remove(settings.CENTML_CRED_FILE_PATH)
         cred = None
     else:
-        cred = {key: response_dict[key] for key in ("access_token", "refresh_token") if key in response_dict}
+        cred = {
+            key: response_dict[key]
+            for key in ("access_token", "refresh_token")
+            if key in response_dict
+        }
         with open(settings.CENTML_CRED_FILE_PATH, "w") as f:
             json.dump(cred, f)
 
@@ -61,7 +65,9 @@ def get_centml_token():
     cred = load_centml_cred()
     if not cred:
         sys.exit("CentML credentials not found. Please login...")
-    exp_time = int(jwt.decode(cred["access_token"], options={"verify_signature": False})["exp"])
+    exp_time = int(
+        jwt.decode(cred["access_token"], options={"verify_signature": False})["exp"]
+    )
 
     if time.time() >= exp_time - 100:
         cred = refresh_centml_token(cred["refresh_token"])
