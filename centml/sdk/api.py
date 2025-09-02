@@ -42,7 +42,7 @@ class CentMLClient:
                     return self._api.get_inference_deployment_deployments_inference_deployment_id_get(id)
                 except ApiException as v2_error:
                     # If both fail, raise the original V3 error as it's more likely to be the real issue
-                    raise e
+                    raise e from v2_error
             else:
                 # For other errors (auth, network, etc.), raise immediately
                 raise
@@ -62,7 +62,7 @@ class CentMLClient:
                     return self._api.get_cserve_v2_deployment_deployments_cserve_v2_deployment_id_get(id)
                 except ApiException as v2_error:
                     # If both fail, raise the original V3 error as it's more likely to be the real issue
-                    raise e
+                    raise e from v2_error
             else:
                 # For other errors (auth, network, etc.), raise immediately
                 raise
@@ -100,11 +100,11 @@ class CentMLClient:
                     # Try V2 endpoint
                     self._api.get_inference_deployment_deployments_inference_deployment_id_get(deployment_id)
                     return 'v2'
-                except ApiException:
+                except ApiException as exc:
                     # If both fail, it might not be an inference deployment or doesn't exist
                     raise ValueError(
                         f"Deployment {deployment_id} is not a valid inference deployment or does not exist"
-                    )
+                    ) from exc
             else:
                 # Other error (auth, network, etc.)
                 raise
@@ -120,18 +120,25 @@ class CentMLClient:
         if isinstance(request, CreateInferenceV3DeploymentRequest):
             if deployment_version != 'v3':
                 raise ValueError(
-                    f"Deployment {deployment_id} is Inference {deployment_version.upper()}, but you provided a V3 request. Please use CreateInferenceDeploymentRequest instead."
+                    f"Deployment {deployment_id} is Inference {deployment_version.upper()}, "
+                    f"but you provided a V3 request. Please use CreateInferenceDeploymentRequest instead."
                 )
-            return self._api.update_inference_v3_deployment_deployments_inference_v3_put(deployment_id, request)
+            return self._api.update_inference_v3_deployment_deployments_inference_v3_put(
+                deployment_id, request
+            )
         elif isinstance(request, CreateInferenceDeploymentRequest):
             if deployment_version != 'v2':
                 raise ValueError(
-                    f"Deployment {deployment_id} is Inference {deployment_version.upper()}, but you provided a V2 request. Please use CreateInferenceV3DeploymentRequest instead."
+                    f"Deployment {deployment_id} is Inference {deployment_version.upper()}, "
+                    f"but you provided a V2 request. Please use CreateInferenceV3DeploymentRequest instead."
                 )
-            return self._api.update_inference_deployment_deployments_inference_put(deployment_id, request)
+            return self._api.update_inference_deployment_deployments_inference_put(
+                deployment_id, request
+            )
         else:
             raise ValueError(
-                f"Unsupported request type: {type(request)}. Expected CreateInferenceDeploymentRequest or CreateInferenceV3DeploymentRequest."
+                f"Unsupported request type: {type(request)}. "
+                f"Expected CreateInferenceDeploymentRequest or CreateInferenceV3DeploymentRequest."
             )
 
     def update_compute(self, deployment_id: int, request: CreateComputeDeploymentRequest):
@@ -149,9 +156,11 @@ class CentMLClient:
                     # Try V2 endpoint
                     self._api.get_cserve_v2_deployment_deployments_cserve_v2_deployment_id_get(deployment_id)
                     return 'v2'
-                except ApiException:
+                except ApiException as exc:
                     # If both fail, it might not be a CServe deployment or doesn't exist
-                    raise ValueError(f"Deployment {deployment_id} is not a valid CServe deployment or does not exist")
+                    raise ValueError(
+                        f"Deployment {deployment_id} is not a valid CServe deployment or does not exist"
+                    ) from exc
             else:
                 # Other error (auth, network, etc.)
                 raise
@@ -167,18 +176,25 @@ class CentMLClient:
         if isinstance(request, CreateCServeV3DeploymentRequest):
             if deployment_version != 'v3':
                 raise ValueError(
-                    f"Deployment {deployment_id} is CServe {deployment_version.upper()}, but you provided a V3 request. Please use CreateCServeV2DeploymentRequest instead."
+                    f"Deployment {deployment_id} is CServe {deployment_version.upper()}, "
+                    f"but you provided a V3 request. Please use CreateCServeV2DeploymentRequest instead."
                 )
-            return self._api.update_cserve_v3_deployment_deployments_cserve_v3_put(deployment_id, request)
+            return self._api.update_cserve_v3_deployment_deployments_cserve_v3_put(
+                deployment_id, request
+            )
         elif isinstance(request, CreateCServeV2DeploymentRequest):
             if deployment_version != 'v2':
                 raise ValueError(
-                    f"Deployment {deployment_id} is CServe {deployment_version.upper()}, but you provided a V2 request. Please use CreateCServeV3DeploymentRequest instead."
+                    f"Deployment {deployment_id} is CServe {deployment_version.upper()}, "
+                    f"but you provided a V2 request. Please use CreateCServeV3DeploymentRequest instead."
                 )
-            return self._api.update_cserve_v2_deployment_deployments_cserve_v2_put(deployment_id, request)
+            return self._api.update_cserve_v2_deployment_deployments_cserve_v2_put(
+                deployment_id, request
+            )
         else:
             raise ValueError(
-                f"Unsupported request type: {type(request)}. Expected CreateCServeV2DeploymentRequest or CreateCServeV3DeploymentRequest."
+                f"Unsupported request type: {type(request)}. "
+                f"Expected CreateCServeV2DeploymentRequest or CreateCServeV3DeploymentRequest."
             )
 
     def _update_status(self, id, new_status):
