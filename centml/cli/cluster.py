@@ -62,13 +62,9 @@ def _format_ssh_key(ssh_key):
 def _get_replica_info(deployment, depl_type):
     """Extract replica information handling V2/V3 field differences"""
     if depl_type == DeploymentType.CSERVE_V3:
-        return {
-            "min": getattr(deployment, "min_replicas", getattr(deployment, "min_scale", None)),
-            "max": getattr(deployment, "max_replicas", getattr(deployment, "max_scale", None)),
-        }
+        return {"min": deployment.min_replicas, "max": deployment.max_replicas,}
     else:  # V2
         return {"min": deployment.min_scale, "max": deployment.max_scale}
-
 
 def _get_ready_status(cclient, deployment):
     api_status = deployment.status
@@ -203,16 +199,6 @@ def get(type, id):
                 ("Replicas", replica_info),
                 ("Max concurrency", deployment.concurrency or "None"),
             ]
-
-            # Add V3-specific rollout information
-            if depl_type == DeploymentType.CSERVE_V3:
-                rollout_info = {}
-                if hasattr(deployment, "max_surge") and deployment.max_surge is not None:
-                    rollout_info["max_surge"] = deployment.max_surge
-                if hasattr(deployment, "max_unavailable") and deployment.max_unavailable is not None:
-                    rollout_info["max_unavailable"] = deployment.max_unavailable
-                if rollout_info:
-                    display_rows.append(("Rollout strategy", rollout_info))
 
             click.echo(tabulate(display_rows, tablefmt="rounded_outline", disable_numparse=True))
 
