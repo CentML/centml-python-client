@@ -123,18 +123,14 @@ class CentMLClient:
                     f"Deployment {deployment_id} is Inference {deployment_version.upper()}, "
                     f"but you provided a V3 request. Please use CreateInferenceDeploymentRequest instead."
                 )
-            return self._api.update_inference_v3_deployment_deployments_inference_v3_put(
-                deployment_id, request
-            )
+            return self._api.update_inference_v3_deployment_deployments_inference_v3_put(deployment_id, request)
         elif isinstance(request, CreateInferenceDeploymentRequest):
             if deployment_version != 'v2':
                 raise ValueError(
                     f"Deployment {deployment_id} is Inference {deployment_version.upper()}, "
                     f"but you provided a V2 request. Please use CreateInferenceV3DeploymentRequest instead."
                 )
-            return self._api.update_inference_deployment_deployments_inference_put(
-                deployment_id, request
-            )
+            return self._api.update_inference_deployment_deployments_inference_put(deployment_id, request)
         else:
             raise ValueError(
                 f"Unsupported request type: {type(request)}. "
@@ -179,18 +175,14 @@ class CentMLClient:
                     f"Deployment {deployment_id} is CServe {deployment_version.upper()}, "
                     f"but you provided a V3 request. Please use CreateCServeV2DeploymentRequest instead."
                 )
-            return self._api.update_cserve_v3_deployment_deployments_cserve_v3_put(
-                deployment_id, request
-            )
+            return self._api.update_cserve_v3_deployment_deployments_cserve_v3_put(deployment_id, request)
         elif isinstance(request, CreateCServeV2DeploymentRequest):
             if deployment_version != 'v2':
                 raise ValueError(
                     f"Deployment {deployment_id} is CServe {deployment_version.upper()}, "
                     f"but you provided a V2 request. Please use CreateCServeV3DeploymentRequest instead."
                 )
-            return self._api.update_cserve_v2_deployment_deployments_cserve_v2_put(
-                deployment_id, request
-            )
+            return self._api.update_cserve_v2_deployment_deployments_cserve_v2_put(deployment_id, request)
         else:
             raise ValueError(
                 f"Unsupported request type: {type(request)}. "
