@@ -70,124 +70,20 @@ class CentMLClient:
     def create_inference(self, request: CreateInferenceV3DeploymentRequest):
         return self._api.create_inference_v3_deployment_deployments_inference_v3_post(request)
 
-    def create_inference_v2(self, request: CreateInferenceDeploymentRequest):
-        return self._api.create_inference_deployment_deployments_inference_post(request)
-
-    def create_inference_v3(self, request: CreateInferenceV3DeploymentRequest):
-        return self._api.create_inference_v3_deployment_deployments_inference_v3_post(request)
-
     def create_compute(self, request: CreateComputeDeploymentRequest):
         return self._api.create_compute_deployment_deployments_compute_post(request)
 
     def create_cserve(self, request: CreateCServeV3DeploymentRequest):
         return self._api.create_cserve_v3_deployment_deployments_cserve_v3_post(request)
 
-    def create_cserve_v2(self, request: CreateCServeV2DeploymentRequest):
-        return self._api.create_cserve_v2_deployment_deployments_cserve_v2_post(request)
-
-    def create_cserve_v3(self, request: CreateCServeV3DeploymentRequest):
-        return self._api.create_cserve_v3_deployment_deployments_cserve_v3_post(request)
-
-    def detect_inference_deployment_version(self, deployment_id: int) -> str:
-        """Detect if an inference deployment is V2 or V3 by testing the specific API endpoints"""
-        try:
-            # Try V3 endpoint first
-            self._api.get_inference_v3_deployment_deployments_inference_v3_deployment_id_get(deployment_id)
-            return 'v3'
-        except ApiException as e:
-            if e.status in [404, 400]:  # V3 endpoint doesn't exist for this deployment
-                try:
-                    # Try V2 endpoint
-                    self._api.get_inference_deployment_deployments_inference_deployment_id_get(deployment_id)
-                    return 'v2'
-                except ApiException as exc:
-                    # If both fail, it might not be an inference deployment or doesn't exist
-                    raise ValueError(
-                        f"Deployment {deployment_id} is not a valid inference deployment or does not exist"
-                    ) from exc
-            else:
-                # Other error (auth, network, etc.)
-                raise
-
-    def update_inference(
-        self, deployment_id: int, request: Union[CreateInferenceDeploymentRequest, CreateInferenceV3DeploymentRequest]
-    ):
-        """Update Inference deployment - validates request type matches deployment version"""
-        # Detect the deployment version
-        deployment_version = self.detect_inference_deployment_version(deployment_id)
-
-        # Validate request type matches deployment version
-        if isinstance(request, CreateInferenceV3DeploymentRequest):
-            if deployment_version != 'v3':
-                raise ValueError(
-                    f"Deployment {deployment_id} is Inference {deployment_version.upper()}, "
-                    f"but you provided a V3 request. Please use CreateInferenceDeploymentRequest instead."
-                )
-            return self._api.update_inference_v3_deployment_deployments_inference_v3_put(deployment_id, request)
-        elif isinstance(request, CreateInferenceDeploymentRequest):
-            if deployment_version != 'v2':
-                raise ValueError(
-                    f"Deployment {deployment_id} is Inference {deployment_version.upper()}, "
-                    f"but you provided a V2 request. Please use CreateInferenceV3DeploymentRequest instead."
-                )
-            return self._api.update_inference_deployment_deployments_inference_put(deployment_id, request)
-        else:
-            raise ValueError(
-                f"Unsupported request type: {type(request)}. "
-                f"Expected CreateInferenceDeploymentRequest or CreateInferenceV3DeploymentRequest."
-            )
+    def update_inference(self, deployment_id: int, request: CreateInferenceV3DeploymentRequest):
+        return self._api.update_inference_v3_deployment_deployments_inference_v3_put(deployment_id, request)
 
     def update_compute(self, deployment_id: int, request: CreateComputeDeploymentRequest):
         return self._api.update_compute_deployment_deployments_compute_put(deployment_id, request)
 
-    def detect_deployment_version(self, deployment_id: int) -> str:
-        """Detect if a deployment is V2 or V3 by testing the specific API endpoints"""
-        try:
-            # Try V3 endpoint first
-            self._api.get_cserve_v3_deployment_deployments_cserve_v3_deployment_id_get(deployment_id)
-            return 'v3'
-        except ApiException as e:
-            if e.status in [404, 400]:  # V3 endpoint doesn't exist for this deployment
-                try:
-                    # Try V2 endpoint
-                    self._api.get_cserve_v2_deployment_deployments_cserve_v2_deployment_id_get(deployment_id)
-                    return 'v2'
-                except ApiException as exc:
-                    # If both fail, it might not be a CServe deployment or doesn't exist
-                    raise ValueError(
-                        f"Deployment {deployment_id} is not a valid CServe deployment or does not exist"
-                    ) from exc
-            else:
-                # Other error (auth, network, etc.)
-                raise
-
-    def update_cserve(
-        self, deployment_id: int, request: Union[CreateCServeV2DeploymentRequest, CreateCServeV3DeploymentRequest]
-    ):
-        """Update CServe deployment - validates request type matches deployment version"""
-        # Detect the deployment version
-        deployment_version = self.detect_deployment_version(deployment_id)
-
-        # Validate request type matches deployment version
-        if isinstance(request, CreateCServeV3DeploymentRequest):
-            if deployment_version != 'v3':
-                raise ValueError(
-                    f"Deployment {deployment_id} is CServe {deployment_version.upper()}, "
-                    f"but you provided a V3 request. Please use CreateCServeV2DeploymentRequest instead."
-                )
-            return self._api.update_cserve_v3_deployment_deployments_cserve_v3_put(deployment_id, request)
-        elif isinstance(request, CreateCServeV2DeploymentRequest):
-            if deployment_version != 'v2':
-                raise ValueError(
-                    f"Deployment {deployment_id} is CServe {deployment_version.upper()}, "
-                    f"but you provided a V2 request. Please use CreateCServeV3DeploymentRequest instead."
-                )
-            return self._api.update_cserve_v2_deployment_deployments_cserve_v2_put(deployment_id, request)
-        else:
-            raise ValueError(
-                f"Unsupported request type: {type(request)}. "
-                f"Expected CreateCServeV2DeploymentRequest or CreateCServeV3DeploymentRequest."
-            )
+    def update_cserve(self, deployment_id: int, request: CreateCServeV3DeploymentRequest):
+        return self._api.update_cserve_v3_deployment_deployments_cserve_v3_put(deployment_id, request)
 
     def _update_status(self, id, new_status):
         status_req = platform_api_python_client.DeploymentStatusRequest(status=new_status)
@@ -228,20 +124,6 @@ class CentMLClient:
         items = self._api.get_all_user_vault_items_endpoint_user_vault_get(type).results
 
         return {i.key: i.value for i in items}
-
-    def detect_cserve_deployment_version(self, deployment_response):
-        """Detect if a CServe deployment is V2 or V3 based on response fields"""
-        # Check for V3-specific fields
-        if hasattr(deployment_response, 'max_surge') or hasattr(deployment_response, 'max_unavailable'):
-            return 'v3'
-        # Check for V3 field names (min_replicas vs min_scale)
-        if hasattr(deployment_response, 'min_replicas'):
-            return 'v3'
-        # Check for V2 field names
-        if hasattr(deployment_response, 'min_scale'):
-            return 'v2'
-        # Default to V2 for backward compatibility
-        return 'v2'
 
     # pylint: disable=R0917
     def get_deployment_usage(
