@@ -1,14 +1,11 @@
 from contextlib import contextmanager
-from typing import Union
 
 import platform_api_python_client
 from platform_api_python_client import (
     DeploymentType,
     DeploymentStatus,
-    CreateInferenceDeploymentRequest,
     CreateInferenceV3DeploymentRequest,
     CreateComputeDeploymentRequest,
-    CreateCServeV2DeploymentRequest,
     CreateCServeV3DeploymentRequest,
     ApiException,
     Metric,
