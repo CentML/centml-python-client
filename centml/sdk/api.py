@@ -4,9 +4,10 @@ import platform_api_python_client
 from platform_api_python_client import (
     DeploymentType,
     DeploymentStatus,
-    CreateInferenceDeploymentRequest,
+    CreateInferenceV3DeploymentRequest,
     CreateComputeDeploymentRequest,
-    CreateCServeV2DeploymentRequest,
+    CreateCServeV3DeploymentRequest,
+    ApiException,
     Metric,
 )
 
@@ -27,31 +28,59 @@ class CentMLClient:
         return self._api.get_deployment_status_deployments_status_deployment_id_get(id)
 
     def get_inference(self, id):
-        return self._api.get_inference_deployment_deployments_inference_deployment_id_get(id)
+        """Get Inference deployment details - automatically handles both V2 and V3 deployments"""
+        # Try V3 first (recommended), fallback to V2 if deployment is V2
+        try:
+            return self._api.get_inference_v3_deployment_deployments_inference_v3_deployment_id_get(id)
+        except ApiException as e:
+            # If V3 fails with 404 or similar, try V2
+            if e.status in [404, 400]:  # Deployment might be V2 or endpoint not found
+                try:
+                    return self._api.get_inference_deployment_deployments_inference_deployment_id_get(id)
+                except ApiException as v2_error:
+                    # If both fail, raise the original V3 error as it's more likely to be the real issue
+                    raise e from v2_error
+            else:
+                # For other errors (auth, network, etc.), raise immediately
+                raise
 
     def get_compute(self, id):
         return self._api.get_compute_deployment_deployments_compute_deployment_id_get(id)
 
     def get_cserve(self, id):
-        return self._api.get_cserve_v2_deployment_deployments_cserve_v2_deployment_id_get(id)
+        """Get CServe deployment details - automatically handles both V2 and V3 deployments"""
+        # Try V3 first (recommended), fallback to V2 if deployment is V2
+        try:
+            return self._api.get_cserve_v3_deployment_deployments_cserve_v3_deployment_id_get(id)
+        except ApiException as e:
+            # If V3 fails with 404 or similar, try V2
+            if e.status in [404, 400]:  # Deployment might be V2 or endpoint not found
+                try:
+                    return self._api.get_cserve_v2_deployment_deployments_cserve_v2_deployment_id_get(id)
+                except ApiException as v2_error:
+                    # If both fail, raise the original V3 error as it's more likely to be the real issue
+                    raise e from v2_error
+            else:
+                # For other errors (auth, network, etc.), raise immediately
+                raise
 
-    def create_inference(self, request: CreateInferenceDeploymentRequest):
-        return self._api.create_inference_deployment_deployments_inference_post(request)
+    def create_inference(self, request: CreateInferenceV3DeploymentRequest):
+        return self._api.create_inference_v3_deployment_deployments_inference_v3_post(request)
 
     def create_compute(self, request: CreateComputeDeploymentRequest):
         return self._api.create_compute_deployment_deployments_compute_post(request)
 
-    def create_cserve(self, request: CreateCServeV2DeploymentRequest):
-        return self._api.create_cserve_v2_deployment_deployments_cserve_v2_post(request)
+    def create_cserve(self, request: CreateCServeV3DeploymentRequest):
+        return self._api.create_cserve_v3_deployment_deployments_cserve_v3_post(request)
 
-    def update_inference(self, deployment_id: int, request: CreateInferenceDeploymentRequest):
-        return self._api.update_inference_deployment_deployments_inference_put(deployment_id, request)
+    def update_inference(self, deployment_id: int, request: CreateInferenceV3DeploymentRequest):
+        return self._api.update_inference_v3_deployment_deployments_inference_v3_put(deployment_id, request)
 
     def update_compute(self, deployment_id: int, request: CreateComputeDeploymentRequest):
         return self._api.update_compute_deployment_deployments_compute_put(deployment_id, request)
 
-    def update_cserve(self, deployment_id: int, request: CreateCServeV2DeploymentRequest):
-        return self._api.update_cserve_v2_deployment_deployments_cserve_v2_put(deployment_id, request)
+    def update_cserve(self, deployment_id: int, request: CreateCServeV3DeploymentRequest):
+        return self._api.update_cserve_v3_deployment_deployments_cserve_v3_put(deployment_id, request)
 
     def _update_status(self, id, new_status):
         status_req = platform_api_python_client.DeploymentStatusRequest(status=new_status)
