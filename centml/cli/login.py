@@ -12,7 +12,6 @@ import requests
 
 
 from centml.sdk import auth
-from centml.sdk.api import initialize_client_credentials_login
 from centml.sdk.config import settings
 
 
@@ -95,12 +94,6 @@ def exchange_code_for_token(code, code_verifier):
 def login(token_file):
     if token_file:
         auth.store_centml_cred(token_file)
-
-    # Try client credentials flow first if SERVICE_ACCOUNT_ID and SERVICE_ACCOUNT_SECRET are set
-    if initialize_client_credentials_login():
-        click.echo("Authenticating with client credentials...")
-        click.echo("✅ Login successful with client credentials")
-        return
 
     cred = auth.load_centml_cred()
     if cred is not None and auth.refresh_centml_token(cred.get("refresh_token")):
