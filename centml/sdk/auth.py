@@ -64,8 +64,10 @@ def get_centml_token():
         if access_token is not None:
             return access_token
         else:
-            sys.exit("Could not authenticate with client credentials. Please check your service account configuration...")
-    
+            sys.exit(
+                "Could not authenticate with client credentials. Please check your service account configuration..."
+            )
+
     # Fall back to stored credentials for interactive flows
     cred = load_centml_cred()
     if not cred:
@@ -105,7 +107,6 @@ def authenticate_with_client_credentials():
     response_data = response.json()
     access_token = response_data.get('access_token')
     return access_token
-
 
 
 def remove_centml_cred():

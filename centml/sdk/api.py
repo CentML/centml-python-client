@@ -141,19 +141,19 @@ class CentMLClient:
 def initialize_client_credentials_login():
     if not settings.CENTML_SERVICE_ACCOUNT_ID or not settings.CENTML_SERVICE_ACCOUNT_SECRET:
         return False
-    
+
     access_token = auth.authenticate_with_client_credentials()
     if access_token:
         # Create a temporary client for client initialization
         configuration = platform_api_python_client.Configuration(
             host=settings.CENTML_PLATFORM_API_URL, access_token=access_token
         )
-        
+
         with platform_api_python_client.ApiClient(configuration) as api_client:
             api_instance = platform_api_python_client.EXTERNALApi(api_client)
             client = CentMLClient(api_instance)
             client.initialize_user()
-        
+
         return True
     return False
 
