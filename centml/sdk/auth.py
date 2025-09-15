@@ -58,13 +58,22 @@ def load_centml_cred():
 
 
 def get_centml_token():
+    # Always use fresh client credentials if available
+    if settings.CENTML_SERVICE_ACCOUNT_ID and settings.CENTML_SERVICE_ACCOUNT_SECRET:
+        access_token = authenticate_with_client_credentials()
+        if access_token is not None:
+            return access_token
+        else:
+            sys.exit("Could not authenticate with client credentials. Please check your service account configuration...")
+    
+    # Fall back to stored credentials for interactive flows
     cred = load_centml_cred()
     if not cred:
         sys.exit("CentML credentials not found. Please login...")
     exp_time = int(jwt.decode(cred["access_token"], options={"verify_signature": False})["exp"])
 
     if time.time() >= exp_time - 100:
-        # Check if we have a refresh token (interactive flow) or should use client credentials
+        # Check if we have a refresh token (interactive flow)
         refresh_token = cred.get("refresh_token")
         if refresh_token is not None:
             # Use refresh token for interactive authentication
@@ -72,12 +81,7 @@ def get_centml_token():
             if cred is None:
                 sys.exit("Could not refresh credentials. Please login and try again...")
         else:
-            # No refresh token - try client credentials flow
-            access_token = authenticate_with_client_credentials()
-            if access_token is not None:
-                cred = {"access_token": access_token}
-            else:
-                sys.exit("Could not refresh credentials. Please login and try again...")
+            sys.exit("Could not refresh credentials. Please login and try again...")
 
     return cred["access_token"]
 
@@ -100,14 +104,8 @@ def authenticate_with_client_credentials():
     response.raise_for_status()
     response_data = response.json()
     access_token = response_data.get('access_token')
-    if access_token:
-        # Store the access token (without refresh token for client credentials)
-        cred = {'access_token': access_token}
-        os.makedirs(os.path.dirname(settings.CENTML_CRED_FILE_PATH), exist_ok=True)
-        with open(settings.CENTML_CRED_FILE_PATH, "w") as f:
-            json.dump(cred, f)
-        return access_token
-    return None
+    return access_token
+
 
 
 def remove_centml_cred():
