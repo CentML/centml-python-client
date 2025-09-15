@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -15,6 +16,13 @@ class Config(BaseSettings):
     CENTML_PLATFORM_API_URL: str = os.getenv("CENTML_PLATFORM_API_URL", default="https://api.centml.com")
 
     CENTML_WORKOS_CLIENT_ID: str = os.getenv("CENTML_WORKOS_CLIENT_ID", default="client_01JP5TWW2997MF8AYQXHJEGYR0")
+
+    # Long-term credentials - can be set via environment variables
+    CENTML_SERVICE_ACCOUNT_SECRET: Optional[str] = os.getenv("CENTML_SERVICE_ACCOUNT_SECRET", default=None)
+    CENTML_SERVICE_ACCOUNT_ID: Optional[str] = os.getenv("CENTML_SERVICE_ACCOUNT_ID", default=None)
+    CENTML_SERVICE_ACCOUNT_TOKEN_URL: str = os.getenv(
+        "CENTML_SERVICE_ACCOUNT_TOKEN_URL", default="https://signin.centml.com/oauth2/token"
+    )
 
 
 settings = Config()

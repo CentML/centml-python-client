@@ -134,6 +134,9 @@ class CentMLClient:
             step=step,
         ).values
 
+    def initialize_user(self):
+        return self._api.setup_stripe_customer_payments_setup_post()
+
 
 @contextmanager
 def get_centml_client():
