@@ -29,6 +29,24 @@ class CentMLOpsClient:
         self._ops_api = ops_api
         self._external_api = external_api
 
+    def get_clusters(self):
+        """
+        Get available clusters for the organization.
+
+        Returns:
+            List of cluster configurations with id, display_name, and region
+
+        Example:
+            with get_centml_ops_client() as ops_client:
+                clusters = ops_client.get_clusters()
+                for cluster in clusters:
+                    print(f"Cluster {cluster.id}: {cluster.display_name} ({cluster.region})")
+        """
+        if self._external_api is None:
+            raise RuntimeError("External API client not available")
+
+        return self._external_api.get_clusters_clusters_get().results
+
     def get_cserve_recipes(
         self, model: Optional[str] = None, hf_token: Optional[str] = None
     ):
@@ -121,12 +139,16 @@ def get_centml_ops_client():
     Context manager for CentML OPS API client.
 
     This client provides:
+    - get_clusters(): Get available clusters (uses external API, always available)
     - get_cserve_recipes(): Read recipes (uses external API, always available)
     - update_cserve_recipes(): Update recipes (requires platform-api-ops-client)
     - delete_cserve_recipe(): Delete recipes (requires platform-api-ops-client)
 
     Usage:
         with get_centml_ops_client() as ops_client:
+            # Get clusters (always works)
+            clusters = ops_client.get_clusters()
+
             # Get recipes (always works)
             recipes = ops_client.get_cserve_recipes(model="meta-llama/Llama-3.3-70B-Instruct")
 

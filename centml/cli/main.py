@@ -6,6 +6,7 @@ from centml.cli.cserve_recipe import (
     update as recipe_update,
     delete as recipe_delete,
     list_recipes,
+    list_clusters,
 )
 
 
@@ -62,6 +63,7 @@ def cserve_recipe():
     pass
 
 
+cserve_recipe.add_command(list_clusters, name="list-clusters")
 cserve_recipe.add_command(list_recipes, name="list")
 cserve_recipe.add_command(recipe_update, name="update")
 cserve_recipe.add_command(recipe_delete, name="delete")

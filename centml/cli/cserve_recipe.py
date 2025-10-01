@@ -87,6 +87,34 @@ def update(platform_db_file, cluster_id):
             sys.exit(1)
 
 
+@click.command(help="List available clusters")
+@handle_exception
+def list_clusters():
+    """
+    List available clusters for the organization.
+
+    Example:
+        centml cserve-recipe list-clusters
+    """
+    with get_centml_ops_client() as ops_client:
+        clusters = ops_client.get_clusters()
+
+        if not clusters:
+            click.echo("No clusters found.")
+            return
+
+        click.echo(
+            f"\n{click.style('Available Clusters', bold=True, fg='cyan')} ({len(clusters)} found)\n"
+        )
+
+        for cluster in clusters:
+            click.echo(f"{click.style('Cluster ID:', bold=True)} {cluster.id}")
+            click.echo(f"  Display Name: {cluster.display_name}")
+            if cluster.region:
+                click.echo(f"  Region: {cluster.region}")
+            click.echo("")
+
+
 @click.command(help="List CServe recipes")
 @click.option(
     "--model", help="Filter by model name (e.g., 'meta-llama/Llama-3.3-70B-Instruct')"
