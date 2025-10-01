@@ -2,15 +2,44 @@
 Example demonstrating how to manage CServe recipes using the CentML SDK.
 
 This example shows how to:
-1. Update CServe recipes from platform_db.json
-2. Delete CServe recipes for specific models
+1. List/Get CServe recipes (read-only, no special permissions needed)
+2. Update CServe recipes from platform_db.json (requires OPS admin)
+3. Delete CServe recipes for specific models (requires OPS admin)
 
-Note: This requires platform-api-ops-client to be installed and
-requires OPS admin permissions.
+Note: Update and delete operations require platform-api-ops-client to be installed
+and OPS admin permissions. Get/list operations work with just the base client.
 """
 
 import json
 from centml.sdk.ops import get_centml_ops_client
+
+
+def list_recipes_example():
+    """List all CServe recipes or filter by model."""
+    with get_centml_ops_client() as ops_client:
+        # List all recipes
+        all_recipes = ops_client.get_cserve_recipes()
+        print(f"Found {len(all_recipes)} recipes")
+
+        for recipe in all_recipes[:3]:  # Show first 3
+            print(f"\nModel: {recipe.model}")
+            if recipe.fastest:
+                print(
+                    f"  Fastest - Hardware Instance: {recipe.fastest.hardware_instance_id}"
+                )
+            if recipe.cheapest:
+                print(
+                    f"  Cheapest - Hardware Instance: {recipe.cheapest.hardware_instance_id}"
+                )
+
+        # Filter by specific model
+        model_name = "meta-llama/Llama-3.3-70B-Instruct"
+        specific_recipes = ops_client.get_cserve_recipes(model=model_name)
+        if specific_recipes:
+            print(f"\nRecipe for {model_name}:")
+            print(
+                f"  Fastest config available: {specific_recipes[0].fastest is not None}"
+            )
 
 
 def update_recipes_example():
@@ -25,15 +54,14 @@ def update_recipes_example():
     #     },
     #     ...
     # }
-    with open('platform_db.json', 'r') as f:
+    with open("platform_db.json", "r") as f:
         platform_data = json.load(f)
 
     cluster_id = 1001  # Replace with your cluster ID
 
     with get_centml_ops_client() as ops_client:
         response = ops_client.update_cserve_recipes(
-            cluster_id=cluster_id,
-            platform_data=platform_data
+            cluster_id=cluster_id, platform_data=platform_data
         )
 
         print(f"Message: {response.message}")
@@ -52,8 +80,15 @@ def delete_recipe_example():
 
 
 def main():
-    # Example 1: Update recipes from platform_db.json
-    print("=== Updating CServe Recipes ===")
+    # Example 1: List/Get recipes (read-only, always available)
+    print("=== Listing CServe Recipes ===")
+    try:
+        list_recipes_example()
+    except Exception as e:
+        print(f"Error listing recipes: {e}")
+
+    # Example 2: Update recipes from platform_db.json (requires ops client)
+    print("\n=== Updating CServe Recipes ===")
     try:
         update_recipes_example()
     except FileNotFoundError:
@@ -61,8 +96,8 @@ def main():
     except Exception as e:
         print(f"Error updating recipes: {e}")
 
+    # Example 3: Delete a specific model's recipe (requires ops client)
     print("\n=== Deleting CServe Recipe ===")
-    # Example 2: Delete a specific model's recipe
     try:
         delete_recipe_example()
     except Exception as e:
@@ -71,4 +106,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

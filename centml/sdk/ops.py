@@ -1,12 +1,15 @@
 from contextlib import contextmanager
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 try:
     import platform_api_ops_client
     from platform_api_ops_client import OPSApi
+
     OPS_CLIENT_AVAILABLE = True
 except ImportError:
     OPS_CLIENT_AVAILABLE = False
+
+import platform_api_python_client
 
 from centml.sdk import auth
 from centml.sdk.config import settings
@@ -18,10 +21,45 @@ class CentMLOpsClient:
     Used for administrative tasks like managing CServe recipes.
     """
 
-    def __init__(self, api: "OPSApi"):
-        self._api = api
+    def __init__(
+        self,
+        ops_api: Optional["OPSApi"] = None,
+        external_api: Optional[platform_api_python_client.EXTERNALApi] = None,
+    ):
+        self._ops_api = ops_api
+        self._external_api = external_api
 
-    def update_cserve_recipes(self, cluster_id: int, platform_data: Dict[str, Dict[str, Dict[str, Any]]]):
+    def get_cserve_recipes(
+        self, model: Optional[str] = None, hf_token: Optional[str] = None
+    ):
+        """
+        Get CServe recipe configurations.
+
+        Args:
+            model: Optional model name to filter recipes (e.g., "meta-llama/Llama-3.3-70B-Instruct")
+            hf_token: Optional HuggingFace token for private models
+
+        Returns:
+            List of CServe recipe configurations
+
+        Example:
+            with get_centml_ops_client() as ops_client:
+                # Get all recipes
+                all_recipes = ops_client.get_cserve_recipes()
+
+                # Get recipes for a specific model
+                recipes = ops_client.get_cserve_recipes(model="meta-llama/Llama-3.3-70B-Instruct")
+        """
+        if self._external_api is None:
+            raise RuntimeError("External API client not available")
+
+        return self._external_api.get_cserve_recipe_deployments_cserve_recipes_get(
+            model=model, hf_token=hf_token
+        ).results
+
+    def update_cserve_recipes(
+        self, cluster_id: int, platform_data: Dict[str, Dict[str, Dict[str, Any]]]
+    ):
         """
         Update CServe recipes from platform_db.json performance data.
 
@@ -46,7 +84,12 @@ class CentMLOpsClient:
                 response = ops_client.update_cserve_recipes(cluster_id=1001, platform_data=platform_data)
                 print(f"Processed: {response.processed_models}")
         """
-        return self._api.update_cserve_recipes_ops_cserve_recipes_post(
+        if self._ops_api is None:
+            raise RuntimeError(
+                "OPS API client not available. Install platform-api-ops-client."
+            )
+
+        return self._ops_api.update_cserve_recipes_ops_cserve_recipes_post(
             cluster_id=cluster_id, request_body=platform_data
         )
 
@@ -64,31 +107,50 @@ class CentMLOpsClient:
             with get_centml_ops_client() as ops_client:
                 ops_client.delete_cserve_recipe(model="meta-llama/Llama-3.3-70B-Instruct")
         """
-        return self._api.delete_cserve_recipe_ops_cserve_recipes_delete(model=model)
+        if self._ops_api is None:
+            raise RuntimeError(
+                "OPS API client not available. Install platform-api-ops-client."
+            )
+
+        return self._ops_api.delete_cserve_recipe_ops_cserve_recipes_delete(model=model)
 
 
 @contextmanager
 def get_centml_ops_client():
     """
     Context manager for CentML OPS API client.
-    Requires platform-api-ops-client to be installed.
+
+    This client provides:
+    - get_cserve_recipes(): Read recipes (uses external API, always available)
+    - update_cserve_recipes(): Update recipes (requires platform-api-ops-client)
+    - delete_cserve_recipe(): Delete recipes (requires platform-api-ops-client)
 
     Usage:
         with get_centml_ops_client() as ops_client:
+            # Get recipes (always works)
+            recipes = ops_client.get_cserve_recipes(model="meta-llama/Llama-3.3-70B-Instruct")
+
+            # Update/delete requires platform-api-ops-client
             response = ops_client.update_cserve_recipes(cluster_id=1001, platform_data=data)
     """
-    if not OPS_CLIENT_AVAILABLE:
-        raise ImportError(
-            "platform-api-ops-client is required for OPS operations. "
-            "Install it with: pip install platform-api-ops-client"
-        )
-
-    configuration = platform_api_ops_client.Configuration(
+    configuration = platform_api_python_client.Configuration(
         host=settings.CENTML_PLATFORM_API_URL, access_token=auth.get_centml_token()
     )
 
-    with platform_api_ops_client.ApiClient(configuration) as api_client:
-        api_instance = OPSApi(api_client)
+    # Always initialize external API for read operations
+    with platform_api_python_client.ApiClient(configuration) as external_client:
+        external_api = platform_api_python_client.EXTERNALApi(external_client)
 
-        yield CentMLOpsClient(api_instance)
-
+        # Initialize OPS API if available for write operations
+        ops_api = None
+        if OPS_CLIENT_AVAILABLE:
+            ops_configuration = platform_api_ops_client.Configuration(
+                host=settings.CENTML_PLATFORM_API_URL,
+                access_token=auth.get_centml_token(),
+            )
+            with platform_api_ops_client.ApiClient(ops_configuration) as ops_client:
+                ops_api = OPSApi(ops_client)
+                yield CentMLOpsClient(ops_api=ops_api, external_api=external_api)
+        else:
+            # Still provide read-only functionality even without ops client
+            yield CentMLOpsClient(ops_api=None, external_api=external_api)
