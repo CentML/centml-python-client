@@ -2,6 +2,7 @@ import click
 
 from centml.cli.login import login, logout
 from centml.cli.cluster import ls, get, delete, pause, resume
+from centml.cli.cserve_recipe import update as recipe_update, delete as recipe_delete
 
 
 @click.group()
@@ -50,3 +51,15 @@ ccluster.add_command(resume)
 
 
 cli.add_command(ccluster, name="cluster")
+
+
+@click.group(help="CentML CServe recipe management CLI tool")
+def cserve_recipe():
+    pass
+
+
+cserve_recipe.add_command(recipe_update, name="update")
+cserve_recipe.add_command(recipe_delete, name="delete")
+
+
+cli.add_command(cserve_recipe, name="cserve-recipe")
