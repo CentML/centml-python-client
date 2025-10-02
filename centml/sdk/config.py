@@ -8,7 +8,7 @@ class Config(BaseSettings):
     # It is possible to override the default values by setting the environment variables
     model_config = SettingsConfigDict(env_file=Path(".env"))
 
-    CENTML_WEB_URL: str = os.getenv("CENTML_WEB_URL", default="http://localhost:5173")
+    CENTML_WEB_URL: str = os.getenv("CENTML_WEB_URL", default="http://localhost:5173/")
     CENTML_CONFIG_PATH: str = os.getenv("CENTML_CONFIG_PATH", default=os.path.expanduser("~/.centml"))
     CENTML_CRED_FILE: str = os.getenv("CENTML_CRED_FILE", default="credentials.json")
     CENTML_CRED_FILE_PATH: str = os.path.join(CENTML_CONFIG_PATH, CENTML_CRED_FILE)
