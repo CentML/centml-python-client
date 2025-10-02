@@ -204,8 +204,11 @@ def get_centml_ops_client():
             # Update/delete requires platform-api-ops-client
             response = ops_client.update_cserve_recipes(cluster_id=1001, platform_data=data)
     """
+    # Get token once and reuse it to avoid potential hanging on second call
+    access_token = auth.get_centml_token()
+
     configuration = platform_api_python_client.Configuration(
-        host=settings.CENTML_PLATFORM_API_URL, access_token=auth.get_centml_token()
+        host=settings.CENTML_PLATFORM_API_URL, access_token=access_token
     )
 
     # Always initialize external API for read operations
@@ -217,7 +220,7 @@ def get_centml_ops_client():
         if OPS_CLIENT_AVAILABLE:
             ops_configuration = platform_api_ops_client.Configuration(
                 host=settings.CENTML_PLATFORM_API_URL,
-                access_token=auth.get_centml_token(),
+                access_token=access_token,  # Reuse the same token
             )
             with platform_api_ops_client.ApiClient(ops_configuration) as ops_client:
                 ops_api = OPSApi(ops_client)

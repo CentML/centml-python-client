@@ -179,8 +179,17 @@ def list_recipes(model, hf_token):
             return
 
         # Get all hardware instances to map IDs to names
-        hardware_instances = ops_client.get_hardware_instances()
-        hw_map = {hw.id: hw for hw in hardware_instances}
+        try:
+            hardware_instances = ops_client.get_hardware_instances()
+            hw_map = {hw.id: hw for hw in hardware_instances}
+        except Exception as e:
+            click.echo(
+                click.style(
+                    f"Warning: Could not fetch hardware instance details: {e}",
+                    fg="yellow",
+                )
+            )
+            hw_map = {}
 
         click.echo(
             f"\n{click.style('CServe Recipes', bold=True, fg='cyan')} ({len(recipes)} found)\n"
@@ -196,7 +205,8 @@ def list_recipes(model, hf_token):
                     else hw.gpu_type
                 )
                 return f"{hw.name} (ID: {hw_id}, {gpu_info})"
-            return f"ID: {hw_id}"
+            else:
+                return f"ID: {hw_id} {click.style('(details not found)', fg='yellow')}"
 
         for recipe in recipes:
             click.echo(f"{click.style('Model:', bold=True)} {recipe.model}")
@@ -218,26 +228,34 @@ def list_recipes(model, hf_token):
                     click.echo(f"    Parallelism: TP={tp_size}, PP={pp_size}")
 
             # Display cheapest configuration
-            if (
-                recipe.cheapest
-                and recipe.cheapest.hardware_instance_id
-                != recipe.fastest.hardware_instance_id
-            ):
-                click.echo(f"  {click.style('Cheapest:', fg='yellow')}")
-                click.echo(
-                    f"    Hardware: {format_hw_info(recipe.cheapest.hardware_instance_id)}"
-                )
+            if recipe.cheapest:
+                if (
+                    recipe.cheapest.hardware_instance_id
+                    != recipe.fastest.hardware_instance_id
+                ):
+                    click.echo(f"  {click.style('Cheapest:', fg='yellow')}")
+                    click.echo(
+                        f"    Hardware: {format_hw_info(recipe.cheapest.hardware_instance_id)}"
+                    )
+                else:
+                    click.echo(
+                        f"  {click.style('Cheapest:', fg='yellow')} Same as Fastest"
+                    )
 
             # Display best_value configuration
-            if (
-                recipe.best_value
-                and recipe.best_value.hardware_instance_id
-                != recipe.fastest.hardware_instance_id
-            ):
-                click.echo(f"  {click.style('Best Value:', fg='blue')}")
-                click.echo(
-                    f"    Hardware: {format_hw_info(recipe.best_value.hardware_instance_id)}"
-                )
+            if recipe.best_value:
+                if (
+                    recipe.best_value.hardware_instance_id
+                    != recipe.fastest.hardware_instance_id
+                ):
+                    click.echo(f"  {click.style('Best Value:', fg='blue')}")
+                    click.echo(
+                        f"    Hardware: {format_hw_info(recipe.best_value.hardware_instance_id)}"
+                    )
+                else:
+                    click.echo(
+                        f"  {click.style('Best Value:', fg='blue')} Same as Fastest"
+                    )
 
             click.echo("")  # Empty line between recipes
 
