@@ -88,30 +88,69 @@ def update(platform_db_file, cluster_id):
 
 
 @click.command(help="List available clusters")
+@click.option(
+    "--show-hardware",
+    is_flag=True,
+    help="Show hardware instances for each cluster",
+)
 @handle_exception
-def list_clusters():
+def list_clusters(show_hardware):
     """
     List available clusters for the organization.
 
     Example:
         centml cserve-recipe list-clusters
+        centml cserve-recipe list-clusters --show-hardware
     """
     with get_centml_ops_client() as ops_client:
-        clusters = ops_client.get_clusters()
+        clusters_data = ops_client.get_clusters(
+            include_hardware_instances=show_hardware
+        )
 
-        if not clusters:
+        if not clusters_data:
             click.echo("No clusters found.")
             return
+
+        # Handle different return types
+        if show_hardware:
+            clusters = [item["cluster"] for item in clusters_data]
+        else:
+            clusters = clusters_data
 
         click.echo(
             f"\n{click.style('Available Clusters', bold=True, fg='cyan')} ({len(clusters)} found)\n"
         )
 
-        for cluster in clusters:
+        for i, cluster in enumerate(clusters):
             click.echo(f"{click.style('Cluster ID:', bold=True)} {cluster.id}")
             click.echo(f"  Display Name: {cluster.display_name}")
             if cluster.region:
                 click.echo(f"  Region: {cluster.region}")
+
+            if show_hardware:
+                hw_instances = clusters_data[i]["hardware_instances"]
+                if hw_instances:
+                    click.echo(
+                        f"  {click.style('Hardware Instances:', fg='yellow')} ({len(hw_instances)} available)"
+                    )
+                    for hw in hw_instances:
+                        gpu_info = (
+                            f"{hw.num_accelerators}x{hw.gpu_type}"
+                            if hw.num_accelerators
+                            else hw.gpu_type
+                        )
+                        click.echo(
+                            f"    • {click.style(hw.name, fg='green')} (ID: {hw.id})"
+                        )
+                        click.echo(f"      GPU: {gpu_info}")
+                        click.echo(f"      CPU: {hw.cpu} cores, Memory: {hw.memory} GB")
+                        if hw.cost_per_hr:
+                            click.echo(f"      Cost: ${hw.cost_per_hr/100:.2f}/hr")
+                else:
+                    click.echo(
+                        f"  {click.style('Hardware Instances:', fg='yellow')} None"
+                    )
+
             click.echo("")
 
 
@@ -139,9 +178,25 @@ def list_recipes(model, hf_token):
             click.echo("No recipes found.")
             return
 
+        # Get all hardware instances to map IDs to names
+        hardware_instances = ops_client.get_hardware_instances()
+        hw_map = {hw.id: hw for hw in hardware_instances}
+
         click.echo(
             f"\n{click.style('CServe Recipes', bold=True, fg='cyan')} ({len(recipes)} found)\n"
         )
+
+        def format_hw_info(hw_id):
+            """Format hardware instance information"""
+            if hw_id in hw_map:
+                hw = hw_map[hw_id]
+                gpu_info = (
+                    f"{hw.num_accelerators}x{hw.gpu_type}"
+                    if hw.num_accelerators
+                    else hw.gpu_type
+                )
+                return f"{hw.name} (ID: {hw_id}, {gpu_info})"
+            return f"ID: {hw_id}"
 
         for recipe in recipes:
             click.echo(f"{click.style('Model:', bold=True)} {recipe.model}")
@@ -150,7 +205,7 @@ def list_recipes(model, hf_token):
             if recipe.fastest:
                 click.echo(f"  {click.style('Fastest:', fg='green')}")
                 click.echo(
-                    f"    Hardware Instance ID: {recipe.fastest.hardware_instance_id}"
+                    f"    Hardware: {format_hw_info(recipe.fastest.hardware_instance_id)}"
                 )
                 click.echo(f"    Recipe: {recipe.fastest.recipe.model}")
                 if hasattr(recipe.fastest.recipe, "additional_properties"):
@@ -170,7 +225,7 @@ def list_recipes(model, hf_token):
             ):
                 click.echo(f"  {click.style('Cheapest:', fg='yellow')}")
                 click.echo(
-                    f"    Hardware Instance ID: {recipe.cheapest.hardware_instance_id}"
+                    f"    Hardware: {format_hw_info(recipe.cheapest.hardware_instance_id)}"
                 )
 
             # Display best_value configuration
@@ -181,7 +236,7 @@ def list_recipes(model, hf_token):
             ):
                 click.echo(f"  {click.style('Best Value:', fg='blue')}")
                 click.echo(
-                    f"    Hardware Instance ID: {recipe.best_value.hardware_instance_id}"
+                    f"    Hardware: {format_hw_info(recipe.best_value.hardware_instance_id)}"
                 )
 
             click.echo("")  # Empty line between recipes

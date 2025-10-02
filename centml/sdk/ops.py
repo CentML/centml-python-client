@@ -29,23 +29,72 @@ class CentMLOpsClient:
         self._ops_api = ops_api
         self._external_api = external_api
 
-    def get_clusters(self):
+    def get_clusters(self, include_hardware_instances: bool = False):
         """
         Get available clusters for the organization.
 
+        Args:
+            include_hardware_instances: If True, also fetch hardware instances for each cluster
+
         Returns:
-            List of cluster configurations with id, display_name, and region
+            If include_hardware_instances=False: List of cluster configurations
+            If include_hardware_instances=True: List of dicts with 'cluster' and 'hardware_instances' keys
 
         Example:
             with get_centml_ops_client() as ops_client:
+                # Get clusters only
                 clusters = ops_client.get_clusters()
-                for cluster in clusters:
-                    print(f"Cluster {cluster.id}: {cluster.display_name} ({cluster.region})")
+
+                # Get clusters with hardware instances
+                clusters_with_hw = ops_client.get_clusters(include_hardware_instances=True)
+                for item in clusters_with_hw:
+                    cluster = item['cluster']
+                    print(f"Cluster {cluster.id}: {cluster.display_name}")
+                    for hw in item['hardware_instances']:
+                        print(f"  - {hw.name}: {hw.num_accelerators}x{hw.gpu_type}")
         """
         if self._external_api is None:
             raise RuntimeError("External API client not available")
 
-        return self._external_api.get_clusters_clusters_get().results
+        clusters = self._external_api.get_clusters_clusters_get().results
+
+        if include_hardware_instances:
+            result = []
+            for cluster in clusters:
+                hw_instances = (
+                    self._external_api.get_hardware_instances_hardware_instances_get(
+                        cluster_id=cluster.id
+                    ).results
+                )
+                result.append({"cluster": cluster, "hardware_instances": hw_instances})
+            return result
+
+        return clusters
+
+    def get_hardware_instances(self, cluster_id: Optional[int] = None):
+        """
+        Get hardware instances, optionally filtered by cluster.
+
+        Args:
+            cluster_id: Optional cluster ID to filter hardware instances
+
+        Returns:
+            List of hardware instance configurations
+
+        Example:
+            with get_centml_ops_client() as ops_client:
+                # Get all hardware instances
+                all_hw = ops_client.get_hardware_instances()
+
+                # Get hardware instances for specific cluster
+                cluster_hw = ops_client.get_hardware_instances(cluster_id=1000)
+        """
+        if self._external_api is None:
+            raise RuntimeError("External API client not available")
+
+        return self._external_api.get_hardware_instances_hardware_instances_get(
+            cluster_id=cluster_id
+        ).results
 
     def get_cserve_recipes(
         self, model: Optional[str] = None, hf_token: Optional[str] = None
