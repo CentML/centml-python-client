@@ -134,6 +134,9 @@ class CentMLClient:
             step=step,
         ).values
 
+    def get_credits(self):
+        return self._api.get_credits_credits_get()
+
     def initialize_user(self):
         return self._api.setup_stripe_customer_payments_setup_post()
 
