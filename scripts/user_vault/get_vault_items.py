@@ -45,9 +45,9 @@ def display_vault_items(items, show_values: bool = False):
     click.echo(f"\nFound {len(items)} vault item(s)\n")
 
     for vault_type, type_items in sorted(grouped.items(), key=lambda x: x[0]):
-        click.echo(f"{'='*50}")
+        click.echo(f"{'=' * 50}")
         click.echo(f"Type: {vault_type} ({len(type_items)} item(s))")
-        click.echo(f"{'='*50}")
+        click.echo(f"{'=' * 50}")
 
         for item in sorted(type_items, key=lambda x: x.key):
             if show_values and item.value is not None:
