@@ -1,5 +1,6 @@
 import torch
 
+
 def timed(fn):
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)

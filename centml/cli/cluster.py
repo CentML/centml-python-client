@@ -6,7 +6,6 @@ from tabulate import tabulate
 from centml.sdk import DeploymentType, DeploymentStatus, ServiceStatus, ApiException, HardwareInstanceResponse
 from centml.sdk.api import get_centml_client
 
-
 # convert deployment type enum to a user friendly name
 depl_type_to_name_map = {
     DeploymentType.INFERENCE: "inference",
