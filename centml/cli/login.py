@@ -26,7 +26,11 @@ PROVIDER = "authkit"
 
 def generate_pkce_pair():
     verifier = secrets.token_urlsafe(64)
-    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+    challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+        .decode()
+        .rstrip("=")
+    )
     return verifier, challenge
 
 
@@ -59,9 +63,7 @@ class OAuthHandler(BaseHTTPRequestHandler):
                     <p>You can now close this tab and continue in the CLI.</p>
                 </body>
             </html>
-            """.encode(
-                "utf-8"
-            )
+            """.encode("utf-8")
         )
 
     def log_message(self, format, *args):
@@ -102,14 +104,18 @@ def login(token_file):
     else:
         click.echo("Logging into CentML...")
 
-        choice = click.confirm("Do you want to log in with your browser now?", default=True)
+        choice = click.confirm(
+            "Do you want to log in with your browser now?", default=True
+        )
         if choice:
             try:
                 # PKCE Flow
                 code_verifier, code_challenge = generate_pkce_pair()
                 auth_url = build_auth_url(CLIENT_ID, REDIRECT_URI, code_challenge)
                 click.echo("A browser window will open for you to authenticate.")
-                click.echo("If it doesn't open automatically, you can copy and paste this URL:")
+                click.echo(
+                    "If it doesn't open automatically, you can copy and paste this URL:"
+                )
                 click.echo(f"   {auth_url}\n")
                 webbrowser.open(auth_url)
                 click.echo("Waiting for authentication...")
@@ -121,9 +127,13 @@ def login(token_file):
                     click.echo("Login failed. Please try again.")
                 else:
                     cred = {
-                        key: response_dict[key] for key in ("access_token", "refresh_token") if key in response_dict
+                        key: response_dict[key]
+                        for key in ("access_token", "refresh_token")
+                        if key in response_dict
                     }
-                    os.makedirs(os.path.dirname(settings.CENTML_CRED_FILE_PATH), exist_ok=True)
+                    os.makedirs(
+                        os.path.dirname(settings.CENTML_CRED_FILE_PATH), exist_ok=True
+                    )
                     with open(settings.CENTML_CRED_FILE_PATH, "w") as f:
                         json.dump(cred, f)
                     click.echo("✅ Login successful")
