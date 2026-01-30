@@ -7,9 +7,8 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     AutoModelForImageClassification,
-    AutoModelForObjectDetection
+    AutoModelForObjectDetection,
 )
-
 
 
 from centml.compiler.prediction.kdtree import KDTreeWithValues
@@ -26,8 +25,8 @@ OUTPUT_FILE = 'data.csv'
 # Different HuggingFace Models + Different Input Sizes
 llm_tests = [
     ("google/gemma-7b", (1, 128)),
-    ("microsoft/phi-2", (1,512)),
-    ("microsoft/phi-2", (2,512)),
+    ("microsoft/phi-2", (1, 512)),
+    ("microsoft/phi-2", (2, 512)),
     ("facebook/bart-large", (1, 1024)),
     ("facebook/bart-large", (2, 512)),
     ("gpt2-xl", (1, 1024)),
@@ -212,6 +211,7 @@ def image_classification_test(model_name, batch_size, custom_backend):
     gc.collect()
     torch.cuda.empty_cache()
 
+
 def object_detection_test(model_name, batch_size, custom_backend):
     global cuda_kernel_time
     global actual_time
@@ -239,6 +239,7 @@ def object_detection_test(model_name, batch_size, custom_backend):
     del model, inp, compiled_model
     gc.collect()
     torch.cuda.empty_cache()
+
 
 # for model_name, input_size in large_llm_tests:
 #     llm_test(model_name, input_size, custom_backend)

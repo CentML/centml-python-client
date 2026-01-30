@@ -15,15 +15,11 @@ from centml.sdk.api import get_centml_client
 from platform_api_python_client import UserVaultType
 
 
-def get_vault_items(
-    vault_type: Optional[UserVaultType] = None,
-    search_query: Optional[str] = None,
-):
+def get_vault_items(vault_type: Optional[UserVaultType] = None, search_query: Optional[str] = None):
     """Retrieve items from user's vault."""
     with get_centml_client() as client:
         response = client._api.get_all_user_vault_items_endpoint_user_vault_get(
-            type=vault_type,
-            search_query=search_query,
+            type=vault_type, search_query=search_query
         )
         return response.results
 
@@ -65,18 +61,8 @@ def display_vault_items(items, show_values: bool = False):
     type=click.Choice([t.value for t in UserVaultType], case_sensitive=False),
     help="Filter by vault type (env_vars, ssh_keys, bearer_tokens, access_tokens, certificates)",
 )
-@click.option(
-    "--search",
-    "search_query",
-    type=str,
-    help="Search query to filter items by key",
-)
-@click.option(
-    "--show-values",
-    is_flag=True,
-    default=False,
-    help="Show vault item values",
-)
+@click.option("--search", "search_query", type=str, help="Search query to filter items by key")
+@click.option("--show-values", is_flag=True, default=False, help="Show vault item values")
 def main(vault_type: Optional[str], search_query: Optional[str], show_values: bool):
     """Retrieve all items from user's vault (secrets).
 
@@ -99,10 +85,7 @@ def main(vault_type: Optional[str], search_query: Optional[str], show_values: bo
     """
     type_enum = UserVaultType(vault_type) if vault_type else None
 
-    items = get_vault_items(
-        vault_type=type_enum,
-        search_query=search_query,
-    )
+    items = get_vault_items(vault_type=type_enum, search_query=search_query)
 
     display_vault_items(items, show_values=show_values)
 

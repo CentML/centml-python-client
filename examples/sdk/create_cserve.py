@@ -36,9 +36,7 @@ def get_default_cserve_config(cclient, name, model):
 def main():
     with get_centml_client() as cclient:
         ### Get the configurations for the Qwen model
-        qwen_config = get_fastest_cserve_config(
-            cclient, name="qwen-fastest", model="Qwen/Qwen2-VL-7B-Instruct"
-        )
+        qwen_config = get_fastest_cserve_config(cclient, name="qwen-fastest", model="Qwen/Qwen2-VL-7B-Instruct")
         # qwen_config = get_default_cserve_config(cclient, name="qwen-default", model="Qwen/Qwen2-VL-7B-Instruct")
 
         ### Modify the recipe if necessary
