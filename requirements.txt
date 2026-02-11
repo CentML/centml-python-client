@@ -9,4 +9,4 @@ cryptography==44.0.1
 prometheus-client>=0.20.0
 scipy>=1.6.0
 scikit-learn>=1.5.1
-platform-api-python-client==4.1.9
+platform-api-python-client==4.6.0
