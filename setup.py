@@ -11,7 +11,7 @@ with open('requirements.txt') as f:
 
 setup(
     name='centml',
-    version='0.4.7',
+    version='0.4.8',
     packages=find_packages(),
     python_requires=">=3.10",
     long_description=open('README.md').read(),
