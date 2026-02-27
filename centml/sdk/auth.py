@@ -100,7 +100,6 @@ def authenticate_with_client_credentials():
         'grant_type': 'client_credentials',
         'client_id': settings.CENTML_SERVICE_ACCOUNT_ID,
         'client_secret': settings.CENTML_SERVICE_ACCOUNT_SECRET,
-        'scope': 'openid profile email',
     }
     response = requests.post(settings.CENTML_SERVICE_ACCOUNT_TOKEN_URL, data=params, timeout=10)
     response.raise_for_status()
