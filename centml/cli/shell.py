@@ -120,6 +120,12 @@ async def _forward_io(ws):
     done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     for t in pending:
         t.cancel()
+    # Await cancelled tasks so their finally blocks run (e.g. remove_reader).
+    for t in pending:
+        try:
+            await t
+        except (asyncio.CancelledError, Exception):
+            pass
     for t in done:
         if t.exception() is not None:
             raise t.exception()
@@ -138,7 +144,7 @@ async def _interactive_session(ws_url, token):
         rows, cols = shutil.get_terminal_size()
 
         headers = {"Authorization": f"Bearer {token}"}
-        async with websockets.connect(ws_url, additional_headers=headers) as ws:
+        async with websockets.connect(ws_url, additional_headers=headers, close_timeout=2) as ws:
             await ws.send(json.dumps({"operation": "resize", "rows": rows, "cols": cols}))
 
             loop = asyncio.get_running_loop()
@@ -188,7 +194,7 @@ async def _exec_session(ws_url, token, command):
     rows, cols = shutil.get_terminal_size(fallback=(80, 24))
     headers = {"Authorization": f"Bearer {token}"}
 
-    async with websockets.connect(ws_url, additional_headers=headers) as ws:
+    async with websockets.connect(ws_url, additional_headers=headers, close_timeout=2) as ws:
         await ws.send(json.dumps({"operation": "resize", "rows": rows, "cols": cols}))
 
         # Suppress echo/bracketed-paste, emit begin marker, run command,
