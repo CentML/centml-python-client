@@ -11,12 +11,137 @@ import tty
 import urllib.parse
 
 import click
+import pyte
 import websockets
 
 from centml.cli.cluster import handle_exception
 from centml.sdk import PodStatus, auth
 from centml.sdk.api import get_centml_client
 from centml.sdk.config import settings
+
+
+# ---------------------------------------------------------------------------
+# pyte screen renderer -- converts pyte's in-memory screen buffer to ANSI
+# escape sequences for the local terminal.
+# ---------------------------------------------------------------------------
+
+_PYTE_FG_TO_SGR = {
+    "default": "39",
+    "black": "30",
+    "red": "31",
+    "green": "32",
+    "brown": "33",
+    "blue": "34",
+    "magenta": "35",
+    "cyan": "36",
+    "white": "37",
+    "brightblack": "90",
+    "brightred": "91",
+    "brightgreen": "92",
+    "brightbrown": "93",
+    "brightblue": "94",
+    "brightmagenta": "95",
+    "brightcyan": "96",
+    "brightwhite": "97",
+}
+
+_PYTE_BG_TO_SGR = {
+    "default": "49",
+    "black": "40",
+    "red": "41",
+    "green": "42",
+    "brown": "43",
+    "blue": "44",
+    "magenta": "45",
+    "cyan": "46",
+    "white": "47",
+    "brightblack": "100",
+    "brightred": "101",
+    "brightgreen": "102",
+    "brightbrown": "103",
+    "brightblue": "104",
+    "brightmagenta": "105",
+    "brightcyan": "106",
+    "brightwhite": "107",
+}
+
+
+def _color_sgr(color, is_bg=False):
+    """Convert a pyte color value to an SGR parameter string."""
+    table = _PYTE_BG_TO_SGR if is_bg else _PYTE_FG_TO_SGR
+    if color in table:
+        default_val = "49" if is_bg else "39"
+        code = table[color]
+        return code if code != default_val else ""
+    # 6-char hex -> truecolor
+    if len(color) == 6:
+        try:
+            r, g, b = int(color[:2], 16), int(color[2:4], 16), int(color[4:], 16)
+            prefix = "48" if is_bg else "38"
+            return f"{prefix};2;{r};{g};{b}"
+        except ValueError:
+            return ""
+    return ""
+
+
+def _char_to_sgr(char):
+    """Build the ANSI SGR parameter string for a pyte Char's attributes."""
+    parts = []
+    if char.bold:
+        parts.append("1")
+    if char.italics:
+        parts.append("3")
+    if char.underscore:
+        parts.append("4")
+    if char.blink:
+        parts.append("5")
+    if char.reverse:
+        parts.append("7")
+    if char.strikethrough:
+        parts.append("9")
+    fg = _color_sgr(char.fg, is_bg=False)
+    if fg:
+        parts.append(fg)
+    bg = _color_sgr(char.bg, is_bg=True)
+    if bg:
+        parts.append(bg)
+    return ";".join(parts)
+
+
+def _render_dirty(screen, output):
+    """Render only the dirty lines from the pyte Screen to the terminal.
+
+    Args:
+        screen: pyte.Screen instance.
+        output: Writable binary stream (e.g. sys.stdout.buffer).
+    """
+    parts = []
+    for row in sorted(screen.dirty):
+        # Position cursor at row (1-based), column 1; clear line.
+        parts.append(f"\033[{row + 1};1H\033[2K")
+        prev_sgr = ""
+        line_chars = []
+        for col in range(screen.columns):
+            char = screen.buffer[row][col]
+            if char.data == "":
+                continue
+            sgr = _char_to_sgr(char)
+            if sgr != prev_sgr:
+                line_chars.append(f"\033[0m\033[{sgr}m" if sgr else "\033[0m")
+                prev_sgr = sgr
+            line_chars.append(char.data)
+        text = "".join(line_chars).rstrip()
+        parts.append(text)
+    # Reset attributes, position cursor.
+    parts.append("\033[0m")
+    parts.append(f"\033[{screen.cursor.y + 1};{screen.cursor.x + 1}H")
+    if screen.cursor.hidden:
+        parts.append("\033[?25l")
+    else:
+        parts.append("\033[?25h")
+    screen.dirty.clear()
+    output.write("".join(parts).encode("utf-8"))
+    output.flush()
 
 
 def _build_ws_url(api_url, deployment_id, pod_name, shell_type=None):
@@ -73,14 +198,17 @@ def _resolve_pod(cclient, deployment_id, pod_name=None):
     return running_pods[0]
 
 
-async def _forward_io(ws, fix_dimensions=False):
+async def _forward_io(ws, screen, stream):
     """Bidirectional forwarding between local stdin/stdout and WebSocket.
+
+    Output flows through a pyte terminal emulator so that cursor
+    addressing, line wrapping, and colors are rendered correctly
+    regardless of the remote PTY dimensions.
 
     Args:
         ws: WebSocket connection.
-        fix_dimensions: When True, send ``stty rows R cols C`` through stdin
-            on the first output message to fix the remote PTY dimensions,
-            then clear the screen so the prompt redraws at the correct width.
+        screen: pyte.Screen instance sized to the local terminal.
+        stream: pyte.Stream attached to *screen*.
 
     Returns the remote exit code.
     """
@@ -88,35 +216,19 @@ async def _forward_io(ws, fix_dimensions=False):
     exit_code = 0
     stdin_fd = sys.stdin.fileno()
     stdin_closed = asyncio.Event()
-    dimensions_fixed = not fix_dimensions
 
     async def _read_ws():
-        nonlocal exit_code, dimensions_fixed
+        nonlocal exit_code
         async for raw_msg in ws:
             msg = json.loads(raw_msg)
             if msg.get("data"):
-                if not dimensions_fixed:
-                    dimensions_fixed = True
-                    r, c = shutil.get_terminal_size()
-                    # Set PTY size from inside the shell and clear screen.
-                    # Leading space keeps the command out of bash history.
-                    await ws.send(
-                        json.dumps(
-                            {
-                                "operation": "stdin",
-                                "data": f" stty rows {r} cols {c} 2>/dev/null; clear\n",
-                            }
-                        )
-                    )
-                # Convert bare \n to \r\n (equivalent to xterm.js convertEol).
-                # The remote PTY may send lone \n; without this the cursor
-                # moves down without returning to column 0.
-                text = msg["data"].replace("\n", "\r\n")
-                sys.stdout.buffer.write(text.encode("utf-8", errors="replace"))
-                sys.stdout.buffer.flush()
+                # Convert bare \n to \r\n before feeding pyte, equivalent
+                # to xterm.js ``convertEol: true``.
+                stream.feed(msg["data"].replace("\n", "\r\n"))
+                _render_dirty(screen, sys.stdout.buffer)
             elif msg.get("error"):
-                sys.stderr.write(f"Error: {msg['error']}\r\n")
-                sys.stderr.flush()
+                stream.feed(f"Error: {msg['error']}\r\n")
+                _render_dirty(screen, sys.stdout.buffer)
             if "Code" in msg:
                 exit_code = msg["Code"]
                 return
@@ -138,14 +250,13 @@ async def _forward_io(ws, fix_dimensions=False):
                     data = await asyncio.wait_for(read_queue.get(), timeout=0.5)
                 except asyncio.TimeoutError:
                     continue
-                r, c = shutil.get_terminal_size()
                 await ws.send(
                     json.dumps(
                         {
                             "operation": "stdin",
                             "data": data.decode("utf-8", errors="replace"),
-                            "rows": r,
-                            "cols": c,
+                            "rows": screen.lines,
+                            "cols": screen.columns,
                         }
                     )
                 )
@@ -156,7 +267,6 @@ async def _forward_io(ws, fix_dimensions=False):
     done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     for t in pending:
         t.cancel()
-    # Await cancelled tasks so their finally blocks run (e.g. remove_reader).
     for t in pending:
         try:
             await t
@@ -179,6 +289,13 @@ async def _interactive_session(ws_url, token):
         tty.setraw(fd)
         rows, cols = shutil.get_terminal_size()
 
+        screen = pyte.Screen(cols, rows)
+        stream = pyte.Stream(screen)
+
+        # Clear local screen before starting.
+        sys.stdout.buffer.write(b"\033[2J\033[H")
+        sys.stdout.buffer.flush()
+
         headers = {"Authorization": f"Bearer {token}"}
         async with websockets.connect(
             ws_url, additional_headers=headers, close_timeout=2
@@ -191,6 +308,8 @@ async def _interactive_session(ws_url, token):
 
             def _send_resize():
                 r, c = shutil.get_terminal_size()
+                screen.resize(r, c)
+                screen.dirty.update(range(r))
                 asyncio.ensure_future(
                     ws.send(json.dumps({"operation": "resize", "rows": r, "cols": c}))
                 )
@@ -198,13 +317,16 @@ async def _interactive_session(ws_url, token):
             loop.add_signal_handler(signal.SIGWINCH, _send_resize)
 
             try:
-                exit_code = await _forward_io(ws, fix_dimensions=True)
+                exit_code = await _forward_io(ws, screen, stream)
             finally:
                 loop.remove_signal_handler(signal.SIGWINCH)
 
             return exit_code
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        # Restore cursor visibility and attributes.
+        sys.stdout.buffer.write(b"\033[?25h\033[0m\n")
+        sys.stdout.buffer.flush()
 
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\].*?\x07|\x1b\[.*?\x1b\\")
