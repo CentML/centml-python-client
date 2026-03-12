@@ -153,10 +153,24 @@ async def _interactive_session(ws_url, token):
                 r, c = shutil.get_terminal_size()
                 asyncio.ensure_future(ws.send(json.dumps({"operation": "resize", "rows": r, "cols": c})))
 
-            # ArgoCD starts the shell with a default PTY size before our resize
-            # arrives. A second resize after a short delay triggers SIGWINCH on
-            # the remote, causing readline to redraw the prompt at the correct width.
-            loop.call_later(0.3, _send_resize)
+            async def _force_initial_redraw():
+                """Force SIGWINCH on the remote by toggling the PTY width.
+
+                The initial resize may arrive before the shell starts, so by
+                the time the shell reads its PTY size, it's already correct
+                and no SIGWINCH fires. Toggling cols forces two SIGWINCHes,
+                making readline redraw the prompt at the right width.
+                """
+                try:
+                    await asyncio.sleep(0.5)
+                    r, c = shutil.get_terminal_size()
+                    await ws.send(json.dumps({"operation": "resize", "rows": r, "cols": c + 1}))
+                    await asyncio.sleep(0.05)
+                    await ws.send(json.dumps({"operation": "resize", "rows": r, "cols": c}))
+                except Exception:
+                    pass
+
+            asyncio.create_task(_force_initial_redraw())
             loop.add_signal_handler(signal.SIGWINCH, _send_resize)
 
             try:
