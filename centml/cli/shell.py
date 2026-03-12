@@ -287,7 +287,7 @@ async def _interactive_session(ws_url, token):
     old_settings = termios.tcgetattr(fd)
     try:
         tty.setraw(fd)
-        rows, cols = shutil.get_terminal_size()
+        cols, rows = shutil.get_terminal_size()
 
         screen = pyte.Screen(cols, rows)
         stream = pyte.Stream(screen)
@@ -307,7 +307,7 @@ async def _interactive_session(ws_url, token):
             loop = asyncio.get_running_loop()
 
             def _send_resize():
-                r, c = shutil.get_terminal_size()
+                c, r = shutil.get_terminal_size()
                 screen.resize(r, c)
                 screen.dirty.update(range(r))
                 asyncio.ensure_future(
@@ -351,7 +351,7 @@ async def _exec_session(ws_url, token, command):
     Does not enter raw mode -- output is pipe-friendly.
     Suppresses shell echo and uses markers to capture only command output.
     """
-    rows, cols = shutil.get_terminal_size(fallback=(80, 24))
+    cols, rows = shutil.get_terminal_size(fallback=(80, 24))
     headers = {"Authorization": f"Bearer {token}"}
 
     async with websockets.connect(
