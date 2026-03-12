@@ -116,14 +116,7 @@ class TestResolvePod:
 
         cclient = MagicMock()
         cclient.get_status_v3.return_value = _make_status_response(
-            [
-                _make_revision(
-                    [
-                        _make_pod("pod-a", PodStatus.RUNNING),
-                        _make_pod("pod-b", PodStatus.RUNNING),
-                    ]
-                )
-            ]
+            [_make_revision([_make_pod("pod-a", PodStatus.RUNNING), _make_pod("pod-b", PodStatus.RUNNING)])]
         )
         result = _resolve_pod(cclient, 1)
         assert result == "pod-a"
@@ -133,13 +126,7 @@ class TestResolvePod:
 
         cclient = MagicMock()
         cclient.get_status_v3.return_value = _make_status_response(
-            [
-                _make_revision(
-                    [
-                        _make_pod("pod-err", PodStatus.ERROR),
-                    ]
-                )
-            ]
+            [_make_revision([_make_pod("pod-err", PodStatus.ERROR)])]
         )
         with pytest.raises(click.ClickException, match="No running pods"):
             _resolve_pod(cclient, 1)
@@ -149,13 +136,7 @@ class TestResolvePod:
 
         cclient = MagicMock()
         cclient.get_status_v3.return_value = _make_status_response(
-            [
-                _make_revision(
-                    [
-                        _make_pod("pod-a", PodStatus.RUNNING),
-                    ]
-                )
-            ]
+            [_make_revision([_make_pod("pod-a", PodStatus.RUNNING)])]
         )
         with pytest.raises(click.ClickException, match="pod-missing"):
             _resolve_pod(cclient, 1, pod_name="pod-missing")
@@ -165,14 +146,7 @@ class TestResolvePod:
 
         cclient = MagicMock()
         cclient.get_status_v3.return_value = _make_status_response(
-            [
-                _make_revision(
-                    [
-                        _make_pod("pod-a", PodStatus.RUNNING),
-                        _make_pod("pod-b", PodStatus.RUNNING),
-                    ]
-                )
-            ]
+            [_make_revision([_make_pod("pod-a", PodStatus.RUNNING), _make_pod("pod-b", PodStatus.RUNNING)])]
         )
         result = _resolve_pod(cclient, 1, pod_name="pod-b")
         assert result == "pod-b"
@@ -199,14 +173,7 @@ class TestResolvePod:
 
         cclient = MagicMock()
         cclient.get_status_v3.return_value = _make_status_response(
-            [
-                _make_revision(
-                    [
-                        _make_pod(None, PodStatus.RUNNING),
-                        _make_pod("pod-real", PodStatus.RUNNING),
-                    ]
-                )
-            ]
+            [_make_revision([_make_pod(None, PodStatus.RUNNING), _make_pod("pod-real", PodStatus.RUNNING)])]
         )
         result = _resolve_pod(cclient, 1)
         assert result == "pod-real"
@@ -217,16 +184,8 @@ class TestResolvePod:
         cclient = MagicMock()
         cclient.get_status_v3.return_value = _make_status_response(
             [
-                _make_revision(
-                    [
-                        _make_pod("pod-old", PodStatus.ERROR),
-                    ]
-                ),
-                _make_revision(
-                    [
-                        _make_pod("pod-new", PodStatus.RUNNING),
-                    ]
-                ),
+                _make_revision([_make_pod("pod-old", PodStatus.ERROR)]),
+                _make_revision([_make_pod("pod-new", PodStatus.RUNNING)]),
             ]
         )
         result = _resolve_pod(cclient, 1)
@@ -245,19 +204,14 @@ class TestExecSession:
 
         ws = AsyncMock()
         messages = [
-            json.dumps(
-                {"data": f"noise\n{_BEGIN_MARKER}\nhello world\n{_END_MARKER}:0\n"}
-            ),
+            json.dumps({"data": f"noise\n{_BEGIN_MARKER}\nhello world\n{_END_MARKER}:0\n"}),
             json.dumps({"Code": 0}),
         ]
         ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
 
         with patch("centml.cli.shell.websockets") as mock_ws_mod:
             mock_ws_mod.connect = MagicMock(
-                return_value=AsyncMock(
-                    __aenter__=AsyncMock(return_value=ws),
-                    __aexit__=AsyncMock(return_value=False),
-                )
+                return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
             )
 
             exit_code = await _exec_session("wss://test/ws", "fake-token", "ls -la")
@@ -280,18 +234,12 @@ class TestExecSession:
         from centml.cli.shell import _exec_session, _BEGIN_MARKER, _END_MARKER
 
         ws = AsyncMock()
-        messages = [
-            json.dumps({"data": f"{_BEGIN_MARKER}\n{_END_MARKER}:42\n"}),
-            json.dumps({"Code": 42}),
-        ]
+        messages = [json.dumps({"data": f"{_BEGIN_MARKER}\n{_END_MARKER}:42\n"}), json.dumps({"Code": 42})]
         ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
 
         with patch("centml.cli.shell.websockets") as mock_ws_mod:
             mock_ws_mod.connect = MagicMock(
-                return_value=AsyncMock(
-                    __aenter__=AsyncMock(return_value=ws),
-                    __aexit__=AsyncMock(return_value=False),
-                )
+                return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
             )
 
             exit_code = await _exec_session("wss://test/ws", "fake-token", "false")
@@ -303,17 +251,12 @@ class TestExecSession:
         from centml.cli.shell import _exec_session
 
         ws = AsyncMock()
-        messages = [
-            json.dumps({"error": "something went wrong"}),
-        ]
+        messages = [json.dumps({"error": "something went wrong"})]
         ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
 
         with patch("centml.cli.shell.websockets") as mock_ws_mod:
             mock_ws_mod.connect = MagicMock(
-                return_value=AsyncMock(
-                    __aenter__=AsyncMock(return_value=ws),
-                    __aexit__=AsyncMock(return_value=False),
-                )
+                return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
             )
 
             exit_code = await _exec_session("wss://test/ws", "fake-token", "bad")
@@ -327,24 +270,15 @@ class TestExecSession:
 
         ws = AsyncMock()
         messages = [
-            json.dumps(
-                {
-                    "data": f"prompt$ command\n{_BEGIN_MARKER}\nreal output\n{_END_MARKER}:0\n"
-                }
-            ),
+            json.dumps({"data": f"prompt$ command\n{_BEGIN_MARKER}\nreal output\n{_END_MARKER}:0\n"}),
             json.dumps({"Code": 0}),
         ]
         ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
 
         captured = []
-        with patch("centml.cli.shell.websockets") as mock_ws_mod, patch(
-            "centml.cli.shell.sys"
-        ) as mock_sys:
+        with patch("centml.cli.shell.websockets") as mock_ws_mod, patch("centml.cli.shell.sys") as mock_sys:
             mock_ws_mod.connect = MagicMock(
-                return_value=AsyncMock(
-                    __aenter__=AsyncMock(return_value=ws),
-                    __aexit__=AsyncMock(return_value=False),
-                )
+                return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
             )
             mock_sys.stdout.write = lambda s: captured.append(s)
             mock_sys.stdout.flush = MagicMock()
@@ -368,11 +302,9 @@ class TestInteractiveSessionTerminalRestore:
     async def test_restores_terminal_on_exception(self):
         from centml.cli.shell import _interactive_session
 
-        with patch("centml.cli.shell.sys") as mock_sys, patch(
-            "centml.cli.shell.termios"
-        ) as mock_termios, patch("centml.cli.shell.tty") as mock_tty, patch(
-            "centml.cli.shell.websockets"
-        ) as mock_ws_mod:
+        with patch("centml.cli.shell.sys") as mock_sys, patch("centml.cli.shell.termios") as mock_termios, patch(
+            "centml.cli.shell.tty"
+        ) as mock_tty, patch("centml.cli.shell.websockets") as mock_ws_mod:
 
             mock_sys.stdin.fileno.return_value = 0
             mock_termios.tcgetattr.return_value = ["old_settings"]
@@ -460,10 +392,7 @@ class TestShellCommand:
             result = runner.invoke(shell, ["123", "--pod", "my-pod"])
 
             mock_resolve.assert_called_once()
-            assert (
-                mock_resolve.call_args[1].get("pod_name") == "my-pod"
-                or mock_resolve.call_args[0][2] == "my-pod"
-            )
+            assert mock_resolve.call_args[1].get("pod_name") == "my-pod" or mock_resolve.call_args[0][2] == "my-pod"
 
 
 class TestExecCommand:
@@ -509,8 +438,6 @@ class TestExecCommand:
             mock_asyncio.run.return_value = 0
 
             runner = CliRunner()
-            result = runner.invoke(
-                exec_cmd, ["123", "--shell", "zsh", "--", "echo", "hi"]
-            )
+            result = runner.invoke(exec_cmd, ["123", "--shell", "zsh", "--", "echo", "hi"])
 
             mock_asyncio.run.assert_called_once()
