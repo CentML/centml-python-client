@@ -110,16 +110,8 @@ async def _forward_io(ws):
                     data = await asyncio.wait_for(read_queue.get(), timeout=0.5)
                 except asyncio.TimeoutError:
                     continue
-                rows, cols = shutil.get_terminal_size()
                 await ws.send(
-                    json.dumps(
-                        {
-                            "operation": "stdin",
-                            "data": data.decode("utf-8", errors="replace"),
-                            "rows": rows,
-                            "cols": cols,
-                        }
-                    )
+                    json.dumps({"operation": "stdin", "data": data.decode("utf-8", errors="replace")})
                 )
         finally:
             loop.remove_reader(stdin_fd)
@@ -143,12 +135,6 @@ async def _interactive_session(ws_url, token):
     old_settings = termios.tcgetattr(fd)
     try:
         tty.setraw(fd)
-        # setraw disables OPOST, which means \n won't be translated to \r\n.
-        # The remote PTY may send bare \n; re-enable output post-processing
-        # so the local terminal handles the translation (like xterm.js does).
-        mode = termios.tcgetattr(fd)
-        mode[1] = mode[1] | termios.OPOST
-        termios.tcsetattr(fd, termios.TCSANOW, mode)
         rows, cols = shutil.get_terminal_size()
 
         headers = {"Authorization": f"Bearer {token}"}
@@ -214,7 +200,7 @@ async def _exec_session(ws_url, token, command):
             f" exit $__ec\n"
         )
 
-        await ws.send(json.dumps({"operation": "stdin", "data": wrapped, "rows": rows, "cols": cols}))
+        await ws.send(json.dumps({"operation": "stdin", "data": wrapped}))
 
         exit_code = 0
         buffer = ""
