@@ -213,11 +213,11 @@ async def _exec_session(ws_url, token, command):
         exit_code = 0
         buffer = ""
         is_capturing = False
+        is_done = False
         async for raw_msg in ws:
             msg = json.loads(raw_msg)
             if msg.get("data"):
                 buffer += msg["data"]
-                # Process complete lines from buffer
                 while "\n" in buffer:
                     line, buffer = buffer.split("\n", 1)
                     clean = _strip_ansi(line).rstrip("\r")
@@ -225,23 +225,23 @@ async def _exec_session(ws_url, token, command):
                         is_capturing = True
                         continue
                     if _END_MARKER in clean:
-                        # Parse exit code from marker line
                         parts = clean.split(_END_MARKER + ":")
                         if len(parts) > 1:
                             try:
                                 exit_code = int(parts[1].strip())
                             except ValueError:
                                 pass
-                        is_capturing = False
-                        continue
+                        is_done = True
+                        break
                     if is_capturing:
                         sys.stdout.write(line + "\n")
                         sys.stdout.flush()
             elif msg.get("error"):
                 sys.stderr.write(f"Error: {msg['error']}\n")
                 return 1
-            if "Code" in msg:
-                exit_code = msg["Code"]
+            if is_done or "Code" in msg:
+                if "Code" in msg:
+                    exit_code = msg["Code"]
                 break
         return exit_code
 
