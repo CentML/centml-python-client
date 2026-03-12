@@ -219,19 +219,24 @@ async def _forward_io(ws, screen, stream):
 
     async def _read_ws():
         nonlocal exit_code
-        async for raw_msg in ws:
-            msg = json.loads(raw_msg)
-            if msg.get("data"):
-                # Convert bare \n to \r\n before feeding pyte, equivalent
-                # to xterm.js ``convertEol: true``.
-                stream.feed(msg["data"].replace("\n", "\r\n"))
-                _render_dirty(screen, sys.stdout.buffer)
-            elif msg.get("error"):
-                stream.feed(f"Error: {msg['error']}\r\n")
-                _render_dirty(screen, sys.stdout.buffer)
-            if "Code" in msg:
-                exit_code = msg["Code"]
-                return
+        try:
+            async for raw_msg in ws:
+                msg = json.loads(raw_msg)
+                if msg.get("data"):
+                    # pyte expects \r\n; remote PTY may send bare \n
+                    # (same as xterm.js ``convertEol: true``).
+                    stream.feed(msg["data"].replace("\n", "\r\n"))
+                    _render_dirty(screen, sys.stdout.buffer)
+                elif msg.get("error"):
+                    stream.feed(f"Error: {msg['error']}\r\n")
+                    _render_dirty(screen, sys.stdout.buffer)
+                if "Code" in msg:
+                    exit_code = msg["Code"]
+                    return
+        except websockets.ConnectionClosed:
+            # Backend proxy may not send a clean close frame when
+            # ArgoCD disconnects after the remote shell exits.
+            return
 
     async def _read_stdin():
         read_queue = asyncio.Queue()
@@ -250,16 +255,19 @@ async def _forward_io(ws, screen, stream):
                     data = await asyncio.wait_for(read_queue.get(), timeout=0.5)
                 except asyncio.TimeoutError:
                     continue
-                await ws.send(
-                    json.dumps(
-                        {
-                            "operation": "stdin",
-                            "data": data.decode("utf-8", errors="replace"),
-                            "rows": screen.lines,
-                            "cols": screen.columns,
-                        }
+                try:
+                    await ws.send(
+                        json.dumps(
+                            {
+                                "operation": "stdin",
+                                "data": data.decode("utf-8", errors="replace"),
+                                "rows": screen.lines,
+                                "cols": screen.columns,
+                            }
+                        )
                     )
-                )
+                except websockets.ConnectionClosed:
+                    return
         finally:
             loop.remove_reader(stdin_fd)
 
