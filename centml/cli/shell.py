@@ -6,33 +6,27 @@ import re
 import shutil
 import signal
 import sys
+import termios
+import tty
 import urllib.parse
 
 import click
-
-from centml.sdk import PodStatus
-from centml.sdk import auth
-from centml.sdk.api import get_centml_client
-from centml.sdk.config import settings
-from centml.cli.cluster import handle_exception
-
-# Lazy-import to keep module loadable without websockets installed at import time,
-# and to allow tests to patch the module attribute easily.
 import websockets
 
-# These are only available on Unix; guarded at command level via isatty check.
-import termios
-import tty
+from centml.cli.cluster import handle_exception
+from centml.sdk import PodStatus, auth
+from centml.sdk.api import get_centml_client
+from centml.sdk.config import settings
 
 
-def _build_ws_url(api_url, deployment_id, pod_name, shell=None):
+def _build_ws_url(api_url, deployment_id, pod_name, shell_type=None):
     """Build the WebSocket URL for a terminal connection."""
     parsed = urllib.parse.urlparse(api_url)
     ws_scheme = "wss" if parsed.scheme == "https" else "ws"
     ws_base = parsed._replace(scheme=ws_scheme).geturl()
     url = f"{ws_base}/deployments/{deployment_id}/terminal?pod={urllib.parse.quote(pod_name)}"
-    if shell:
-        url += f"&shell={urllib.parse.quote(shell)}"
+    if shell_type:
+        url += f"&shell={urllib.parse.quote(shell_type)}"
     return url
 
 
@@ -270,7 +264,7 @@ def shell(deployment_id, pod, shell_type):
     sys.exit(exit_code)
 
 
-@click.command(help="Execute a command in a deployment pod", context_settings=dict(ignore_unknown_options=True))
+@click.command(help="Execute a command in a deployment pod", context_settings={"ignore_unknown_options": True})
 @click.argument("deployment_id", type=int)
 @click.argument("command", nargs=-1, required=True, type=click.UNPROCESSED)
 @click.option("--pod", default=None, help="Specific pod name")

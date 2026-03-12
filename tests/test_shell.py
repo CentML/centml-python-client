@@ -1,9 +1,8 @@
 """Tests for centml.cli.shell -- CLI terminal access commands."""
 
 import json
-import sys
 import urllib.parse
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import click
 import pytest
@@ -89,7 +88,7 @@ class TestBuildWsUrl:
     def test_with_shell(self):
         from centml.cli.shell import _build_ws_url
 
-        url = _build_ws_url("https://api.centml.com", 1, "p", shell="bash")
+        url = _build_ws_url("https://api.centml.com", 1, "p", shell_type="bash")
         assert "shell=bash" in url
 
     def test_without_shell(self):
@@ -304,7 +303,7 @@ class TestInteractiveSessionTerminalRestore:
 
         with patch("centml.cli.shell.sys") as mock_sys, patch("centml.cli.shell.termios") as mock_termios, patch(
             "centml.cli.shell.tty"
-        ) as mock_tty, patch("centml.cli.shell.websockets") as mock_ws_mod:
+        ), patch("centml.cli.shell.websockets") as mock_ws_mod:
 
             mock_sys.stdin.fileno.return_value = 0
             mock_termios.tcgetattr.return_value = ["old_settings"]
@@ -361,9 +360,8 @@ class TestShellCommand:
             mock_asyncio.run.return_value = 0
 
             runner = CliRunner()
-            result = runner.invoke(shell, ["123", "--shell", "bash"])
+            runner.invoke(shell, ["123", "--shell", "bash"])
 
-            # Verify asyncio.run was called, and the URL contains shell=bash
             mock_asyncio.run.assert_called_once()
 
     def test_pod_option_forwarded(self):
@@ -389,7 +387,7 @@ class TestShellCommand:
             mock_asyncio.run.return_value = 0
 
             runner = CliRunner()
-            result = runner.invoke(shell, ["123", "--pod", "my-pod"])
+            runner.invoke(shell, ["123", "--pod", "my-pod"])
 
             mock_resolve.assert_called_once()
             assert mock_resolve.call_args[1].get("pod_name") == "my-pod" or mock_resolve.call_args[0][2] == "my-pod"
@@ -415,7 +413,7 @@ class TestExecCommand:
             mock_asyncio.run.return_value = 0
 
             runner = CliRunner()
-            result = runner.invoke(exec_cmd, ["123", "--", "ls", "-la"])
+            runner.invoke(exec_cmd, ["123", "--", "ls", "-la"])
 
             mock_asyncio.run.assert_called_once()
 
@@ -438,6 +436,6 @@ class TestExecCommand:
             mock_asyncio.run.return_value = 0
 
             runner = CliRunner()
-            result = runner.invoke(exec_cmd, ["123", "--shell", "zsh", "--", "echo", "hi"])
+            runner.invoke(exec_cmd, ["123", "--shell", "zsh", "--", "echo", "hi"])
 
             mock_asyncio.run.assert_called_once()
