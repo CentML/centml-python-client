@@ -302,13 +302,7 @@ class TestInteractiveSessionTerminalRestore:
         ), patch("centml.cli.shell.websockets") as mock_ws_mod:
 
             mock_sys.stdin.fileno.return_value = 0
-            # tcgetattr is called twice: once to save, once after setraw for OPOST fix.
-            # Return a realistic 7-element termios attrs list.
-            old_attrs = [0, 0, 0, 0, 0, 0, [0] * 32]
-            mock_termios.tcgetattr.return_value = old_attrs
-            mock_termios.OPOST = 0x1
-            mock_termios.TCSANOW = 0
-            mock_termios.TCSADRAIN = 1
+            mock_termios.tcgetattr.return_value = ["old_settings"]
 
             mock_ws_mod.connect = MagicMock(
                 return_value=AsyncMock(
@@ -320,9 +314,9 @@ class TestInteractiveSessionTerminalRestore:
             with pytest.raises(ConnectionRefusedError):
                 asyncio.run(_interactive_session("wss://test/ws", "fake-token"))
 
-            mock_termios.tcsetattr.assert_called()
+            mock_termios.tcsetattr.assert_called_once()
             restore_call = mock_termios.tcsetattr.call_args
-            assert restore_call[0][2] == old_attrs
+            assert restore_call[0][2] == ["old_settings"]
 
 
 # ===========================================================================
