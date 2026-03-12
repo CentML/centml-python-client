@@ -143,11 +143,15 @@ async def _interactive_session(ws_url, token):
 
             loop = asyncio.get_running_loop()
 
-            def _on_resize():
+            def _send_resize():
                 r, c = shutil.get_terminal_size()
                 asyncio.ensure_future(ws.send(json.dumps({"operation": "resize", "rows": r, "cols": c})))
 
-            loop.add_signal_handler(signal.SIGWINCH, _on_resize)
+            # ArgoCD starts the shell with a default PTY size before our resize
+            # arrives. A second resize after a short delay triggers SIGWINCH on
+            # the remote, causing readline to redraw the prompt at the correct width.
+            loop.call_later(0.3, _send_resize)
+            loop.add_signal_handler(signal.SIGWINCH, _send_resize)
 
             try:
                 exit_code = await _forward_io(ws)
