@@ -1,11 +1,13 @@
 """Tests for centml.cli.shell -- CLI terminal access commands."""
 
 import asyncio
+import io
 import json
 import urllib.parse
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import click
+import pyte
 import pytest
 
 from platform_api_python_client import PodStatus, PodDetails, RevisionPodDetails
@@ -116,7 +118,14 @@ class TestResolvePod:
 
         cclient = MagicMock()
         cclient.get_status_v3.return_value = _make_status_response(
-            [_make_revision([_make_pod("pod-a", PodStatus.RUNNING), _make_pod("pod-b", PodStatus.RUNNING)])]
+            [
+                _make_revision(
+                    [
+                        _make_pod("pod-a", PodStatus.RUNNING),
+                        _make_pod("pod-b", PodStatus.RUNNING),
+                    ]
+                )
+            ]
         )
         result = _resolve_pod(cclient, 1)
         assert result == "pod-a"
@@ -146,7 +155,14 @@ class TestResolvePod:
 
         cclient = MagicMock()
         cclient.get_status_v3.return_value = _make_status_response(
-            [_make_revision([_make_pod("pod-a", PodStatus.RUNNING), _make_pod("pod-b", PodStatus.RUNNING)])]
+            [
+                _make_revision(
+                    [
+                        _make_pod("pod-a", PodStatus.RUNNING),
+                        _make_pod("pod-b", PodStatus.RUNNING),
+                    ]
+                )
+            ]
         )
         result = _resolve_pod(cclient, 1, pod_name="pod-b")
         assert result == "pod-b"
@@ -173,7 +189,14 @@ class TestResolvePod:
 
         cclient = MagicMock()
         cclient.get_status_v3.return_value = _make_status_response(
-            [_make_revision([_make_pod(None, PodStatus.RUNNING), _make_pod("pod-real", PodStatus.RUNNING)])]
+            [
+                _make_revision(
+                    [
+                        _make_pod(None, PodStatus.RUNNING),
+                        _make_pod("pod-real", PodStatus.RUNNING),
+                    ]
+                )
+            ]
         )
         result = _resolve_pod(cclient, 1)
         assert result == "pod-real"
@@ -203,17 +226,24 @@ class TestExecSession:
 
         ws = AsyncMock()
         messages = [
-            json.dumps({"data": f"noise\n{_BEGIN_MARKER}\nhello world\n{_END_MARKER}:0\n"}),
+            json.dumps(
+                {"data": f"noise\n{_BEGIN_MARKER}\nhello world\n{_END_MARKER}:0\n"}
+            ),
             json.dumps({"Code": 0}),
         ]
         ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
 
         with patch("centml.cli.shell.websockets") as mock_ws_mod:
             mock_ws_mod.connect = MagicMock(
-                return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
+                return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=ws),
+                    __aexit__=AsyncMock(return_value=False),
+                )
             )
 
-            exit_code = asyncio.run(_exec_session("wss://test/ws", "fake-token", "ls -la"))
+            exit_code = asyncio.run(
+                _exec_session("wss://test/ws", "fake-token", "ls -la")
+            )
 
         assert exit_code == 0
         assert ws.send.call_count == 2
@@ -232,15 +262,23 @@ class TestExecSession:
         from centml.cli.shell import _exec_session, _BEGIN_MARKER, _END_MARKER
 
         ws = AsyncMock()
-        messages = [json.dumps({"data": f"{_BEGIN_MARKER}\n{_END_MARKER}:42\n"}), json.dumps({"Code": 42})]
+        messages = [
+            json.dumps({"data": f"{_BEGIN_MARKER}\n{_END_MARKER}:42\n"}),
+            json.dumps({"Code": 42}),
+        ]
         ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
 
         with patch("centml.cli.shell.websockets") as mock_ws_mod:
             mock_ws_mod.connect = MagicMock(
-                return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
+                return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=ws),
+                    __aexit__=AsyncMock(return_value=False),
+                )
             )
 
-            exit_code = asyncio.run(_exec_session("wss://test/ws", "fake-token", "false"))
+            exit_code = asyncio.run(
+                _exec_session("wss://test/ws", "fake-token", "false")
+            )
 
         assert exit_code == 42
 
@@ -253,7 +291,10 @@ class TestExecSession:
 
         with patch("centml.cli.shell.websockets") as mock_ws_mod:
             mock_ws_mod.connect = MagicMock(
-                return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
+                return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=ws),
+                    __aexit__=AsyncMock(return_value=False),
+                )
             )
 
             exit_code = asyncio.run(_exec_session("wss://test/ws", "fake-token", "bad"))
@@ -266,21 +307,32 @@ class TestExecSession:
 
         ws = AsyncMock()
         messages = [
-            json.dumps({"data": f"prompt$ command\n{_BEGIN_MARKER}\nreal output\n{_END_MARKER}:0\n"}),
+            json.dumps(
+                {
+                    "data": f"prompt$ command\n{_BEGIN_MARKER}\nreal output\n{_END_MARKER}:0\n"
+                }
+            ),
             json.dumps({"Code": 0}),
         ]
         ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
 
         captured = []
-        with patch("centml.cli.shell.websockets") as mock_ws_mod, patch("centml.cli.shell.sys") as mock_sys:
+        with patch("centml.cli.shell.websockets") as mock_ws_mod, patch(
+            "centml.cli.shell.sys"
+        ) as mock_sys:
             mock_ws_mod.connect = MagicMock(
-                return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
+                return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=ws),
+                    __aexit__=AsyncMock(return_value=False),
+                )
             )
             mock_sys.stdout.write = lambda s: captured.append(s)
             mock_sys.stdout.flush = MagicMock()
             mock_sys.stderr.write = MagicMock()
 
-            exit_code = asyncio.run(_exec_session("wss://test/ws", "fake-token", "echo test"))
+            exit_code = asyncio.run(
+                _exec_session("wss://test/ws", "fake-token", "echo test")
+            )
 
         assert exit_code == 0
         output = "".join(captured)
@@ -297,9 +349,11 @@ class TestInteractiveSessionTerminalRestore:
     def test_restores_terminal_on_exception(self):
         from centml.cli.shell import _interactive_session
 
-        with patch("centml.cli.shell.sys") as mock_sys, patch("centml.cli.shell.termios") as mock_termios, patch(
-            "centml.cli.shell.tty"
-        ), patch("centml.cli.shell.websockets") as mock_ws_mod:
+        with patch("centml.cli.shell.sys") as mock_sys, patch(
+            "centml.cli.shell.termios"
+        ) as mock_termios, patch("centml.cli.shell.tty"), patch(
+            "centml.cli.shell.websockets"
+        ) as mock_ws_mod:
 
             mock_sys.stdin.fileno.return_value = 0
             mock_termios.tcgetattr.return_value = ["old_settings"]
@@ -386,7 +440,10 @@ class TestShellCommand:
             runner.invoke(shell, ["123", "--pod", "my-pod"])
 
             mock_resolve.assert_called_once()
-            assert mock_resolve.call_args[1].get("pod_name") == "my-pod" or mock_resolve.call_args[0][2] == "my-pod"
+            assert (
+                mock_resolve.call_args[1].get("pod_name") == "my-pod"
+                or mock_resolve.call_args[0][2] == "my-pod"
+            )
 
 
 class TestExecCommand:
@@ -435,3 +492,121 @@ class TestExecCommand:
             runner.invoke(exec_cmd, ["123", "--shell", "zsh", "--", "echo", "hi"])
 
             mock_asyncio.run.assert_called_once()
+
+
+# ===========================================================================
+# pyte renderer: _char_to_sgr
+# ===========================================================================
+
+
+class TestCharToSgr:
+    def test_default_attrs_returns_empty(self):
+        from centml.cli.shell import _char_to_sgr
+
+        char = pyte.screens.Char(
+            " ", "default", "default", False, False, False, False, False, False
+        )
+        assert _char_to_sgr(char) == ""
+
+    def test_bold_red_fg(self):
+        from centml.cli.shell import _char_to_sgr
+
+        char = pyte.screens.Char(
+            "x", "red", "default", True, False, False, False, False, False
+        )
+        sgr = _char_to_sgr(char)
+        assert "1" in sgr.split(";")
+        assert "31" in sgr.split(";")
+
+    def test_bg_color(self):
+        from centml.cli.shell import _char_to_sgr
+
+        char = pyte.screens.Char(
+            "x", "default", "blue", False, False, False, False, False, False
+        )
+        sgr = _char_to_sgr(char)
+        assert "44" in sgr.split(";")
+
+    def test_256_color_fg(self):
+        from centml.cli.shell import _char_to_sgr
+
+        char = pyte.screens.Char(
+            "x", "ff0000", "default", False, False, False, False, False, False
+        )
+        sgr = _char_to_sgr(char)
+        assert "38;2;255;0;0" in sgr
+
+    def test_combined_attrs(self):
+        from centml.cli.shell import _char_to_sgr
+
+        char = pyte.screens.Char(
+            "x", "green", "white", True, True, True, False, False, False
+        )
+        sgr = _char_to_sgr(char)
+        parts = sgr.split(";")
+        assert "1" in parts  # bold
+        assert "3" in parts  # italics
+        assert "4" in parts  # underscore
+        assert "32" in parts  # green fg
+        assert "47" in parts  # white bg
+
+
+# ===========================================================================
+# pyte renderer: _render_dirty
+# ===========================================================================
+
+
+class TestRenderDirty:
+    def test_renders_simple_text(self):
+        from centml.cli.shell import _render_dirty
+
+        screen = pyte.Screen(40, 5)
+        stream = pyte.Stream(screen)
+        screen.dirty.clear()
+        stream.feed("hello")
+        buf = io.BytesIO()
+        _render_dirty(screen, buf)
+        output = buf.getvalue().decode("utf-8")
+        assert "hello" in output
+        assert len(screen.dirty) == 0
+
+    def test_clears_dirty_after_render(self):
+        from centml.cli.shell import _render_dirty
+
+        screen = pyte.Screen(40, 5)
+        stream = pyte.Stream(screen)
+        screen.dirty.clear()
+        stream.feed("test")
+        assert len(screen.dirty) > 0
+        _render_dirty(screen, io.BytesIO())
+        assert len(screen.dirty) == 0
+
+    def test_cursor_position_in_output(self):
+        from centml.cli.shell import _render_dirty
+
+        screen = pyte.Screen(40, 5)
+        stream = pyte.Stream(screen)
+        stream.feed("abc")
+        buf = io.BytesIO()
+        _render_dirty(screen, buf)
+        output = buf.getvalue().decode("utf-8")
+        # Cursor should be at row 1, col 4 (1-based: after "abc")
+        assert "\033[1;4H" in output
+
+    def test_renders_only_dirty_lines(self):
+        from centml.cli.shell import _render_dirty
+
+        screen = pyte.Screen(40, 5)
+        stream = pyte.Stream(screen)
+        stream.feed("line0\r\nline1\r\nline2")
+        # Render to clear dirty
+        _render_dirty(screen, io.BytesIO())
+        # Now modify only line 0
+        stream.feed("\033[1;1Hchanged")
+        buf = io.BytesIO()
+        _render_dirty(screen, buf)
+        output = buf.getvalue().decode("utf-8")
+        assert "changed" in output
+        # line1 and line2 should NOT be re-rendered
+        assert "line1" not in output
+        assert "line2" not in output
