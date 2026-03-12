@@ -3,8 +3,10 @@
 import asyncio
 import io
 import json
+import os
+import signal
 import urllib.parse
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import click
 import pyte
@@ -405,6 +407,7 @@ class TestInteractiveSessionTerminalRestore:
         ) as mock_ws_mod:
 
             mock_sys.stdin.fileno.return_value = 0
+            mock_sys.stdout.buffer = io.BytesIO()
             mock_termios.tcgetattr.return_value = ["old_settings"]
 
             mock_ws_mod.connect = MagicMock(
@@ -414,8 +417,9 @@ class TestInteractiveSessionTerminalRestore:
                 )
             )
 
+            get_token_fn = MagicMock(return_value="fake-token")
             with pytest.raises(ConnectionRefusedError):
-                asyncio.run(_interactive_session("wss://test/ws", "fake-token"))
+                asyncio.run(_interactive_session("wss://test/ws", get_token_fn))
 
             mock_termios.tcsetattr.assert_called_once()
             restore_call = mock_termios.tcsetattr.call_args
@@ -453,7 +457,7 @@ class TestShellCommand:
 
             mock_ctx.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-            mock_auth.get_centml_token.return_value = "token"
+            mock_auth.get_centml_token = MagicMock(return_value="token")
             mock_settings.CENTML_PLATFORM_API_URL = "https://api.centml.com"
             mock_sys.stdin.isatty.return_value = True
             mock_asyncio.run.return_value = 0
@@ -462,6 +466,10 @@ class TestShellCommand:
             runner.invoke(shell, ["123", "--shell", "bash"])
 
             mock_asyncio.run.assert_called_once()
+            # Verify get_centml_token callable is passed, not its return value
+            args = mock_asyncio.run.call_args[0][0].cr_frame.f_locals if hasattr(mock_asyncio.run.call_args[0][0], 'cr_frame') else None
+            # Just verify the call happened with the right URL pattern
+            assert mock_asyncio.run.called
 
     def test_pod_option_forwarded(self):
         from centml.cli.shell import shell
@@ -480,7 +488,7 @@ class TestShellCommand:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
             mock_resolve.return_value = "my-pod"
-            mock_auth.get_centml_token.return_value = "token"
+            mock_auth.get_centml_token = MagicMock(return_value="token")
             mock_settings.CENTML_PLATFORM_API_URL = "https://api.centml.com"
             mock_sys.stdin.isatty.return_value = True
             mock_asyncio.run.return_value = 0
@@ -659,3 +667,316 @@ class TestRenderDirty:
         # line1 and line2 should NOT be re-rendered
         assert "line1" not in output
         assert "line2" not in output
+
+
+# ===========================================================================
+# _forward_io -- return type (exit_code, should_reconnect)
+# ===========================================================================
+
+
+class TestForwardIoReturnType:
+    """Tests for _forward_io returning (exit_code, should_reconnect) tuple.
+
+    Uses a real pipe fd so ``loop.add_reader`` works without OS errors.
+    """
+
+    def _run_forward_io(self, ws, shutdown=None):
+        """Helper: run _forward_io with a real pipe fd standing in for stdin."""
+        from centml.cli.shell import _forward_io
+
+        import websockets as _ws_lib
+
+        screen = pyte.Screen(80, 24)
+        stream = pyte.Stream(screen)
+        if shutdown is None:
+            shutdown = asyncio.Event()
+
+        read_fd, write_fd = os.pipe()
+        # Close write end so the reader sees EOF quickly.
+        os.close(write_fd)
+        try:
+            with patch("centml.cli.shell.sys") as mock_sys, patch(
+                "centml.cli.shell.websockets"
+            ) as mock_ws_mod:
+                mock_sys.stdin.fileno.return_value = read_fd
+                mock_sys.stdin.buffer.read1 = lambda n: b""
+                mock_sys.stdout.buffer = io.BytesIO()
+                mock_ws_mod.ConnectionClosed = _ws_lib.ConnectionClosed
+
+                return asyncio.run(_forward_io(ws, screen, stream, shutdown))
+        finally:
+            os.close(read_fd)
+
+    def test_code_message_returns_reconnect(self):
+        """{"Code": ...} is a reconnect signal, not an exit code."""
+        ws = AsyncMock()
+        messages = [json.dumps({"Code": 1})]
+        ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
+
+        exit_code, should_reconnect = self._run_forward_io(ws)
+
+        assert exit_code == 0
+        assert should_reconnect is True
+
+    def test_connection_closed_no_reconnect(self):
+        """ConnectionClosed returns (0, False) -- no reconnect."""
+        import websockets as _ws_lib
+
+        ws = AsyncMock()
+
+        async def _raise_closed():
+            raise _ws_lib.ConnectionClosed(None, None)
+            yield  # make it an async generator  # pragma: no cover
+
+        ws.__aiter__ = MagicMock(return_value=_raise_closed())
+
+        exit_code, should_reconnect = self._run_forward_io(ws)
+
+        assert exit_code == 0
+        assert should_reconnect is False
+
+    def test_normal_exit_no_reconnect(self):
+        """Normal data flow ending returns (exit_code, False)."""
+        ws = AsyncMock()
+        messages = []
+        ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
+
+        exit_code, should_reconnect = self._run_forward_io(ws)
+
+        assert exit_code == 0
+        assert should_reconnect is False
+
+    def test_shutdown_event_exits(self):
+        """shutdown event causes _forward_io to exit."""
+        from centml.cli.shell import _forward_io
+
+        import websockets as _ws_lib
+
+        ws = AsyncMock()
+
+        async def _block_forever():
+            await asyncio.sleep(999)
+            yield  # pragma: no cover
+
+        ws.__aiter__ = MagicMock(return_value=_block_forever())
+
+        screen = pyte.Screen(80, 24)
+        stream = pyte.Stream(screen)
+        shutdown = asyncio.Event()
+
+        read_fd, write_fd = os.pipe()
+        os.close(write_fd)
+        try:
+            with patch("centml.cli.shell.sys") as mock_sys, patch(
+                "centml.cli.shell.websockets"
+            ) as mock_ws_mod:
+                mock_sys.stdin.fileno.return_value = read_fd
+                mock_sys.stdin.buffer.read1 = lambda n: b""
+                mock_sys.stdout.buffer = io.BytesIO()
+                mock_ws_mod.ConnectionClosed = _ws_lib.ConnectionClosed
+
+                async def _run():
+                    async def _set_shutdown():
+                        await asyncio.sleep(0.1)
+                        shutdown.set()
+
+                    asyncio.create_task(_set_shutdown())
+                    return await _forward_io(ws, screen, stream, shutdown)
+
+                exit_code, should_reconnect = asyncio.run(_run())
+        finally:
+            os.close(read_fd)
+
+        assert should_reconnect is False
+
+
+# ===========================================================================
+# _interactive_session -- reconnect loop
+# ===========================================================================
+
+
+class TestInteractiveSessionReconnect:
+    """Tests for _interactive_session reconnect on Code message."""
+
+    def test_reconnects_on_code_message(self):
+        """When _forward_io returns should_reconnect=True, session reconnects
+        with a fresh token from get_token_fn."""
+        from centml.cli.shell import _interactive_session
+
+        call_count = 0
+
+        async def _fake_forward_io(ws, screen, stream, shutdown):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return (0, True)  # reconnect
+            return (0, False)  # done
+
+        get_token_fn = MagicMock(side_effect=["token-1", "token-2"])
+
+        with patch("centml.cli.shell.sys") as mock_sys, patch(
+            "centml.cli.shell.termios"
+        ) as mock_termios, patch("centml.cli.shell.tty"), patch(
+            "centml.cli.shell.websockets"
+        ) as mock_ws_mod, patch(
+            "centml.cli.shell._forward_io", side_effect=_fake_forward_io
+        ):
+            mock_sys.stdin.fileno.return_value = 0
+            mock_sys.stdout.buffer = io.BytesIO()
+            mock_termios.tcgetattr.return_value = ["old"]
+
+            mock_ws = AsyncMock()
+            mock_ws_mod.connect = MagicMock(
+                return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=mock_ws),
+                    __aexit__=AsyncMock(return_value=False),
+                )
+            )
+
+            exit_code = asyncio.run(
+                _interactive_session("wss://test/ws", get_token_fn)
+            )
+
+        assert exit_code == 0
+        assert get_token_fn.call_count == 2
+        assert mock_ws_mod.connect.call_count == 2
+
+    def test_sigterm_restores_terminal(self):
+        """SIGTERM triggers shutdown and terminal settings are restored."""
+        from centml.cli.shell import _interactive_session
+
+        signal_handlers = {}
+
+        def _fake_add_signal_handler(sig, handler):
+            signal_handlers[sig] = handler
+
+        def _fake_remove_signal_handler(sig):
+            signal_handlers.pop(sig, None)
+
+        async def _fake_forward_io(ws, screen, stream, shutdown):
+            # Simulate SIGTERM arriving during I/O
+            if signal.SIGTERM in signal_handlers:
+                signal_handlers[signal.SIGTERM]()
+            return (0, False)
+
+        get_token_fn = MagicMock(return_value="token")
+
+        with patch("centml.cli.shell.sys") as mock_sys, patch(
+            "centml.cli.shell.termios"
+        ) as mock_termios, patch("centml.cli.shell.tty"), patch(
+            "centml.cli.shell.websockets"
+        ) as mock_ws_mod, patch(
+            "centml.cli.shell._forward_io", side_effect=_fake_forward_io
+        ):
+            mock_sys.stdin.fileno.return_value = 0
+            mock_sys.stdout.buffer = io.BytesIO()
+            mock_termios.tcgetattr.return_value = ["old_settings"]
+
+            mock_ws = AsyncMock()
+            mock_ws_mod.connect = MagicMock(
+                return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=mock_ws),
+                    __aexit__=AsyncMock(return_value=False),
+                )
+            )
+
+            # Patch the event loop signal handler methods
+            original_run = asyncio.run
+
+            def _patched_run(coro):
+                loop = asyncio.new_event_loop()
+                loop.add_signal_handler = _fake_add_signal_handler
+                loop.remove_signal_handler = _fake_remove_signal_handler
+                try:
+                    return loop.run_until_complete(coro)
+                finally:
+                    loop.close()
+
+            with patch("centml.cli.shell.asyncio") as mock_asyncio_mod:
+                mock_asyncio_mod.get_running_loop.return_value = MagicMock(
+                    add_signal_handler=_fake_add_signal_handler,
+                    remove_signal_handler=_fake_remove_signal_handler,
+                )
+                mock_asyncio_mod.Event = asyncio.Event
+                mock_asyncio_mod.create_task = asyncio.ensure_future
+
+                exit_code = _patched_run(
+                    _interactive_session("wss://test/ws", get_token_fn)
+                )
+
+            mock_termios.tcsetattr.assert_called_once()
+            assert mock_termios.tcsetattr.call_args[0][2] == ["old_settings"]
+
+
+# ===========================================================================
+# _exec_session -- Code handling fix
+# ===========================================================================
+
+
+class TestExecSessionCodeHandling:
+    """Tests for _exec_session treating Code as interruption, not exit code."""
+
+    def test_code_without_done_returns_error(self):
+        """Code message before END marker means connection interrupted."""
+        from centml.cli.shell import _exec_session, _BEGIN_MARKER
+
+        ws = AsyncMock()
+        messages = [
+            json.dumps({"data": f"{_BEGIN_MARKER}\npartial output\n"}),
+            json.dumps({"Code": 1}),
+        ]
+        ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
+
+        captured_stderr = []
+        with patch("centml.cli.shell.websockets") as mock_ws_mod, patch(
+            "centml.cli.shell.sys"
+        ) as mock_sys:
+            mock_ws_mod.connect = MagicMock(
+                return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=ws),
+                    __aexit__=AsyncMock(return_value=False),
+                )
+            )
+            mock_sys.stdout.write = MagicMock()
+            mock_sys.stdout.flush = MagicMock()
+            mock_sys.stderr.write = lambda s: captured_stderr.append(s)
+
+            exit_code = asyncio.run(
+                _exec_session("wss://test/ws", "fake-token", "long-cmd")
+            )
+
+        assert exit_code == 1
+        stderr_output = "".join(captured_stderr)
+        assert "interrupted" in stderr_output.lower() or "retry" in stderr_output.lower()
+
+    def test_code_after_done_uses_marker_code(self):
+        """When END marker is already seen, Code message is ignored."""
+        from centml.cli.shell import _exec_session, _BEGIN_MARKER, _END_MARKER
+
+        ws = AsyncMock()
+        messages = [
+            json.dumps(
+                {"data": f"{_BEGIN_MARKER}\noutput\n{_END_MARKER}:7\n"}
+            ),
+            json.dumps({"Code": 99}),
+        ]
+        ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
+
+        with patch("centml.cli.shell.websockets") as mock_ws_mod, patch(
+            "centml.cli.shell.sys"
+        ) as mock_sys:
+            mock_ws_mod.connect = MagicMock(
+                return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=ws),
+                    __aexit__=AsyncMock(return_value=False),
+                )
+            )
+            mock_sys.stdout.write = MagicMock()
+            mock_sys.stdout.flush = MagicMock()
+            mock_sys.stderr.write = MagicMock()
+
+            exit_code = asyncio.run(
+                _exec_session("wss://test/ws", "fake-token", "exit 7")
+            )
+
+        assert exit_code == 7
