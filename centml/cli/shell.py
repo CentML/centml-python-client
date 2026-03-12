@@ -154,6 +154,14 @@ async def _interactive_session(ws_url, token):
     old_settings = termios.tcgetattr(fd)
     try:
         tty.setraw(fd)
+        # Re-enable output post-processing so the local terminal converts
+        # bare \n to \r\n.  The remote PTY may send lone \n (Kubernetes
+        # exec PTY behavior).  xterm.js handles this with convertEol;
+        # for a raw CLI terminal we need OPOST.  Extra \r before \n from
+        # a remote that already sends \r\n is harmless.
+        attrs = termios.tcgetattr(fd)
+        attrs[1] |= termios.OPOST
+        termios.tcsetattr(fd, termios.TCSANOW, attrs)
         rows, cols = shutil.get_terminal_size()
 
         headers = {"Authorization": f"Bearer {token}"}
@@ -173,26 +181,26 @@ async def _interactive_session(ws_url, token):
                 )
 
             async def _force_initial_redraw():
-                """Set PTY dimensions from inside the shell and clear screen.
+                """Toggle PTY width to force SIGWINCH, then Ctrl+L to redraw.
 
-                The WebSocket resize message may not reliably update the
-                remote PTY size (race with shell startup, ArgoCD buffering).
-                Sending ``stty rows R cols C`` directly through stdin is
-                authoritative -- it always works because the shell itself
-                calls the TIOCSWINSZ ioctl.  The leading space keeps the
-                command out of bash history when HISTCONTROL=ignorespace.
+                The initial resize may arrive before the remote shell
+                starts, so the shell never sees a SIGWINCH.  Toggling
+                cols by +1/-1 guarantees a size change and SIGWINCH.
+                Ctrl+L then clears the screen so the prompt redraws at
+                the correct width.
                 """
                 try:
                     await asyncio.sleep(0.5)
                     r, c = shutil.get_terminal_size()
                     await ws.send(
-                        json.dumps(
-                            {
-                                "operation": "stdin",
-                                "data": f" stty rows {r} cols {c}; clear\n",
-                            }
-                        )
+                        json.dumps({"operation": "resize", "rows": r, "cols": c + 1})
                     )
+                    await asyncio.sleep(0.05)
+                    await ws.send(
+                        json.dumps({"operation": "resize", "rows": r, "cols": c})
+                    )
+                    await asyncio.sleep(0.1)
+                    await ws.send(json.dumps({"operation": "stdin", "data": "\x0c"}))
                 except Exception:
                     pass
 
