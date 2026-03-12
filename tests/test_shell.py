@@ -1,5 +1,6 @@
 """Tests for centml.cli.shell -- CLI terminal access commands."""
 
+import asyncio
 import json
 import urllib.parse
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -197,8 +198,7 @@ class TestResolvePod:
 
 
 class TestExecSession:
-    @pytest.mark.asyncio
-    async def test_sends_resize_and_wrapped_command(self):
+    def test_sends_resize_and_wrapped_command(self):
         from centml.cli.shell import _exec_session, _BEGIN_MARKER, _END_MARKER
 
         ws = AsyncMock()
@@ -213,7 +213,7 @@ class TestExecSession:
                 return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
             )
 
-            exit_code = await _exec_session("wss://test/ws", "fake-token", "ls -la")
+            exit_code = asyncio.run(_exec_session("wss://test/ws", "fake-token", "ls -la"))
 
         assert exit_code == 0
         assert ws.send.call_count == 2
@@ -228,8 +228,7 @@ class TestExecSession:
         assert _BEGIN_MARKER not in cmd_msg["data"]
         assert "CENTML_BEGIN" in cmd_msg["data"]
 
-    @pytest.mark.asyncio
-    async def test_returns_nonzero_exit_code_from_marker(self):
+    def test_returns_nonzero_exit_code_from_marker(self):
         from centml.cli.shell import _exec_session, _BEGIN_MARKER, _END_MARKER
 
         ws = AsyncMock()
@@ -241,12 +240,11 @@ class TestExecSession:
                 return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
             )
 
-            exit_code = await _exec_session("wss://test/ws", "fake-token", "false")
+            exit_code = asyncio.run(_exec_session("wss://test/ws", "fake-token", "false"))
 
         assert exit_code == 42
 
-    @pytest.mark.asyncio
-    async def test_error_message_returns_one(self):
+    def test_error_message_returns_one(self):
         from centml.cli.shell import _exec_session
 
         ws = AsyncMock()
@@ -258,12 +256,11 @@ class TestExecSession:
                 return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
             )
 
-            exit_code = await _exec_session("wss://test/ws", "fake-token", "bad")
+            exit_code = asyncio.run(_exec_session("wss://test/ws", "fake-token", "bad"))
 
         assert exit_code == 1
 
-    @pytest.mark.asyncio
-    async def test_filters_noise_before_marker(self):
+    def test_filters_noise_before_marker(self):
         """Only output between BEGIN and END markers is written to stdout."""
         from centml.cli.shell import _exec_session, _BEGIN_MARKER, _END_MARKER
 
@@ -283,7 +280,7 @@ class TestExecSession:
             mock_sys.stdout.flush = MagicMock()
             mock_sys.stderr.write = MagicMock()
 
-            exit_code = await _exec_session("wss://test/ws", "fake-token", "echo test")
+            exit_code = asyncio.run(_exec_session("wss://test/ws", "fake-token", "echo test"))
 
         assert exit_code == 0
         output = "".join(captured)
@@ -297,8 +294,7 @@ class TestExecSession:
 
 
 class TestInteractiveSessionTerminalRestore:
-    @pytest.mark.asyncio
-    async def test_restores_terminal_on_exception(self):
+    def test_restores_terminal_on_exception(self):
         from centml.cli.shell import _interactive_session
 
         with patch("centml.cli.shell.sys") as mock_sys, patch("centml.cli.shell.termios") as mock_termios, patch(
@@ -322,7 +318,7 @@ class TestInteractiveSessionTerminalRestore:
             )
 
             with pytest.raises(ConnectionRefusedError):
-                await _interactive_session("wss://test/ws", "fake-token")
+                asyncio.run(_interactive_session("wss://test/ws", "fake-token"))
 
             mock_termios.tcsetattr.assert_called()
             restore_call = mock_termios.tcsetattr.call_args
