@@ -52,18 +52,6 @@ def _make_status_response(revisions):
 # ===========================================================================
 
 
-class TestStripAnsi:
-    def test_strips_csi_sequences(self):
-        from centml.cli.shell import _strip_ansi
-
-        assert _strip_ansi("\x1b[?2004htext\x1b[0m") == "text"
-
-    def test_preserves_plain_text(self):
-        from centml.cli.shell import _strip_ansi
-
-        assert _strip_ansi("hello world") == "hello world"
-
-
 class TestBuildWsUrl:
     def test_https_to_wss(self):
         from centml.cli.shell import _build_ws_url
@@ -338,6 +326,67 @@ class TestExecSession:
         output = "".join(captured)
         assert "real output" in output
         assert "prompt$" not in output
+
+    def test_connection_closed_returns_zero(self):
+        """Graceful exit when server closes connection without Code message."""
+        from centml.cli.shell import _exec_session
+
+        import websockets as _ws_lib
+
+        ws = AsyncMock()
+
+        async def _raise_closed():
+            yield json.dumps({"data": "partial\n"})
+            raise _ws_lib.ConnectionClosed(None, None)
+
+        ws.__aiter__ = MagicMock(return_value=_raise_closed())
+
+        with patch("centml.cli.shell.websockets") as mock_ws_mod:
+            mock_ws_mod.connect = MagicMock(
+                return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=ws),
+                    __aexit__=AsyncMock(return_value=False),
+                )
+            )
+            mock_ws_mod.ConnectionClosed = _ws_lib.ConnectionClosed
+
+            exit_code = asyncio.run(
+                _exec_session("wss://test/ws", "fake-token", "exit")
+            )
+
+        assert exit_code == 0
+
+    def test_handles_ansi_around_markers(self):
+        """Markers wrapped in ANSI codes are still detected via pyte."""
+        from centml.cli.shell import _exec_session, _BEGIN_MARKER, _END_MARKER
+
+        ws = AsyncMock()
+        # Markers surrounded by ANSI color codes.
+        data = f"\x1b[32m{_BEGIN_MARKER}\x1b[0m\noutput\n\x1b[32m{_END_MARKER}:0\x1b[0m\n"
+        messages = [json.dumps({"data": data}), json.dumps({"Code": 0})]
+        ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
+
+        captured = []
+        with patch("centml.cli.shell.websockets") as mock_ws_mod, patch(
+            "centml.cli.shell.sys"
+        ) as mock_sys:
+            mock_ws_mod.connect = MagicMock(
+                return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=ws),
+                    __aexit__=AsyncMock(return_value=False),
+                )
+            )
+            mock_sys.stdout.write = lambda s: captured.append(s)
+            mock_sys.stdout.flush = MagicMock()
+            mock_sys.stderr.write = MagicMock()
+
+            exit_code = asyncio.run(
+                _exec_session("wss://test/ws", "fake-token", "echo test")
+            )
+
+        assert exit_code == 0
+        output = "".join(captured)
+        assert "output" in output
 
 
 # ===========================================================================

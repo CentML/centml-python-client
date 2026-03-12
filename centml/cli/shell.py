@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import re
 import shutil
 import signal
 import sys
@@ -337,8 +336,6 @@ async def _interactive_session(ws_url, token):
         sys.stdout.buffer.flush()
 
 
-_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\].*?\x07|\x1b\[.*?\x1b\\")
-
 _BEGIN_MARKER = "__CENTML_BEGIN_5f3a__"
 _END_MARKER = "__CENTML_END_5f3a__"
 
@@ -348,9 +345,17 @@ _PRINTF_BEGIN = r"\137\137CENTML_BEGIN_5f3a\137\137"
 _PRINTF_END = r"\137\137CENTML_END_5f3a\137\137"
 
 
-def _strip_ansi(text):
-    """Remove ANSI escape sequences from text."""
-    return _ANSI_ESCAPE_RE.sub("", text)
+def _pyte_extract_text(line_stream, line_screen, text):
+    """Feed text through a single-row pyte screen and return visible characters.
+
+    More robust than regex ANSI stripping: pyte interprets all VT100/VT220
+    sequences including OSC, cursor repositioning, and truecolor escapes.
+    """
+    line_screen.reset()
+    line_stream.feed(text)
+    return "".join(
+        line_screen.buffer[0][col].data for col in range(line_screen.columns)
+    ).rstrip()
 
 
 async def _exec_session(ws_url, token, command):
@@ -360,6 +365,9 @@ async def _exec_session(ws_url, token, command):
     Suppresses shell echo and uses markers to capture only command output.
     """
     cols, rows = shutil.get_terminal_size(fallback=(80, 24))
+    # Single-row screen for interpreting escape sequences in marker detection.
+    line_screen = pyte.Screen(cols, 1)
+    line_stream = pyte.Stream(line_screen)
     headers = {"Authorization": f"Bearer {token}"}
 
     async with websockets.connect(
@@ -386,35 +394,40 @@ async def _exec_session(ws_url, token, command):
         buffer = ""
         is_capturing = False
         is_done = False
-        async for raw_msg in ws:
-            msg = json.loads(raw_msg)
-            if msg.get("data"):
-                buffer += msg["data"]
-                while "\n" in buffer:
-                    line, buffer = buffer.split("\n", 1)
-                    clean = _strip_ansi(line).rstrip("\r")
-                    if _BEGIN_MARKER in clean:
-                        is_capturing = True
-                        continue
-                    if _END_MARKER in clean:
-                        parts = clean.split(_END_MARKER + ":")
-                        if len(parts) > 1:
-                            try:
-                                exit_code = int(parts[1].strip())
-                            except ValueError:
-                                pass
-                        is_done = True
-                        break
-                    if is_capturing:
-                        sys.stdout.write(line + "\n")
-                        sys.stdout.flush()
-            elif msg.get("error"):
-                sys.stderr.write(f"Error: {msg['error']}\n")
-                return 1
-            if is_done or "Code" in msg:
-                if "Code" in msg:
-                    exit_code = msg["Code"]
-                break
+        try:
+            async for raw_msg in ws:
+                msg = json.loads(raw_msg)
+                if msg.get("data"):
+                    buffer += msg["data"]
+                    while "\n" in buffer:
+                        line, buffer = buffer.split("\n", 1)
+                        clean = _pyte_extract_text(
+                            line_stream, line_screen, line.rstrip("\r")
+                        )
+                        if _BEGIN_MARKER in clean:
+                            is_capturing = True
+                            continue
+                        if _END_MARKER in clean:
+                            parts = clean.split(_END_MARKER + ":")
+                            if len(parts) > 1:
+                                try:
+                                    exit_code = int(parts[1].strip())
+                                except ValueError:
+                                    pass
+                            is_done = True
+                            break
+                        if is_capturing:
+                            sys.stdout.write(line + "\n")
+                            sys.stdout.flush()
+                elif msg.get("error"):
+                    sys.stderr.write(f"Error: {msg['error']}\n")
+                    return 1
+                if is_done or "Code" in msg:
+                    if "Code" in msg:
+                        exit_code = msg["Code"]
+                    break
+        except websockets.ConnectionClosed:
+            pass
         return exit_code
 
 
