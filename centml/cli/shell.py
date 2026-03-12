@@ -197,7 +197,7 @@ def _resolve_pod(cclient, deployment_id, pod_name=None):
     return running_pods[0]
 
 
-async def _forward_io(ws, screen, stream):
+async def _forward_io(ws, screen, stream, shutdown):
     """Bidirectional forwarding between local stdin/stdout and WebSocket.
 
     Output flows through a pyte terminal emulator so that cursor
@@ -208,16 +208,21 @@ async def _forward_io(ws, screen, stream):
         ws: WebSocket connection.
         screen: pyte.Screen instance sized to the local terminal.
         stream: pyte.Stream attached to *screen*.
+        shutdown: asyncio.Event set by signal handlers to request exit.
 
-    Returns the remote exit code.
+    Returns:
+        Tuple of (exit_code, should_reconnect). ``should_reconnect`` is True
+        when the server sent a ``{"Code": ...}`` reconnect signal (ArgoCD
+        token refresh), False on normal exit or connection close.
     """
     loop = asyncio.get_running_loop()
     exit_code = 0
+    should_reconnect = False
     stdin_fd = sys.stdin.fileno()
     stdin_closed = asyncio.Event()
 
     async def _read_ws():
-        nonlocal exit_code
+        nonlocal exit_code, should_reconnect
         try:
             async for raw_msg in ws:
                 msg = json.loads(raw_msg)
@@ -229,8 +234,11 @@ async def _forward_io(ws, screen, stream):
                 elif msg.get("error"):
                     stream.feed(f"Error: {msg['error']}\r\n")
                     _render_dirty(screen, sys.stdout.buffer)
+                # ArgoCD sends {"Code": ...} as a reconnect signal (token
+                # refresh), not a shell exit code. Mirror ArgoCD UI behavior:
+                # disconnect and reconnect with a fresh token.
                 if "Code" in msg:
-                    exit_code = msg["Code"]
+                    should_reconnect = True
                     return
         except websockets.ConnectionClosed:
             # Backend proxy may not send a clean close frame when
@@ -249,7 +257,7 @@ async def _forward_io(ws, screen, stream):
 
         loop.add_reader(stdin_fd, _on_stdin_ready)
         try:
-            while not stdin_closed.is_set():
+            while not stdin_closed.is_set() and not shutdown.is_set():
                 try:
                     data = await asyncio.wait_for(read_queue.get(), timeout=0.5)
                 except asyncio.TimeoutError:
@@ -270,7 +278,15 @@ async def _forward_io(ws, screen, stream):
         finally:
             loop.remove_reader(stdin_fd)
 
-    tasks = [asyncio.create_task(_read_ws()), asyncio.create_task(_read_stdin())]
+    async def _watch_shutdown():
+        while not shutdown.is_set():
+            await asyncio.sleep(0.2)
+
+    tasks = [
+        asyncio.create_task(_read_ws()),
+        asyncio.create_task(_read_stdin()),
+        asyncio.create_task(_watch_shutdown()),
+    ]
     done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     for t in pending:
         t.cancel()
@@ -282,13 +298,19 @@ async def _forward_io(ws, screen, stream):
     for t in done:
         if t.exception() is not None:
             raise t.exception()
-    return exit_code
+    return (exit_code, should_reconnect)
 
 
-async def _interactive_session(ws_url, token):
+async def _interactive_session(ws_url, get_token_fn):
     """Run an interactive terminal session over WebSocket.
 
-    Enters raw mode, forwards I/O bidirectionally, and restores terminal on exit.
+    Enters raw mode, forwards I/O bidirectionally, and restores terminal on
+    exit.  Reconnects automatically when the server sends a ``{"Code": ...}``
+    token-refresh signal (matching ArgoCD UI behavior).
+
+    Args:
+        ws_url: WebSocket URL for the terminal endpoint.
+        get_token_fn: Callable that returns a fresh bearer token string.
     """
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
@@ -303,32 +325,51 @@ async def _interactive_session(ws_url, token):
         sys.stdout.buffer.write(b"\033[?1049h\033[2J\033[H")
         sys.stdout.buffer.flush()
 
-        headers = {"Authorization": f"Bearer {token}"}
-        async with websockets.connect(
-            ws_url, additional_headers=headers, close_timeout=2
-        ) as ws:
-            await ws.send(
-                json.dumps({"operation": "resize", "rows": rows, "cols": cols})
-            )
+        loop = asyncio.get_running_loop()
 
-            loop = asyncio.get_running_loop()
+        shutdown = asyncio.Event()
+        loop.add_signal_handler(signal.SIGTERM, shutdown.set)
+        loop.add_signal_handler(signal.SIGHUP, shutdown.set)
 
-            def _send_resize():
-                c, r = shutil.get_terminal_size()
-                screen.resize(r, c)
-                screen.dirty.update(range(r))
+        # _ws_ref holds the current websocket so SIGWINCH can reach it.
+        _ws_ref = [None]
+
+        def _send_resize():
+            c, r = shutil.get_terminal_size()
+            screen.resize(r, c)
+            screen.dirty.update(range(r))
+            if _ws_ref[0] is not None:
                 asyncio.ensure_future(
-                    ws.send(json.dumps({"operation": "resize", "rows": r, "cols": c}))
+                    _ws_ref[0].send(
+                        json.dumps({"operation": "resize", "rows": r, "cols": c})
+                    )
                 )
 
-            loop.add_signal_handler(signal.SIGWINCH, _send_resize)
+        loop.add_signal_handler(signal.SIGWINCH, _send_resize)
 
-            try:
-                exit_code = await _forward_io(ws, screen, stream)
-            finally:
-                loop.remove_signal_handler(signal.SIGWINCH)
-
-            return exit_code
+        try:
+            while True:
+                token = get_token_fn()
+                headers = {"Authorization": f"Bearer {token}"}
+                async with websockets.connect(
+                    ws_url, additional_headers=headers, close_timeout=2
+                ) as ws:
+                    _ws_ref[0] = ws
+                    await ws.send(
+                        json.dumps(
+                            {"operation": "resize", "rows": rows, "cols": cols}
+                        )
+                    )
+                    exit_code, should_reconnect = await _forward_io(
+                        ws, screen, stream, shutdown
+                    )
+                    _ws_ref[0] = None
+                    if not should_reconnect or shutdown.is_set():
+                        return exit_code
+        finally:
+            loop.remove_signal_handler(signal.SIGWINCH)
+            loop.remove_signal_handler(signal.SIGTERM)
+            loop.remove_signal_handler(signal.SIGHUP)
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         # Leave alternate screen buffer, restore cursor and attributes.
@@ -422,9 +463,10 @@ async def _exec_session(ws_url, token, command):
                 elif msg.get("error"):
                     sys.stderr.write(f"Error: {msg['error']}\n")
                     return 1
-                if is_done or "Code" in msg:
-                    if "Code" in msg:
-                        exit_code = msg["Code"]
+                if "Code" in msg and not is_done:
+                    sys.stderr.write("Connection interrupted, please retry.\n")
+                    return 1
+                if is_done:
                     break
         except websockets.ConnectionClosed:
             pass
@@ -454,8 +496,7 @@ def shell(deployment_id, pod, shell_type):
     ws_url = _build_ws_url(
         settings.CENTML_PLATFORM_API_URL, deployment_id, pod_name, shell_type
     )
-    token = auth.get_centml_token()
-    exit_code = asyncio.run(_interactive_session(ws_url, token))
+    exit_code = asyncio.run(_interactive_session(ws_url, auth.get_centml_token))
     sys.exit(exit_code)
 
 
