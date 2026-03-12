@@ -52,8 +52,8 @@ def _resolve_pod(cclient, deployment_id, pod_name=None):
     """
     status = cclient.get_status_v3(deployment_id)
     running_pods = []
-    for revision in (status.revision_pod_details_list or []):
-        for pod in (revision.pod_details_list or []):
+    for revision in status.revision_pod_details_list or []:
+        for pod in revision.pod_details_list or []:
             if pod.status == PodStatus.RUNNING and pod.name:
                 running_pods.append(pod.name)
 
@@ -122,12 +122,16 @@ async def _forward_io(ws):
                 except asyncio.TimeoutError:
                     continue
                 rows, cols = shutil.get_terminal_size()
-                await ws.send(json.dumps({
-                    "operation": "stdin",
-                    "data": data.decode("utf-8", errors="replace"),
-                    "rows": rows,
-                    "cols": cols,
-                }))
+                await ws.send(
+                    json.dumps(
+                        {
+                            "operation": "stdin",
+                            "data": data.decode("utf-8", errors="replace"),
+                            "rows": rows,
+                            "cols": cols,
+                        }
+                    )
+                )
         finally:
             loop.remove_reader(stdin_fd)
 
@@ -157,21 +161,31 @@ async def _interactive_session(ws_url, token):
 
         headers = {"Authorization": f"Bearer {token}"}
         async with websockets.connect(ws_url, additional_headers=headers) as ws:
-            await ws.send(json.dumps({
-                "operation": "resize",
-                "rows": rows,
-                "cols": cols,
-            }))
+            await ws.send(
+                json.dumps(
+                    {
+                        "operation": "resize",
+                        "rows": rows,
+                        "cols": cols,
+                    }
+                )
+            )
 
             loop = asyncio.get_running_loop()
 
             def _on_resize():
                 r, c = shutil.get_terminal_size()
-                asyncio.ensure_future(ws.send(json.dumps({
-                    "operation": "resize",
-                    "rows": r,
-                    "cols": c,
-                })))
+                asyncio.ensure_future(
+                    ws.send(
+                        json.dumps(
+                            {
+                                "operation": "resize",
+                                "rows": r,
+                                "cols": c,
+                            }
+                        )
+                    )
+                )
 
             loop.add_signal_handler(signal.SIGWINCH, _on_resize)
 
@@ -211,11 +225,15 @@ async def _exec_session(ws_url, token, command):
     headers = {"Authorization": f"Bearer {token}"}
 
     async with websockets.connect(ws_url, additional_headers=headers) as ws:
-        await ws.send(json.dumps({
-            "operation": "resize",
-            "rows": rows,
-            "cols": cols,
-        }))
+        await ws.send(
+            json.dumps(
+                {
+                    "operation": "resize",
+                    "rows": rows,
+                    "cols": cols,
+                }
+            )
+        )
 
         # Suppress echo/bracketed-paste, emit begin marker, run command,
         # emit end marker with exit code, then exit.
@@ -230,12 +248,16 @@ async def _exec_session(ws_url, token, command):
             f" exit $__ec\n"
         )
 
-        await ws.send(json.dumps({
-            "operation": "stdin",
-            "data": wrapped,
-            "rows": rows,
-            "cols": cols,
-        }))
+        await ws.send(
+            json.dumps(
+                {
+                    "operation": "stdin",
+                    "data": wrapped,
+                    "rows": rows,
+                    "cols": cols,
+                }
+            )
+        )
 
         exit_code = 0
         buffer = ""
@@ -275,9 +297,16 @@ async def _exec_session(ws_url, token, command):
 
 @click.command(help="Open an interactive shell to a deployment pod")
 @click.argument("deployment_id", type=int)
-@click.option("--pod", default=None, help="Specific pod name (auto-selects first running pod)")
-@click.option("--shell", "shell_type", default=None,
-              type=click.Choice(["bash", "sh", "zsh"]), help="Shell type")
+@click.option(
+    "--pod", default=None, help="Specific pod name (auto-selects first running pod)"
+)
+@click.option(
+    "--shell",
+    "shell_type",
+    default=None,
+    type=click.Choice(["bash", "sh", "zsh"]),
+    help="Shell type",
+)
 @handle_exception
 def shell(deployment_id, pod, shell_type):
     if not sys.stdin.isatty():
@@ -286,25 +315,36 @@ def shell(deployment_id, pod, shell_type):
     with get_centml_client() as cclient:
         pod_name = _resolve_pod(cclient, deployment_id, pod)
 
-    ws_url = _build_ws_url(settings.CENTML_PLATFORM_API_URL, deployment_id, pod_name, shell_type)
+    ws_url = _build_ws_url(
+        settings.CENTML_PLATFORM_API_URL, deployment_id, pod_name, shell_type
+    )
     token = auth.get_centml_token()
     exit_code = asyncio.run(_interactive_session(ws_url, token))
     sys.exit(exit_code)
 
 
-@click.command(help="Execute a command in a deployment pod",
-               context_settings=dict(ignore_unknown_options=True))
+@click.command(
+    help="Execute a command in a deployment pod",
+    context_settings=dict(ignore_unknown_options=True),
+)
 @click.argument("deployment_id", type=int)
 @click.argument("command", nargs=-1, required=True, type=click.UNPROCESSED)
 @click.option("--pod", default=None, help="Specific pod name")
-@click.option("--shell", "shell_type", default=None,
-              type=click.Choice(["bash", "sh", "zsh"]), help="Shell type")
+@click.option(
+    "--shell",
+    "shell_type",
+    default=None,
+    type=click.Choice(["bash", "sh", "zsh"]),
+    help="Shell type",
+)
 @handle_exception
 def exec_cmd(deployment_id, command, pod, shell_type):
     with get_centml_client() as cclient:
         pod_name = _resolve_pod(cclient, deployment_id, pod)
 
-    ws_url = _build_ws_url(settings.CENTML_PLATFORM_API_URL, deployment_id, pod_name, shell_type)
+    ws_url = _build_ws_url(
+        settings.CENTML_PLATFORM_API_URL, deployment_id, pod_name, shell_type
+    )
     token = auth.get_centml_token()
     cmd_str = " ".join(command)
     exit_code = asyncio.run(_exec_session(ws_url, token, cmd_str))
