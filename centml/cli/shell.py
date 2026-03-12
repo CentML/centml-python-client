@@ -6,6 +6,7 @@ import shutil
 import signal
 import sys
 import termios
+import time
 import tty
 import urllib.parse
 
@@ -348,6 +349,7 @@ async def _interactive_session(ws_url, get_token_fn):
         loop.add_signal_handler(signal.SIGWINCH, _send_resize)
 
         try:
+            last_code_time = -999.0
             while True:
                 token = get_token_fn()
                 headers = {"Authorization": f"Bearer {token}"}
@@ -366,6 +368,13 @@ async def _interactive_session(ws_url, get_token_fn):
                     _ws_ref[0] = None
                     if not should_reconnect or shutdown.is_set():
                         return exit_code
+                    # If we got two Code signals within 3 seconds the shell
+                    # has genuinely exited (reconnect just opened a new
+                    # session that immediately closed). Stop reconnecting.
+                    now = time.monotonic()
+                    if now - last_code_time < 3.0:
+                        return 0
+                    last_code_time = now
         finally:
             loop.remove_signal_handler(signal.SIGWINCH)
             loop.remove_signal_handler(signal.SIGTERM)
