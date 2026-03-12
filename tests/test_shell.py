@@ -820,10 +820,15 @@ class TestInteractiveSessionReconnect:
             "centml.cli.shell.websockets"
         ) as mock_ws_mod, patch(
             "centml.cli.shell._forward_io", side_effect=_fake_forward_io
-        ):
+        ), patch(
+            "centml.cli.shell.time"
+        ) as mock_time:
             mock_sys.stdin.fileno.return_value = 0
             mock_sys.stdout.buffer = io.BytesIO()
             mock_termios.tcgetattr.return_value = ["old"]
+
+            # Simulate > 3s gap so reconnect is allowed
+            mock_time.monotonic = MagicMock(side_effect=[0.0, 10.0])
 
             mock_ws = AsyncMock()
             mock_ws_mod.connect = MagicMock(
@@ -839,6 +844,48 @@ class TestInteractiveSessionReconnect:
 
         assert exit_code == 0
         assert get_token_fn.call_count == 2
+        assert mock_ws_mod.connect.call_count == 2
+
+    def test_stops_reconnecting_on_rapid_code(self):
+        """Two Code signals within 3 seconds means the shell has genuinely
+        exited -- stop reconnecting instead of looping forever."""
+        from centml.cli.shell import _interactive_session
+
+        async def _always_reconnect(ws, screen, stream, shutdown):
+            return (0, True)
+
+        get_token_fn = MagicMock(side_effect=["token-1", "token-2"])
+
+        with patch("centml.cli.shell.sys") as mock_sys, patch(
+            "centml.cli.shell.termios"
+        ) as mock_termios, patch("centml.cli.shell.tty"), patch(
+            "centml.cli.shell.websockets"
+        ) as mock_ws_mod, patch(
+            "centml.cli.shell._forward_io", side_effect=_always_reconnect
+        ), patch(
+            "centml.cli.shell.time"
+        ) as mock_time:
+            mock_sys.stdin.fileno.return_value = 0
+            mock_sys.stdout.buffer = io.BytesIO()
+            mock_termios.tcgetattr.return_value = ["old"]
+
+            # Simulate two rapid Code signals (0.5s apart < 3s threshold)
+            mock_time.monotonic = MagicMock(side_effect=[1.0, 1.5])
+
+            mock_ws = AsyncMock()
+            mock_ws_mod.connect = MagicMock(
+                return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=mock_ws),
+                    __aexit__=AsyncMock(return_value=False),
+                )
+            )
+
+            exit_code = asyncio.run(
+                _interactive_session("wss://test/ws", get_token_fn)
+            )
+
+        assert exit_code == 0
+        # Connected twice: first attempt + one reconnect, then stopped
         assert mock_ws_mod.connect.call_count == 2
 
     def test_sigterm_restores_terminal(self):
