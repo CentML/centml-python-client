@@ -292,8 +292,8 @@ async def _interactive_session(ws_url, token):
         screen = pyte.Screen(cols, rows)
         stream = pyte.Stream(screen)
 
-        # Clear local screen before starting.
-        sys.stdout.buffer.write(b"\033[2J\033[H")
+        # Switch to alternate screen buffer (disables scrollback) and clear.
+        sys.stdout.buffer.write(b"\033[?1049h\033[2J\033[H")
         sys.stdout.buffer.flush()
 
         headers = {"Authorization": f"Bearer {token}"}
@@ -324,8 +324,8 @@ async def _interactive_session(ws_url, token):
             return exit_code
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-        # Restore cursor visibility and attributes.
-        sys.stdout.buffer.write(b"\033[?25h\033[0m\n")
+        # Leave alternate screen buffer, restore cursor and attributes.
+        sys.stdout.buffer.write(b"\033[?1049l\033[?25h\033[0m")
         sys.stdout.buffer.flush()
 
 
