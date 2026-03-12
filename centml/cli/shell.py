@@ -173,27 +173,26 @@ async def _interactive_session(ws_url, token):
                 )
 
             async def _force_initial_redraw():
-                """Force SIGWINCH on the remote by toggling the PTY width.
+                """Set PTY dimensions from inside the shell and clear screen.
 
-                The initial resize may arrive before the shell starts, so by
-                the time the shell reads its PTY size, it's already correct
-                and no SIGWINCH fires. Toggling cols forces two SIGWINCHes,
-                making readline redraw the prompt at the right width.
+                The WebSocket resize message may not reliably update the
+                remote PTY size (race with shell startup, ArgoCD buffering).
+                Sending ``stty rows R cols C`` directly through stdin is
+                authoritative -- it always works because the shell itself
+                calls the TIOCSWINSZ ioctl.  The leading space keeps the
+                command out of bash history when HISTCONTROL=ignorespace.
                 """
                 try:
                     await asyncio.sleep(0.5)
                     r, c = shutil.get_terminal_size()
                     await ws.send(
-                        json.dumps({"operation": "resize", "rows": r, "cols": c + 1})
+                        json.dumps(
+                            {
+                                "operation": "stdin",
+                                "data": f" stty rows {r} cols {c}; clear\n",
+                            }
+                        )
                     )
-                    await asyncio.sleep(0.05)
-                    await ws.send(
-                        json.dumps({"operation": "resize", "rows": r, "cols": c})
-                    )
-                    await asyncio.sleep(0.1)
-                    # Ctrl+L clears screen and forces the shell to redraw
-                    # its prompt at the now-correct terminal width.
-                    await ws.send(json.dumps({"operation": "stdin", "data": "\x0c"}))
                 except Exception:
                     pass
 
