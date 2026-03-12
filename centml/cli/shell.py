@@ -143,6 +143,12 @@ async def _interactive_session(ws_url, token):
     old_settings = termios.tcgetattr(fd)
     try:
         tty.setraw(fd)
+        # setraw disables OPOST, which means \n won't be translated to \r\n.
+        # The remote PTY may send bare \n; re-enable output post-processing
+        # so the local terminal handles the translation (like xterm.js does).
+        mode = termios.tcgetattr(fd)
+        mode[1] = mode[1] | termios.OPOST
+        termios.tcsetattr(fd, termios.TCSANOW, mode)
         rows, cols = shutil.get_terminal_size()
 
         headers = {"Authorization": f"Bearer {token}"}
