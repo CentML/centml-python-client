@@ -73,26 +73,49 @@ def _resolve_pod(cclient, deployment_id, pod_name=None):
     return running_pods[0]
 
 
-async def _forward_io(ws):
+async def _forward_io(ws, fix_dimensions=False):
     """Bidirectional forwarding between local stdin/stdout and WebSocket.
+
+    Args:
+        ws: WebSocket connection.
+        fix_dimensions: When True, send ``stty rows R cols C`` through stdin
+            on the first output message to fix the remote PTY dimensions,
+            then clear the screen so the prompt redraws at the correct width.
 
     Returns the remote exit code.
     """
     loop = asyncio.get_running_loop()
     exit_code = 0
     stdin_fd = sys.stdin.fileno()
-
     stdin_closed = asyncio.Event()
+    dimensions_fixed = not fix_dimensions
 
     async def _read_ws():
-        nonlocal exit_code
+        nonlocal exit_code, dimensions_fixed
         async for raw_msg in ws:
             msg = json.loads(raw_msg)
             if msg.get("data"):
-                sys.stdout.buffer.write(msg["data"].encode("utf-8", errors="replace"))
+                if not dimensions_fixed:
+                    dimensions_fixed = True
+                    r, c = shutil.get_terminal_size()
+                    # Set PTY size from inside the shell and clear screen.
+                    # Leading space keeps the command out of bash history.
+                    await ws.send(
+                        json.dumps(
+                            {
+                                "operation": "stdin",
+                                "data": f" stty rows {r} cols {c} 2>/dev/null; clear\n",
+                            }
+                        )
+                    )
+                # Convert bare \n to \r\n (equivalent to xterm.js convertEol).
+                # The remote PTY may send lone \n; without this the cursor
+                # moves down without returning to column 0.
+                text = msg["data"].replace("\n", "\r\n")
+                sys.stdout.buffer.write(text.encode("utf-8", errors="replace"))
                 sys.stdout.buffer.flush()
             elif msg.get("error"):
-                sys.stderr.write(f"Error: {msg['error']}\n")
+                sys.stderr.write(f"Error: {msg['error']}\r\n")
                 sys.stderr.flush()
             if "Code" in msg:
                 exit_code = msg["Code"]
@@ -154,14 +177,6 @@ async def _interactive_session(ws_url, token):
     old_settings = termios.tcgetattr(fd)
     try:
         tty.setraw(fd)
-        # Re-enable output post-processing so the local terminal converts
-        # bare \n to \r\n.  The remote PTY may send lone \n (Kubernetes
-        # exec PTY behavior).  xterm.js handles this with convertEol;
-        # for a raw CLI terminal we need OPOST.  Extra \r before \n from
-        # a remote that already sends \r\n is harmless.
-        attrs = termios.tcgetattr(fd)
-        attrs[1] |= termios.OPOST
-        termios.tcsetattr(fd, termios.TCSANOW, attrs)
         rows, cols = shutil.get_terminal_size()
 
         headers = {"Authorization": f"Bearer {token}"}
@@ -180,35 +195,10 @@ async def _interactive_session(ws_url, token):
                     ws.send(json.dumps({"operation": "resize", "rows": r, "cols": c}))
                 )
 
-            async def _force_initial_redraw():
-                """Toggle PTY width to force SIGWINCH, then Ctrl+L to redraw.
-
-                The initial resize may arrive before the remote shell
-                starts, so the shell never sees a SIGWINCH.  Toggling
-                cols by +1/-1 guarantees a size change and SIGWINCH.
-                Ctrl+L then clears the screen so the prompt redraws at
-                the correct width.
-                """
-                try:
-                    await asyncio.sleep(0.5)
-                    r, c = shutil.get_terminal_size()
-                    await ws.send(
-                        json.dumps({"operation": "resize", "rows": r, "cols": c + 1})
-                    )
-                    await asyncio.sleep(0.05)
-                    await ws.send(
-                        json.dumps({"operation": "resize", "rows": r, "cols": c})
-                    )
-                    await asyncio.sleep(0.1)
-                    await ws.send(json.dumps({"operation": "stdin", "data": "\x0c"}))
-                except Exception:
-                    pass
-
-            asyncio.create_task(_force_initial_redraw())
             loop.add_signal_handler(signal.SIGWINCH, _send_resize)
 
             try:
-                exit_code = await _forward_io(ws)
+                exit_code = await _forward_io(ws, fix_dimensions=True)
             finally:
                 loop.remove_signal_handler(signal.SIGWINCH)
 
