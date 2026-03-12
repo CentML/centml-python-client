@@ -27,7 +27,9 @@ import tty
 
 def _build_ws_url(api_url, deployment_id, pod_name, shell=None):
     """Build the WebSocket URL for a terminal connection."""
-    ws_base = api_url.replace("https://", "wss://").replace("http://", "ws://")
+    parsed = urllib.parse.urlparse(api_url)
+    ws_scheme = "wss" if parsed.scheme == "https" else "ws"
+    ws_base = parsed._replace(scheme=ws_scheme).geturl()
     url = f"{ws_base}/deployments/{deployment_id}/terminal?pod={urllib.parse.quote(pod_name)}"
     if shell:
         url += f"&shell={urllib.parse.quote(shell)}"
