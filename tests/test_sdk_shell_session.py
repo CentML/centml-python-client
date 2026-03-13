@@ -297,22 +297,6 @@ class TestExecSession:
 
         assert exit_code == 0
 
-    def test_sets_zero_close_timeout_after_done(self):
-        """After END marker, close_timeout should be 0 to avoid waiting for server close."""
-        ws = AsyncMock()
-        messages = [json.dumps({"data": f"{BEGIN_MARKER}\nhello\n{END_MARKER}:0\n"})]
-        ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
-        ws.close_timeout = 2
-
-        with patch("centml.sdk.shell.session.websockets") as mock_ws_mod:
-            mock_ws_mod.connect = MagicMock(
-                return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
-            )
-
-            asyncio.run(exec_session("wss://test/ws", "fake-token", "echo hello"))
-
-        assert ws.close_timeout == 0
-
     def test_handles_ansi_around_markers(self):
         """Markers wrapped in ANSI codes are still detected via pyte."""
         ws = AsyncMock()
@@ -345,9 +329,11 @@ class TestExecSession:
 
 
 class TestForwardIo:
-    """Tests for forward_io exit detection via idle timeout.
+    """Tests for forward_io WebSocket forwarding.
 
     Uses a real pipe fd so ``loop.add_reader`` works without OS errors.
+    The server sends a close frame (code=1000) when the shell exits,
+    so forward_io relies on ConnectionClosed to terminate cleanly.
     """
 
     def _run_forward_io(self, ws, shutdown=None):
@@ -375,7 +361,7 @@ class TestForwardIo:
             os.close(read_fd)
 
     def test_connection_closed_returns_zero(self):
-        """ConnectionClosed returns 0."""
+        """ConnectionClosed (server close frame) returns 0."""
         import websockets as _ws_lib
 
         ws = AsyncMock()
@@ -383,40 +369,8 @@ class TestForwardIo:
 
         assert self._run_forward_io(ws) == 0
 
-    def test_exit_echo_at_end_exits_immediately(self):
-        """'exit\\r\\n' at end of data (no trailing prompt) exits immediately."""
-        ws = AsyncMock()
-        ws.recv = AsyncMock(
-            side_effect=[
-                json.dumps({"data": "\r\n\x1b[?2004l\rexit\r\n"}),
-                # Should never be called -- _read_ws returns before this.
-                json.dumps({"data": "should not reach"}),
-            ]
-        )
-
-        assert self._run_forward_io(ws) == 0
-        # Only one recv call -- exited immediately after exit echo.
-        assert ws.recv.call_count == 1
-
-    def test_exit_echo_with_prompt_continues(self):
-        """'exit\\r\\n' followed by a new prompt is not a real exit."""
-        import websockets as _ws_lib
-
-        ws = AsyncMock()
-        ws.recv = AsyncMock(
-            side_effect=[
-                # ``echo exit`` -- exit echo with prompt trailing.
-                json.dumps({"data": "\r\n\x1b[?2004l\rexit\r\n\x1b[?2004huser@host:~$ "}),
-                _ws_lib.ConnectionClosed(None, None),
-            ]
-        )
-
-        assert self._run_forward_io(ws) == 0
-        # Both recv calls made -- did not exit after the first message.
-        assert ws.recv.call_count == 2
-
-    def test_normal_data_no_early_exit(self):
-        """Data without 'exit\\r\\n' does not trigger early exit."""
+    def test_data_then_close_returns_zero(self):
+        """Normal data followed by server close frame returns 0."""
         import websockets as _ws_lib
 
         ws = AsyncMock()

@@ -98,9 +98,8 @@ async def forward_io(ws, screen, stream, shutdown):
     addressing, line wrapping, and colors are rendered correctly
     regardless of the remote PTY dimensions.
 
-    The platform API proxy does not close the WebSocket when the remote
-    shell exits, so we detect the ``exit`` echo and use a short idle
-    timeout to break out.
+    The platform API proxy sends a close frame (code=1000) when the
+    remote shell exits, so _read_ws terminates via ConnectionClosed.
 
     Args:
         ws: WebSocket connection.
@@ -118,14 +117,9 @@ async def forward_io(ws, screen, stream, shutdown):
     async def _read_ws():
         _log.debug("[read_ws] started")
         msg_count = 0
-        recv_timeout = None
         try:
             while True:
-                try:
-                    raw_msg = await asyncio.wait_for(ws.recv(), timeout=recv_timeout)
-                except asyncio.TimeoutError:
-                    _log.debug("[read_ws] idle timeout (%.1fs) after %d msgs -- shell exited", recv_timeout, msg_count)
-                    return
+                raw_msg = await ws.recv()
                 msg_count += 1
                 msg = json.loads(raw_msg)
                 keys = list(msg.keys())
@@ -135,26 +129,6 @@ async def forward_io(ws, screen, stream, shutdown):
                 if data:
                     stream.feed(data.replace("\n", "\r\n"))
                     render_dirty(screen, sys.stdout.buffer)
-                    # Detect shell exit echo.  When the user runs ``exit``,
-                    # the remote PTY echoes ``exit\r\n`` as the final
-                    # output with nothing after it.  If ``exit\r\n`` appears
-                    # mid-message (e.g. ``echo exit`` produces
-                    # ``exit\r\n<prompt>``), the shell is still alive.
-                    idx = data.rfind("exit\r\n")
-                    if idx != -1:
-                        after_exit = data[idx + len("exit\r\n") :]
-                        if after_exit.strip():
-                            # New prompt follows -- shell is still alive.
-                            _log.debug("[read_ws] exit echo with trailing data, not a real exit")
-                            recv_timeout = None
-                        else:
-                            # Nothing meaningful after exit -- shell exited.
-                            _log.debug("[read_ws] detected exit echo at end of data, exiting")
-                            return
-                    elif recv_timeout is not None:
-                        # We previously armed a timeout but got more data
-                        # (shouldn't normally happen, but be safe).
-                        recv_timeout = None
                 elif msg.get("error"):
                     _log.debug("[read_ws] error: %s", msg["error"])
                     stream.feed(f"Error: {msg['error']}\r\n")
@@ -279,8 +253,6 @@ async def interactive_session(ws_url, token):
             finally:
                 loop.remove_signal_handler(signal.SIGWINCH)
 
-            # Skip close handshake -- proxy won't send close frame promptly.
-            ws.close_timeout = 0
             _log.debug("[session] exiting with code %d", exit_code)
             return exit_code
     finally:
@@ -364,9 +336,5 @@ async def exec_session(ws_url, token, command):
                     break
         except websockets.ConnectionClosed as exc:
             _log.debug("[exec] ConnectionClosed: %s", exc)
-        if is_done:
-            # Skip the close handshake -- the platform API proxy does not
-            # proactively close its end, so waiting wastes close_timeout seconds.
-            ws.close_timeout = 0
         _log.debug("[exec] returning exit_code=%d", exit_code)
         return exit_code
