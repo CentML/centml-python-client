@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import logging
+import os
 import shutil
 import signal
 import sys
@@ -18,6 +20,22 @@ from centml.cli.cluster import handle_exception
 from centml.sdk import PodStatus, auth
 from centml.sdk.api import get_centml_client
 from centml.sdk.config import settings
+
+_log = logging.getLogger("centml.cli.shell")
+
+
+def _setup_debug_log():
+    """Configure file-based debug logging (stdout unusable in raw mode)."""
+    log_path = os.environ.get(
+        "CENTML_SHELL_DEBUG_LOG", "/tmp/centml_shell_debug.log"
+    )
+    handler = logging.FileHandler(log_path, mode="w")
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s.%(msecs)03d %(message)s", datefmt="%H:%M:%S")
+    )
+    _log.addHandler(handler)
+    _log.setLevel(logging.DEBUG)
+    _log.debug("=== shell debug log started (pid=%d) ===", os.getpid())
 
 
 # ---------------------------------------------------------------------------
@@ -224,29 +242,50 @@ async def _forward_io(ws, screen, stream, shutdown):
 
     async def _read_ws():
         nonlocal exit_code, should_reconnect
+        _log.debug("[read_ws] started")
+        msg_count = 0
         try:
             async for raw_msg in ws:
+                msg_count += 1
                 msg = json.loads(raw_msg)
+                keys = list(msg.keys())
+                data_snippet = ""
+                if msg.get("data"):
+                    data_snippet = repr(msg["data"][:120])
+                _log.debug(
+                    "[read_ws] msg#%d keys=%s data=%s",
+                    msg_count, keys, data_snippet,
+                )
                 if msg.get("data"):
                     # pyte expects \r\n; remote PTY may send bare \n
                     # (same as xterm.js ``convertEol: true``).
                     stream.feed(msg["data"].replace("\n", "\r\n"))
                     _render_dirty(screen, sys.stdout.buffer)
                 elif msg.get("error"):
+                    _log.debug("[read_ws] error: %s", msg["error"])
                     stream.feed(f"Error: {msg['error']}\r\n")
                     _render_dirty(screen, sys.stdout.buffer)
                 # ArgoCD sends {"Code": ...} as a reconnect signal (token
                 # refresh), not a shell exit code. Mirror ArgoCD UI behavior:
                 # disconnect and reconnect with a fresh token.
                 if "Code" in msg:
+                    _log.debug(
+                        "[read_ws] got Code=%s, setting should_reconnect=True",
+                        msg["Code"],
+                    )
                     should_reconnect = True
                     return
-        except websockets.ConnectionClosed:
+            _log.debug("[read_ws] ws iterator exhausted after %d msgs", msg_count)
+        except websockets.ConnectionClosed as exc:
+            _log.debug(
+                "[read_ws] ConnectionClosed after %d msgs: %s", msg_count, exc,
+            )
             # Backend proxy may not send a clean close frame when
             # ArgoCD disconnects after the remote shell exits.
             return
 
     async def _read_stdin():
+        _log.debug("[read_stdin] started")
         read_queue = asyncio.Queue()
 
         def _on_stdin_ready():
@@ -254,6 +293,7 @@ async def _forward_io(ws, screen, stream, shutdown):
             if data:
                 read_queue.put_nowait(data)
             else:
+                _log.debug("[read_stdin] stdin EOF")
                 stdin_closed.set()
 
         loop.add_reader(stdin_fd, _on_stdin_ready)
@@ -263,6 +303,7 @@ async def _forward_io(ws, screen, stream, shutdown):
                     data = await asyncio.wait_for(read_queue.get(), timeout=0.5)
                 except asyncio.TimeoutError:
                     continue
+                _log.debug("[read_stdin] sending %d bytes: %s", len(data), repr(data[:40]))
                 try:
                     await ws.send(
                         json.dumps(
@@ -275,7 +316,12 @@ async def _forward_io(ws, screen, stream, shutdown):
                         )
                     )
                 except websockets.ConnectionClosed:
+                    _log.debug("[read_stdin] ws closed on send")
                     return
+            _log.debug(
+                "[read_stdin] loop exited: stdin_closed=%s shutdown=%s",
+                stdin_closed.is_set(), shutdown.is_set(),
+            )
         finally:
             loop.remove_reader(stdin_fd)
 
@@ -283,12 +329,18 @@ async def _forward_io(ws, screen, stream, shutdown):
         while not shutdown.is_set():
             await asyncio.sleep(0.2)
 
-    tasks = [
-        asyncio.create_task(_read_ws()),
-        asyncio.create_task(_read_stdin()),
-        asyncio.create_task(_watch_shutdown()),
-    ]
+    _log.debug("[forward_io] creating tasks")
+    task_ws = asyncio.create_task(_read_ws())
+    task_stdin = asyncio.create_task(_read_stdin())
+    task_shutdown = asyncio.create_task(_watch_shutdown())
+    tasks = [task_ws, task_stdin, task_shutdown]
+    task_names = {id(task_ws): "read_ws", id(task_stdin): "read_stdin", id(task_shutdown): "watch_shutdown"}
+
     done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    done_names = [task_names[id(t)] for t in done]
+    pending_names = [task_names[id(t)] for t in pending]
+    _log.debug("[forward_io] first completed: done=%s pending=%s", done_names, pending_names)
+
     for t in pending:
         t.cancel()
     for t in pending:
@@ -298,7 +350,12 @@ async def _forward_io(ws, screen, stream, shutdown):
             pass
     for t in done:
         if t.exception() is not None:
+            _log.debug("[forward_io] task exception: %s", t.exception())
             raise t.exception()
+    _log.debug(
+        "[forward_io] returning exit_code=%d should_reconnect=%s",
+        exit_code, should_reconnect,
+    )
     return (exit_code, should_reconnect)
 
 
@@ -350,12 +407,17 @@ async def _interactive_session(ws_url, get_token_fn):
 
         try:
             last_code_time = -999.0
+            attempt = 0
             while True:
+                attempt += 1
+                _log.debug("[session] attempt #%d, fetching token", attempt)
                 token = get_token_fn()
                 headers = {"Authorization": f"Bearer {token}"}
+                _log.debug("[session] connecting to %s", ws_url)
                 async with websockets.connect(
                     ws_url, additional_headers=headers, close_timeout=2
                 ) as ws:
+                    _log.debug("[session] connected, sending resize %dx%d", cols, rows)
                     _ws_ref[0] = ws
                     await ws.send(
                         json.dumps(
@@ -366,15 +428,27 @@ async def _interactive_session(ws_url, get_token_fn):
                         ws, screen, stream, shutdown
                     )
                     _ws_ref[0] = None
+                    _log.debug(
+                        "[session] forward_io returned exit_code=%d reconnect=%s shutdown=%s",
+                        exit_code, should_reconnect, shutdown.is_set(),
+                    )
                     if not should_reconnect or shutdown.is_set():
+                        _log.debug("[session] exiting with code %d", exit_code)
                         return exit_code
                     # If we got two Code signals within 3 seconds the shell
                     # has genuinely exited (reconnect just opened a new
                     # session that immediately closed). Stop reconnecting.
                     now = time.monotonic()
-                    if now - last_code_time < 3.0:
+                    gap = now - last_code_time
+                    _log.debug(
+                        "[session] reconnect: gap=%.2fs last_code_time=%.2f now=%.2f",
+                        gap, last_code_time, now,
+                    )
+                    if gap < 3.0:
+                        _log.debug("[session] rapid Code, exiting with 0")
                         return 0
                     last_code_time = now
+                    _log.debug("[session] will reconnect")
         finally:
             loop.remove_signal_handler(signal.SIGWINCH)
             loop.remove_signal_handler(signal.SIGTERM)
@@ -444,9 +518,16 @@ async def _exec_session(ws_url, token, command):
         buffer = ""
         is_capturing = False
         is_done = False
+        msg_count = 0
         try:
             async for raw_msg in ws:
+                msg_count += 1
                 msg = json.loads(raw_msg)
+                keys = list(msg.keys())
+                _log.debug(
+                    "[exec] msg#%d keys=%s data_len=%d",
+                    msg_count, keys, len(msg.get("data", "")),
+                )
                 if msg.get("data"):
                     buffer += msg["data"]
                     while "\n" in buffer:
@@ -455,6 +536,7 @@ async def _exec_session(ws_url, token, command):
                             line_stream, line_screen, line.rstrip("\r")
                         )
                         if _BEGIN_MARKER in clean:
+                            _log.debug("[exec] BEGIN marker found")
                             is_capturing = True
                             continue
                         if _END_MARKER in clean:
@@ -464,21 +546,26 @@ async def _exec_session(ws_url, token, command):
                                     exit_code = int(parts[1].strip())
                                 except ValueError:
                                     pass
+                            _log.debug("[exec] END marker, exit_code=%d", exit_code)
                             is_done = True
                             break
                         if is_capturing:
                             sys.stdout.write(line + "\n")
                             sys.stdout.flush()
                 elif msg.get("error"):
+                    _log.debug("[exec] error: %s", msg["error"])
                     sys.stderr.write(f"Error: {msg['error']}\n")
                     return 1
                 if "Code" in msg and not is_done:
+                    _log.debug("[exec] Code=%s before done, returning 1", msg["Code"])
                     sys.stderr.write("Connection interrupted, please retry.\n")
                     return 1
                 if is_done:
+                    _log.debug("[exec] done, breaking")
                     break
-        except websockets.ConnectionClosed:
-            pass
+        except websockets.ConnectionClosed as exc:
+            _log.debug("[exec] ConnectionClosed: %s", exc)
+        _log.debug("[exec] returning exit_code=%d", exit_code)
         return exit_code
 
 
@@ -496,6 +583,7 @@ async def _exec_session(ws_url, token, command):
 )
 @handle_exception
 def shell(deployment_id, pod, shell_type):
+    _setup_debug_log()
     if not sys.stdin.isatty():
         raise click.ClickException("Interactive shell requires a terminal (TTY)")
 
@@ -525,6 +613,7 @@ def shell(deployment_id, pod, shell_type):
 )
 @handle_exception
 def exec_cmd(deployment_id, command, pod, shell_type):
+    _setup_debug_log()
     with get_centml_client() as cclient:
         pod_name = _resolve_pod(cclient, deployment_id, pod)
 
