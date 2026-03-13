@@ -422,6 +422,8 @@ async def _interactive_session(ws_url, token):
             finally:
                 loop.remove_signal_handler(signal.SIGWINCH)
 
+            # Skip close handshake -- proxy won't send close frame promptly.
+            ws.close_timeout = 0
             _log.debug("[session] exiting with code %d", exit_code)
             return exit_code
     finally:
@@ -534,6 +536,10 @@ async def _exec_session(ws_url, token, command):
                     break
         except websockets.ConnectionClosed as exc:
             _log.debug("[exec] ConnectionClosed: %s", exc)
+        if is_done:
+            # Skip the close handshake -- the platform API proxy does not
+            # proactively close its end, so waiting wastes close_timeout seconds.
+            ws.close_timeout = 0
         _log.debug("[exec] returning exit_code=%d", exit_code)
         return exit_code
 
