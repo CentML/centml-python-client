@@ -215,9 +215,6 @@ def _resolve_pod(cclient, deployment_id, pod_name=None):
     return running_pods[0]
 
 
-_EXIT_IDLE_TIMEOUT = 2.0
-
-
 async def _forward_io(ws, screen, stream, shutdown):
     """Bidirectional forwarding between local stdin/stdout and WebSocket.
 
@@ -268,13 +265,26 @@ async def _forward_io(ws, screen, stream, shutdown):
                 if data:
                     stream.feed(data.replace("\n", "\r\n"))
                     _render_dirty(screen, sys.stdout.buffer)
-                    # Detect shell exit echo. When the user runs ``exit``,
+                    # Detect shell exit echo.  When the user runs ``exit``,
                     # the remote PTY echoes ``exit\r\n`` as the final
-                    # output.  Switch to a short recv timeout so we exit
-                    # cleanly instead of hanging on the open WebSocket.
-                    if "exit\r\n" in data:
-                        _log.debug("[read_ws] detected exit echo, arming idle timeout")
-                        recv_timeout = _EXIT_IDLE_TIMEOUT
+                    # output with nothing after it.  If ``exit\r\n`` appears
+                    # mid-message (e.g. ``echo exit`` produces
+                    # ``exit\r\n<prompt>``), the shell is still alive.
+                    idx = data.rfind("exit\r\n")
+                    if idx != -1:
+                        after_exit = data[idx + len("exit\r\n"):]
+                        if after_exit.strip():
+                            # New prompt follows -- shell is still alive.
+                            _log.debug("[read_ws] exit echo with trailing data, not a real exit")
+                            recv_timeout = None
+                        else:
+                            # Nothing meaningful after exit -- shell exited.
+                            _log.debug("[read_ws] detected exit echo at end of data, exiting")
+                            return
+                    elif recv_timeout is not None:
+                        # We previously armed a timeout but got more data
+                        # (shouldn't normally happen, but be safe).
+                        recv_timeout = None
                 elif msg.get("error"):
                     _log.debug("[read_ws] error: %s", msg["error"])
                     stream.feed(f"Error: {msg['error']}\r\n")
