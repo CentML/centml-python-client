@@ -10,13 +10,7 @@ from centml.sdk import auth
 from centml.sdk.api import get_centml_client
 from centml.sdk.config import settings
 from centml.sdk.shell import ShellError
-from centml.sdk.shell.session import (
-    build_ws_url,
-    exec_session,
-    interactive_session,
-    resolve_pod,
-    setup_debug_log,
-)
+from centml.sdk.shell.session import build_ws_url, exec_session, interactive_session, resolve_pod, setup_debug_log
 
 
 @click.command(help="Open an interactive shell to a deployment pod")
