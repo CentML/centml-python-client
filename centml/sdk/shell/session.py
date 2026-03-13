@@ -85,8 +85,7 @@ def resolve_pod(cclient, deployment_id, pod_name=None) -> Tuple[str, Optional[st
     warning = None
     if len(running_pods) > 1:
         warning = (
-            f"Multiple running pods found, connecting to {running_pods[0]}. "
-            f"Use --pod to specify a different pod."
+            f"Multiple running pods found, connecting to {running_pods[0]}. " f"Use --pod to specify a different pod."
         )
     return running_pods[0], warning
 

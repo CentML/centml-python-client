@@ -7,7 +7,6 @@ import pytest
 
 from centml.sdk.shell.renderer import char_to_sgr, color_sgr, pyte_extract_text, render_dirty
 
-
 # ===========================================================================
 # color_sgr
 # ===========================================================================

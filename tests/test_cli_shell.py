@@ -7,7 +7,6 @@ import pytest
 
 from centml.sdk.shell.exceptions import NoPodAvailableError, PodNotFoundError
 
-
 # ===========================================================================
 # Click commands
 # ===========================================================================
@@ -146,9 +145,9 @@ class TestExecCommand:
         from centml.cli.shell import exec_cmd
         from click.testing import CliRunner
 
-        with patch(
-            "centml.cli.shell.resolve_pod", side_effect=PodNotFoundError("Pod 'x' not found")
-        ), patch("centml.cli.shell.get_centml_client") as mock_ctx, patch("centml.cli.shell.setup_debug_log"):
+        with patch("centml.cli.shell.resolve_pod", side_effect=PodNotFoundError("Pod 'x' not found")), patch(
+            "centml.cli.shell.get_centml_client"
+        ) as mock_ctx, patch("centml.cli.shell.setup_debug_log"):
 
             mock_ctx.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
