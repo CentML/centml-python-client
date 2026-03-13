@@ -8,7 +8,6 @@ import shutil
 import signal
 import sys
 import termios
-import time
 import tty
 import urllib.parse
 
@@ -216,12 +215,19 @@ def _resolve_pod(cclient, deployment_id, pod_name=None):
     return running_pods[0]
 
 
+_EXIT_IDLE_TIMEOUT = 2.0
+
+
 async def _forward_io(ws, screen, stream, shutdown):
     """Bidirectional forwarding between local stdin/stdout and WebSocket.
 
     Output flows through a pyte terminal emulator so that cursor
     addressing, line wrapping, and colors are rendered correctly
     regardless of the remote PTY dimensions.
+
+    The platform API proxy does not close the WebSocket when the remote
+    shell exits, so we detect the ``exit`` echo and use a short idle
+    timeout to break out.
 
     Args:
         ws: WebSocket connection.
@@ -230,58 +236,53 @@ async def _forward_io(ws, screen, stream, shutdown):
         shutdown: asyncio.Event set by signal handlers to request exit.
 
     Returns:
-        Tuple of (exit_code, should_reconnect). ``should_reconnect`` is True
-        when the server sent a ``{"Code": ...}`` reconnect signal (ArgoCD
-        token refresh), False on normal exit or connection close.
+        The exit code (always 0 for interactive sessions).
     """
     loop = asyncio.get_running_loop()
-    exit_code = 0
-    should_reconnect = False
     stdin_fd = sys.stdin.fileno()
     stdin_closed = asyncio.Event()
 
     async def _read_ws():
-        nonlocal exit_code, should_reconnect
         _log.debug("[read_ws] started")
         msg_count = 0
+        recv_timeout = None
         try:
-            async for raw_msg in ws:
+            while True:
+                try:
+                    raw_msg = await asyncio.wait_for(ws.recv(), timeout=recv_timeout)
+                except asyncio.TimeoutError:
+                    _log.debug(
+                        "[read_ws] idle timeout (%.1fs) after %d msgs -- shell exited",
+                        recv_timeout, msg_count,
+                    )
+                    return
                 msg_count += 1
                 msg = json.loads(raw_msg)
                 keys = list(msg.keys())
-                data_snippet = ""
-                if msg.get("data"):
-                    data_snippet = repr(msg["data"][:120])
+                data = msg.get("data", "")
+                data_snippet = repr(data[:120]) if data else ""
                 _log.debug(
                     "[read_ws] msg#%d keys=%s data=%s",
                     msg_count, keys, data_snippet,
                 )
-                if msg.get("data"):
-                    # pyte expects \r\n; remote PTY may send bare \n
-                    # (same as xterm.js ``convertEol: true``).
-                    stream.feed(msg["data"].replace("\n", "\r\n"))
+                if data:
+                    stream.feed(data.replace("\n", "\r\n"))
                     _render_dirty(screen, sys.stdout.buffer)
+                    # Detect shell exit echo. When the user runs ``exit``,
+                    # the remote PTY echoes ``exit\r\n`` as the final
+                    # output.  Switch to a short recv timeout so we exit
+                    # cleanly instead of hanging on the open WebSocket.
+                    if "exit\r\n" in data:
+                        _log.debug("[read_ws] detected exit echo, arming idle timeout")
+                        recv_timeout = _EXIT_IDLE_TIMEOUT
                 elif msg.get("error"):
                     _log.debug("[read_ws] error: %s", msg["error"])
                     stream.feed(f"Error: {msg['error']}\r\n")
                     _render_dirty(screen, sys.stdout.buffer)
-                # ArgoCD sends {"Code": ...} as a reconnect signal (token
-                # refresh), not a shell exit code. Mirror ArgoCD UI behavior:
-                # disconnect and reconnect with a fresh token.
-                if "Code" in msg:
-                    _log.debug(
-                        "[read_ws] got Code=%s, setting should_reconnect=True",
-                        msg["Code"],
-                    )
-                    should_reconnect = True
-                    return
-            _log.debug("[read_ws] ws iterator exhausted after %d msgs", msg_count)
         except websockets.ConnectionClosed as exc:
             _log.debug(
                 "[read_ws] ConnectionClosed after %d msgs: %s", msg_count, exc,
             )
-            # Backend proxy may not send a clean close frame when
-            # ArgoCD disconnects after the remote shell exits.
             return
 
     async def _read_stdin():
@@ -352,23 +353,16 @@ async def _forward_io(ws, screen, stream, shutdown):
         if t.exception() is not None:
             _log.debug("[forward_io] task exception: %s", t.exception())
             raise t.exception()
-    _log.debug(
-        "[forward_io] returning exit_code=%d should_reconnect=%s",
-        exit_code, should_reconnect,
-    )
-    return (exit_code, should_reconnect)
+    _log.debug("[forward_io] returning exit_code=0")
+    return 0
 
 
-async def _interactive_session(ws_url, get_token_fn):
+async def _interactive_session(ws_url, token):
     """Run an interactive terminal session over WebSocket.
 
-    Enters raw mode, forwards I/O bidirectionally, and restores terminal on
-    exit.  Reconnects automatically when the server sends a ``{"Code": ...}``
-    token-refresh signal (matching ArgoCD UI behavior).
-
-    Args:
-        ws_url: WebSocket URL for the terminal endpoint.
-        get_token_fn: Callable that returns a fresh bearer token string.
+    Enters raw mode, forwards I/O bidirectionally, and restores terminal
+    on exit.  SIGTERM and SIGHUP are caught to ensure terminal settings
+    are always restored.
     """
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
@@ -389,71 +383,40 @@ async def _interactive_session(ws_url, get_token_fn):
         loop.add_signal_handler(signal.SIGTERM, shutdown.set)
         loop.add_signal_handler(signal.SIGHUP, shutdown.set)
 
-        # _ws_ref holds the current websocket so SIGWINCH can reach it.
-        _ws_ref = [None]
+        headers = {"Authorization": f"Bearer {token}"}
+        _log.debug("[session] connecting to %s", ws_url)
+        async with websockets.connect(
+            ws_url, additional_headers=headers, close_timeout=2
+        ) as ws:
+            _log.debug("[session] connected, sending resize %dx%d", cols, rows)
 
-        def _send_resize():
-            c, r = shutil.get_terminal_size()
-            screen.resize(r, c)
-            screen.dirty.update(range(r))
-            if _ws_ref[0] is not None:
+            def _send_resize():
+                c, r = shutil.get_terminal_size()
+                screen.resize(r, c)
+                screen.dirty.update(range(r))
                 asyncio.ensure_future(
-                    _ws_ref[0].send(
+                    ws.send(
                         json.dumps({"operation": "resize", "rows": r, "cols": c})
                     )
                 )
 
-        loop.add_signal_handler(signal.SIGWINCH, _send_resize)
+            loop.add_signal_handler(signal.SIGWINCH, _send_resize)
 
-        try:
-            last_code_time = -999.0
-            attempt = 0
-            while True:
-                attempt += 1
-                _log.debug("[session] attempt #%d, fetching token", attempt)
-                token = get_token_fn()
-                headers = {"Authorization": f"Bearer {token}"}
-                _log.debug("[session] connecting to %s", ws_url)
-                async with websockets.connect(
-                    ws_url, additional_headers=headers, close_timeout=2
-                ) as ws:
-                    _log.debug("[session] connected, sending resize %dx%d", cols, rows)
-                    _ws_ref[0] = ws
-                    await ws.send(
-                        json.dumps(
-                            {"operation": "resize", "rows": rows, "cols": cols}
-                        )
-                    )
-                    exit_code, should_reconnect = await _forward_io(
-                        ws, screen, stream, shutdown
-                    )
-                    _ws_ref[0] = None
-                    _log.debug(
-                        "[session] forward_io returned exit_code=%d reconnect=%s shutdown=%s",
-                        exit_code, should_reconnect, shutdown.is_set(),
-                    )
-                    if not should_reconnect or shutdown.is_set():
-                        _log.debug("[session] exiting with code %d", exit_code)
-                        return exit_code
-                    # If we got two Code signals within 3 seconds the shell
-                    # has genuinely exited (reconnect just opened a new
-                    # session that immediately closed). Stop reconnecting.
-                    now = time.monotonic()
-                    gap = now - last_code_time
-                    _log.debug(
-                        "[session] reconnect: gap=%.2fs last_code_time=%.2f now=%.2f",
-                        gap, last_code_time, now,
-                    )
-                    if gap < 3.0:
-                        _log.debug("[session] rapid Code, exiting with 0")
-                        return 0
-                    last_code_time = now
-                    _log.debug("[session] will reconnect")
-        finally:
-            loop.remove_signal_handler(signal.SIGWINCH)
-            loop.remove_signal_handler(signal.SIGTERM)
-            loop.remove_signal_handler(signal.SIGHUP)
+            await ws.send(
+                json.dumps(
+                    {"operation": "resize", "rows": rows, "cols": cols}
+                )
+            )
+            try:
+                exit_code = await _forward_io(ws, screen, stream, shutdown)
+            finally:
+                loop.remove_signal_handler(signal.SIGWINCH)
+
+            _log.debug("[session] exiting with code %d", exit_code)
+            return exit_code
     finally:
+        loop.remove_signal_handler(signal.SIGTERM)
+        loop.remove_signal_handler(signal.SIGHUP)
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         # Leave alternate screen buffer, restore cursor and attributes.
         sys.stdout.buffer.write(b"\033[?1049l\033[?25h\033[0m")
@@ -556,10 +519,6 @@ async def _exec_session(ws_url, token, command):
                     _log.debug("[exec] error: %s", msg["error"])
                     sys.stderr.write(f"Error: {msg['error']}\n")
                     return 1
-                if "Code" in msg and not is_done:
-                    _log.debug("[exec] Code=%s before done, returning 1", msg["Code"])
-                    sys.stderr.write("Connection interrupted, please retry.\n")
-                    return 1
                 if is_done:
                     _log.debug("[exec] done, breaking")
                     break
@@ -593,7 +552,8 @@ def shell(deployment_id, pod, shell_type):
     ws_url = _build_ws_url(
         settings.CENTML_PLATFORM_API_URL, deployment_id, pod_name, shell_type
     )
-    exit_code = asyncio.run(_interactive_session(ws_url, auth.get_centml_token))
+    token = auth.get_centml_token()
+    exit_code = asyncio.run(_interactive_session(ws_url, token))
     sys.exit(exit_code)
 
 
