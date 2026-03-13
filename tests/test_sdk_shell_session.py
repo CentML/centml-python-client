@@ -106,7 +106,7 @@ class TestResolvePod:
         cclient.get_status_v3.return_value = _make_status_response(
             [_make_revision([_make_pod("pod-a", PodStatus.RUNNING), _make_pod("pod-b", PodStatus.RUNNING)])]
         )
-        pod_name, warning = resolve_pod(cclient, 1)
+        pod_name, _ = resolve_pod(cclient, 1)
         assert pod_name == "pod-a"
 
     def test_raises_no_running_pods(self):
@@ -152,7 +152,7 @@ class TestResolvePod:
         cclient.get_status_v3.return_value = _make_status_response(
             [_make_revision([_make_pod(None, PodStatus.RUNNING), _make_pod("pod-real", PodStatus.RUNNING)])]
         )
-        pod_name, warning = resolve_pod(cclient, 1)
+        pod_name, _ = resolve_pod(cclient, 1)
         assert pod_name == "pod-real"
 
     def test_multiple_revisions(self):
@@ -163,7 +163,7 @@ class TestResolvePod:
                 _make_revision([_make_pod("pod-new", PodStatus.RUNNING)]),
             ]
         )
-        pod_name, warning = resolve_pod(cclient, 1)
+        pod_name, _ = resolve_pod(cclient, 1)
         assert pod_name == "pod-new"
 
     def test_multiple_running_pods_returns_warning(self):
@@ -175,6 +175,7 @@ class TestResolvePod:
         assert pod_name == "pod-a"
         assert warning is not None
         assert "Multiple running pods" in warning
+        assert "--pod" not in warning
 
     def test_single_running_pod_no_warning(self):
         cclient = MagicMock()
@@ -258,9 +259,10 @@ class TestExecSession:
         ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
 
         captured = []
-        with patch("centml.sdk.shell.session.websockets") as mock_ws_mod, patch(
-            "centml.sdk.shell.session.sys"
-        ) as mock_sys:
+        with (
+            patch("centml.sdk.shell.session.websockets") as mock_ws_mod,
+            patch("centml.sdk.shell.session.sys") as mock_sys,
+        ):
             mock_ws_mod.connect = MagicMock(
                 return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
             )
@@ -306,9 +308,10 @@ class TestExecSession:
         ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
 
         captured = []
-        with patch("centml.sdk.shell.session.websockets") as mock_ws_mod, patch(
-            "centml.sdk.shell.session.sys"
-        ) as mock_sys:
+        with (
+            patch("centml.sdk.shell.session.websockets") as mock_ws_mod,
+            patch("centml.sdk.shell.session.sys") as mock_sys,
+        ):
             mock_ws_mod.connect = MagicMock(
                 return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
             )
@@ -348,9 +351,10 @@ class TestForwardIo:
         read_fd, write_fd = os.pipe()
         os.close(write_fd)
         try:
-            with patch("centml.sdk.shell.session.sys") as mock_sys, patch(
-                "centml.sdk.shell.session.websockets"
-            ) as mock_ws_mod:
+            with (
+                patch("centml.sdk.shell.session.sys") as mock_sys,
+                patch("centml.sdk.shell.session.websockets") as mock_ws_mod,
+            ):
                 mock_sys.stdin.fileno.return_value = read_fd
                 mock_sys.stdin.buffer.read1 = lambda n: b""
                 mock_sys.stdout.buffer = io.BytesIO()
@@ -397,9 +401,10 @@ class TestForwardIo:
         read_fd, write_fd = os.pipe()
         os.close(write_fd)
         try:
-            with patch("centml.sdk.shell.session.sys") as mock_sys, patch(
-                "centml.sdk.shell.session.websockets"
-            ) as mock_ws_mod:
+            with (
+                patch("centml.sdk.shell.session.sys") as mock_sys,
+                patch("centml.sdk.shell.session.websockets") as mock_ws_mod,
+            ):
                 mock_sys.stdin.fileno.return_value = read_fd
                 mock_sys.stdin.buffer.read1 = lambda n: b""
                 mock_sys.stdout.buffer = io.BytesIO()
@@ -425,12 +430,12 @@ class TestForwardIo:
 
 class TestInteractiveSessionTerminalRestore:
     def test_restores_terminal_on_exception(self):
-        with patch("centml.sdk.shell.session.sys") as mock_sys, patch(
-            "centml.sdk.shell.session.termios"
-        ) as mock_termios, patch("centml.sdk.shell.session.tty"), patch(
-            "centml.sdk.shell.session.websockets"
-        ) as mock_ws_mod:
-
+        with (
+            patch("centml.sdk.shell.session.sys") as mock_sys,
+            patch("centml.sdk.shell.session.termios") as mock_termios,
+            patch("centml.sdk.shell.session.tty"),
+            patch("centml.sdk.shell.session.websockets") as mock_ws_mod,
+        ):
             mock_sys.stdin.fileno.return_value = 0
             mock_sys.stdout.buffer = io.BytesIO()
             mock_termios.tcgetattr.return_value = ["old_settings"]
@@ -472,12 +477,12 @@ class TestInteractiveSessionSignals:
                 signal_handlers[signal.SIGTERM]()
             return 0
 
-        with patch("centml.sdk.shell.session.sys") as mock_sys, patch(
-            "centml.sdk.shell.session.termios"
-        ) as mock_termios, patch("centml.sdk.shell.session.tty"), patch(
-            "centml.sdk.shell.session.websockets"
-        ) as mock_ws_mod, patch(
-            "centml.sdk.shell.session.forward_io", side_effect=_fake_forward_io
+        with (
+            patch("centml.sdk.shell.session.sys") as mock_sys,
+            patch("centml.sdk.shell.session.termios") as mock_termios,
+            patch("centml.sdk.shell.session.tty"),
+            patch("centml.sdk.shell.session.websockets") as mock_ws_mod,
+            patch("centml.sdk.shell.session.forward_io", side_effect=_fake_forward_io),
         ):
             mock_sys.stdin.fileno.return_value = 0
             mock_sys.stdout.buffer = io.BytesIO()

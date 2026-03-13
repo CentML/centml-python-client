@@ -10,7 +10,7 @@ from centml.sdk import auth
 from centml.sdk.api import get_centml_client
 from centml.sdk.config import settings
 from centml.sdk.shell import ShellError
-from centml.sdk.shell.session import build_ws_url, exec_session, interactive_session, resolve_pod, setup_debug_log
+from centml.sdk.shell.session import build_ws_url, exec_session, interactive_session, resolve_pod
 
 
 @click.command(help="Open an interactive shell to a deployment pod")
@@ -19,7 +19,6 @@ from centml.sdk.shell.session import build_ws_url, exec_session, interactive_ses
 @click.option("--shell", "shell_type", default=None, type=click.Choice(["bash", "sh", "zsh"]), help="Shell type")
 @handle_exception
 def shell(deployment_id, pod, shell_type):
-    setup_debug_log()
     if not sys.stdin.isatty():
         raise click.ClickException("Interactive shell requires a terminal (TTY)")
 
@@ -29,7 +28,7 @@ def shell(deployment_id, pod, shell_type):
         except ShellError as exc:
             raise click.ClickException(str(exc)) from exc
     if warning:
-        click.echo(warning, err=True)
+        click.echo(f"{warning} Use --pod to specify a different pod.", err=True)
 
     ws_url = build_ws_url(settings.CENTML_PLATFORM_API_URL, deployment_id, pod_name, shell_type)
     token = auth.get_centml_token()
@@ -44,14 +43,13 @@ def shell(deployment_id, pod, shell_type):
 @click.option("--shell", "shell_type", default=None, type=click.Choice(["bash", "sh", "zsh"]), help="Shell type")
 @handle_exception
 def exec_cmd(deployment_id, command, pod, shell_type):
-    setup_debug_log()
     with get_centml_client() as cclient:
         try:
             pod_name, warning = resolve_pod(cclient, deployment_id, pod)
         except ShellError as exc:
             raise click.ClickException(str(exc)) from exc
     if warning:
-        click.echo(warning, err=True)
+        click.echo(f"{warning} Use --pod to specify a different pod.", err=True)
 
     ws_url = build_ws_url(settings.CENTML_PLATFORM_API_URL, deployment_id, pod_name, shell_type)
     token = auth.get_centml_token()
