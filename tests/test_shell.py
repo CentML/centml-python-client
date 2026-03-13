@@ -710,21 +710,37 @@ class TestForwardIo:
 
         assert self._run_forward_io(ws) == 0
 
-    def test_exit_echo_triggers_idle_timeout(self):
-        """Data containing 'exit\\r\\n' arms an idle timeout that ends the session."""
-        import websockets as _ws_lib
-
+    def test_exit_echo_at_end_exits_immediately(self):
+        """'exit\\r\\n' at end of data (no trailing prompt) exits immediately."""
         ws = AsyncMock()
-        # First recv returns exit echo, second recv times out.
         ws.recv = AsyncMock(
             side_effect=[
                 json.dumps({"data": "\r\n\x1b[?2004l\rexit\r\n"}),
-                asyncio.TimeoutError(),
+                # Should never be called -- _read_ws returns before this.
+                json.dumps({"data": "should not reach"}),
             ]
         )
 
-        with patch("centml.cli.shell._EXIT_IDLE_TIMEOUT", 0.01):
-            assert self._run_forward_io(ws) == 0
+        assert self._run_forward_io(ws) == 0
+        # Only one recv call -- exited immediately after exit echo.
+        assert ws.recv.call_count == 1
+
+    def test_exit_echo_with_prompt_continues(self):
+        """'exit\\r\\n' followed by a new prompt is not a real exit."""
+        import websockets as _ws_lib
+
+        ws = AsyncMock()
+        ws.recv = AsyncMock(
+            side_effect=[
+                # ``echo exit`` -- exit echo with prompt trailing.
+                json.dumps({"data": "\r\n\x1b[?2004l\rexit\r\n\x1b[?2004huser@host:~$ "}),
+                _ws_lib.ConnectionClosed(None, None),
+            ]
+        )
+
+        assert self._run_forward_io(ws) == 0
+        # Both recv calls made -- did not exit after the first message.
+        assert ws.recv.call_count == 2
 
     def test_normal_data_no_early_exit(self):
         """Data without 'exit\\r\\n' does not trigger early exit."""
