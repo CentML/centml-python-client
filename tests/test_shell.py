@@ -358,6 +358,29 @@ class TestExecSession:
 
         assert exit_code == 0
 
+    def test_sets_zero_close_timeout_after_done(self):
+        """After END marker, close_timeout should be 0 to avoid waiting for server close."""
+        from centml.cli.shell import _exec_session, _BEGIN_MARKER, _END_MARKER
+
+        ws = AsyncMock()
+        messages = [
+            json.dumps({"data": f"{_BEGIN_MARKER}\nhello\n{_END_MARKER}:0\n"}),
+        ]
+        ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
+        ws.close_timeout = 2
+
+        with patch("centml.cli.shell.websockets") as mock_ws_mod:
+            mock_ws_mod.connect = MagicMock(
+                return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=ws),
+                    __aexit__=AsyncMock(return_value=False),
+                )
+            )
+
+            asyncio.run(_exec_session("wss://test/ws", "fake-token", "echo hello"))
+
+        assert ws.close_timeout == 0
+
     def test_handles_ansi_around_markers(self):
         """Markers wrapped in ANSI codes are still detected via pyte."""
         from centml.cli.shell import _exec_session, _BEGIN_MARKER, _END_MARKER
