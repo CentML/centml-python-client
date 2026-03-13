@@ -12,7 +12,6 @@ from centml.sdk.shell.session import (
     forward_io,
     interactive_session,
     resolve_pod,
-    setup_debug_log,
 )
 
 __all__ = [
@@ -23,7 +22,6 @@ __all__ = [
     "char_to_sgr",
     "render_dirty",
     "pyte_extract_text",
-    "setup_debug_log",
     "build_ws_url",
     "resolve_pod",
     "forward_io",

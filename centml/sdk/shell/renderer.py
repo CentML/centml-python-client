@@ -1,7 +1,5 @@
 """Pyte terminal screen renderer -- converts pyte's in-memory buffer to ANSI."""
 
-import pyte
-
 _PYTE_FG_TO_SGR = {
     "default": "39",
     "black": "30",
