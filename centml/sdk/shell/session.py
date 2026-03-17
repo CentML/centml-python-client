@@ -6,13 +6,11 @@ import sys
 import termios
 import tty
 import urllib.parse
-from typing import Optional, Tuple
 
 import pyte
 import websockets
 
 from centml.sdk import PodStatus
-from centml.sdk.shell.exceptions import NoPodAvailableError, PodNotFoundError
 
 # exec_session wraps commands between BEGIN/END markers so it can separate
 # real command output from shell noise (prompt, echoed input, login banners).
@@ -35,27 +33,14 @@ def build_ws_url(api_url, deployment_id, pod_name, shell_type=None):
     return url
 
 
-def resolve_pod(cclient, deployment_id, pod_name=None) -> Tuple[str, Optional[str]]:
+def get_running_pods(cclient, deployment_id) -> list[str]:
     status = cclient.get_status_v3(deployment_id)
     running_pods = []
     for revision in status.revision_pod_details_list or []:
         for pod in revision.pod_details_list or []:
             if pod.status == PodStatus.RUNNING and pod.name:
                 running_pods.append(pod.name)
-
-    if not running_pods:
-        raise NoPodAvailableError(f"No running pods found for deployment {deployment_id}")
-
-    if pod_name is not None:
-        if pod_name not in running_pods:
-            pods_list = ", ".join(running_pods)
-            raise PodNotFoundError(f"Pod '{pod_name}' not found. Available running pods: {pods_list}")
-        return pod_name, None
-
-    warning = None
-    if len(running_pods) > 1:
-        warning = f"Multiple running pods found, connecting to {running_pods[0]}."
-    return running_pods[0], warning
+    return running_pods
 
 
 async def forward_io(ws, term_size, shutdown):
