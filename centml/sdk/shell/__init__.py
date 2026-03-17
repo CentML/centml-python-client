@@ -1,5 +1,3 @@
-"""SDK shell module -- reusable shell/exec session logic (no Click dependency)."""
-
 from centml.sdk.shell.exceptions import NoPodAvailableError, PodNotFoundError, ShellError
 from centml.sdk.shell.session import build_ws_url, exec_session, interactive_session, resolve_pod
 

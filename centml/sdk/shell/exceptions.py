@@ -1,6 +1,3 @@
-"""SDK exceptions for shell operations (no Click dependency)."""
-
-
 class ShellError(Exception):
     """Base exception for shell operations."""
 
