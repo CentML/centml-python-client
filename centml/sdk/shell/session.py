@@ -1,5 +1,3 @@
-"""WebSocket session logic for shell and exec commands (no Click dependency)."""
-
 import asyncio
 import json
 import shutil
@@ -16,17 +14,18 @@ import websockets
 from centml.sdk import PodStatus
 from centml.sdk.shell.exceptions import NoPodAvailableError, PodNotFoundError
 
+# exec_session wraps commands between BEGIN/END markers so it can separate
+# real command output from shell noise (prompt, echoed input, login banners).
 BEGIN_MARKER = "__CENTML_BEGIN_5f3a__"
 END_MARKER = "__CENTML_END_5f3a__"
 
 # printf octal \137 = underscore. The decoded output matches BEGIN/END_MARKER,
 # but the literal command text does NOT, so shell echo won't trigger false matches.
-PRINTF_BEGIN = r"\137\137CENTML_BEGIN_5f3a\137\137"
-PRINTF_END = r"\137\137CENTML_END_5f3a\137\137"
+PRINTF_BEGIN = BEGIN_MARKER.replace("__", r"\137\137")
+PRINTF_END = END_MARKER.replace("__", r"\137\137")
 
 
 def build_ws_url(api_url, deployment_id, pod_name, shell_type=None):
-    """Build the WebSocket URL for a terminal connection."""
     parsed = urllib.parse.urlparse(api_url)
     ws_scheme = "wss" if parsed.scheme == "https" else "ws"
     ws_base = parsed._replace(scheme=ws_scheme).geturl()
@@ -37,20 +36,6 @@ def build_ws_url(api_url, deployment_id, pod_name, shell_type=None):
 
 
 def resolve_pod(cclient, deployment_id, pod_name=None) -> Tuple[str, Optional[str]]:
-    """Resolve which pod to connect to.
-
-    Args:
-        cclient: CentMLClient instance.
-        deployment_id: The deployment ID.
-        pod_name: Optional specific pod name to target.
-
-    Returns:
-        Tuple of (pod_name, optional_warning_message).
-
-    Raises:
-        NoPodAvailableError: If no running pods found.
-        PodNotFoundError: If specified pod not found among running pods.
-    """
     status = cclient.get_status_v3(deployment_id)
     running_pods = []
     for revision in status.revision_pod_details_list or []:
@@ -102,7 +87,7 @@ async def forward_io(ws, term_size, shutdown):
                 msg = json.loads(raw_msg)
                 data = msg.get("data", "")
                 if data:
-                    sys.stdout.buffer.write(data.replace("\n", "\r\n").encode("utf-8", errors="replace"))
+                    sys.stdout.buffer.write(data.encode("utf-8", errors="replace"))
                     sys.stdout.buffer.flush()
                 elif msg.get("error"):
                     sys.stderr.buffer.write(f"Error: {msg['error']}\r\n".encode())

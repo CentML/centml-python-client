@@ -19,7 +19,7 @@ def _connect_args(deployment_id, pod, shell_type):
             pod_name, warning = resolve_pod(cclient, deployment_id, pod)
         except ShellError as exc:
             raise click.ClickException(str(exc)) from exc
-    if warning:
+    if warning is not None:
         click.echo(f"{warning} Use --pod to specify a different pod.", err=True)
 
     ws_url = build_ws_url(settings.CENTML_PLATFORM_API_URL, deployment_id, pod_name, shell_type)
