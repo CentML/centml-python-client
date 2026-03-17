@@ -178,6 +178,8 @@ async def interactive_session(ws_url, token):
     """
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
+    loop = asyncio.get_running_loop()
+    signals_installed = False
     try:
         tty.setraw(fd)
         cols, rows = shutil.get_terminal_size()
@@ -189,11 +191,10 @@ async def interactive_session(ws_url, token):
         sys.stdout.buffer.write(b"\033[?1049h\033[2J\033[H")
         sys.stdout.buffer.flush()
 
-        loop = asyncio.get_running_loop()
-
         shutdown = asyncio.Event()
         loop.add_signal_handler(signal.SIGTERM, shutdown.set)
         loop.add_signal_handler(signal.SIGHUP, shutdown.set)
+        signals_installed = True
 
         headers = {"Authorization": f"Bearer {token}"}
         async with websockets.connect(ws_url, additional_headers=headers, close_timeout=2) as ws:
@@ -214,8 +215,9 @@ async def interactive_session(ws_url, token):
 
             return exit_code
     finally:
-        loop.remove_signal_handler(signal.SIGTERM)
-        loop.remove_signal_handler(signal.SIGHUP)
+        if signals_installed:
+            loop.remove_signal_handler(signal.SIGTERM)
+            loop.remove_signal_handler(signal.SIGHUP)
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         # Leave alternate screen buffer, restore cursor and attributes.
         sys.stdout.buffer.write(b"\033[?1049l\033[?25h\033[0m")
