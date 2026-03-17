@@ -15,7 +15,6 @@ import websockets
 
 from centml.sdk import PodStatus
 from centml.sdk.shell.exceptions import NoPodAvailableError, PodNotFoundError
-from centml.sdk.shell.renderer import pyte_extract_text, render_dirty
 
 BEGIN_MARKER = "__CENTML_BEGIN_5f3a__"
 END_MARKER = "__CENTML_END_5f3a__"
@@ -74,20 +73,19 @@ def resolve_pod(cclient, deployment_id, pod_name=None) -> Tuple[str, Optional[st
     return running_pods[0], warning
 
 
-async def forward_io(ws, screen, stream, shutdown):
+async def forward_io(ws, term_size, shutdown):
     """Bidirectional forwarding between local stdin/stdout and WebSocket.
 
-    Output flows through a pyte terminal emulator so that cursor
-    addressing, line wrapping, and colors are rendered correctly
-    regardless of the remote PTY dimensions.
+    Output is written directly to stdout (the local terminal is in raw
+    mode, so ANSI sequences from the remote PTY are rendered natively).
 
     The platform API proxy sends a close frame (code=1000) when the
     remote shell exits, so _read_ws terminates via ConnectionClosed.
 
     Args:
         ws: WebSocket connection.
-        screen: pyte.Screen instance sized to the local terminal.
-        stream: pyte.Stream attached to *screen*.
+        term_size: Mutable list ``[cols, rows]`` kept up-to-date by the
+            SIGWINCH handler in ``interactive_session``.
         shutdown: asyncio.Event set by signal handlers to request exit.
 
     Returns:
@@ -104,11 +102,11 @@ async def forward_io(ws, screen, stream, shutdown):
                 msg = json.loads(raw_msg)
                 data = msg.get("data", "")
                 if data:
-                    stream.feed(data.replace("\n", "\r\n"))
-                    render_dirty(screen, sys.stdout.buffer)
+                    sys.stdout.buffer.write(data.replace("\n", "\r\n").encode("utf-8", errors="replace"))
+                    sys.stdout.buffer.flush()
                 elif msg.get("error"):
-                    stream.feed(f"Error: {msg['error']}\r\n")
-                    render_dirty(screen, sys.stdout.buffer)
+                    sys.stderr.buffer.write(f"Error: {msg['error']}\r\n".encode())
+                    sys.stderr.buffer.flush()
         except websockets.ConnectionClosed:
             return
 
@@ -135,8 +133,8 @@ async def forward_io(ws, screen, stream, shutdown):
                             {
                                 "operation": "stdin",
                                 "data": data.decode("utf-8", errors="replace"),
-                                "rows": screen.lines,
-                                "cols": screen.columns,
+                                "rows": term_size[1],
+                                "cols": term_size[0],
                             }
                         )
                     )
@@ -183,13 +181,7 @@ async def interactive_session(ws_url, token):
     try:
         tty.setraw(fd)
         cols, rows = shutil.get_terminal_size()
-
-        screen = pyte.Screen(cols, rows)
-        stream = pyte.Stream(screen)
-
-        # Switch to alternate screen buffer (disables scrollback) and clear.
-        sys.stdout.buffer.write(b"\033[?1049h\033[2J\033[H")
-        sys.stdout.buffer.flush()
+        term_size = [cols, rows]
 
         shutdown = asyncio.Event()
         loop.add_signal_handler(signal.SIGTERM, shutdown.set)
@@ -201,15 +193,14 @@ async def interactive_session(ws_url, token):
 
             def _send_resize():
                 c, r = shutil.get_terminal_size()
-                screen.resize(r, c)
-                screen.dirty.update(range(r))
+                term_size[0], term_size[1] = c, r
                 asyncio.ensure_future(ws.send(json.dumps({"operation": "resize", "rows": r, "cols": c})))
 
             loop.add_signal_handler(signal.SIGWINCH, _send_resize)
 
             await ws.send(json.dumps({"operation": "resize", "rows": rows, "cols": cols}))
             try:
-                exit_code = await forward_io(ws, screen, stream, shutdown)
+                exit_code = await forward_io(ws, term_size, shutdown)
             finally:
                 loop.remove_signal_handler(signal.SIGWINCH)
 
@@ -219,9 +210,17 @@ async def interactive_session(ws_url, token):
             loop.remove_signal_handler(signal.SIGTERM)
             loop.remove_signal_handler(signal.SIGHUP)
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-        # Leave alternate screen buffer, restore cursor and attributes.
-        sys.stdout.buffer.write(b"\033[?1049l\033[?25h\033[0m")
-        sys.stdout.buffer.flush()
+
+
+def _pyte_extract_text(line_stream, line_screen, text):
+    """Feed text through a single-row pyte screen and return visible characters.
+
+    More robust than regex ANSI stripping: pyte interprets all VT100/VT220
+    sequences including OSC, cursor repositioning, and truecolor escapes.
+    """
+    line_screen.reset()
+    line_stream.feed(text)
+    return "".join(line_screen.buffer[0][col].data for col in range(line_screen.columns)).rstrip()
 
 
 async def exec_session(ws_url, token, command):
@@ -265,7 +264,7 @@ async def exec_session(ws_url, token, command):
                     buffer += msg["data"]
                     while "\n" in buffer:
                         line, buffer = buffer.split("\n", 1)
-                        clean = pyte_extract_text(line_stream, line_screen, line.rstrip("\r"))
+                        clean = _pyte_extract_text(line_stream, line_screen, line.rstrip("\r"))
                         if BEGIN_MARKER in clean:
                             is_capturing = True
                             continue

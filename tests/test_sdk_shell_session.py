@@ -8,7 +8,6 @@ import signal
 import urllib.parse
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pyte
 import pytest
 
 from platform_api_python_client import PodStatus, PodDetails, RevisionPodDetails
@@ -343,8 +342,6 @@ class TestForwardIo:
         """Helper: run forward_io with a real pipe fd standing in for stdin."""
         import websockets as _ws_lib
 
-        screen = pyte.Screen(80, 24)
-        stream = pyte.Stream(screen)
         if shutdown is None:
             shutdown = asyncio.Event()
 
@@ -358,9 +355,10 @@ class TestForwardIo:
                 mock_sys.stdin.fileno.return_value = read_fd
                 mock_sys.stdin.buffer.read1 = lambda n: b""
                 mock_sys.stdout.buffer = io.BytesIO()
+                mock_sys.stderr.buffer = io.BytesIO()
                 mock_ws_mod.ConnectionClosed = _ws_lib.ConnectionClosed
 
-                return asyncio.run(forward_io(ws, screen, stream, shutdown))
+                return asyncio.run(forward_io(ws, [80, 24], shutdown))
         finally:
             os.close(read_fd)
 
@@ -388,14 +386,11 @@ class TestForwardIo:
 
         ws = AsyncMock()
 
-        # recv that blocks until cancelled (simulates open WS with no data)
         async def _block_recv():
             await asyncio.sleep(999)
 
         ws.recv = _block_recv
 
-        screen = pyte.Screen(80, 24)
-        stream = pyte.Stream(screen)
         shutdown = asyncio.Event()
 
         read_fd, write_fd = os.pipe()
@@ -408,6 +403,7 @@ class TestForwardIo:
                 mock_sys.stdin.fileno.return_value = read_fd
                 mock_sys.stdin.buffer.read1 = lambda n: b""
                 mock_sys.stdout.buffer = io.BytesIO()
+                mock_sys.stderr.buffer = io.BytesIO()
                 mock_ws_mod.ConnectionClosed = _ws_lib.ConnectionClosed
 
                 async def _run():
@@ -416,7 +412,7 @@ class TestForwardIo:
                         shutdown.set()
 
                     asyncio.create_task(_set_shutdown())
-                    return await forward_io(ws, screen, stream, shutdown)
+                    return await forward_io(ws, [80, 24], shutdown)
 
                 assert asyncio.run(_run()) == 0
         finally:
@@ -472,7 +468,7 @@ class TestInteractiveSessionSignals:
         def _fake_remove_signal_handler(sig):
             signal_handlers.pop(sig, None)
 
-        async def _fake_forward_io(ws, screen, stream, shutdown):
+        async def _fake_forward_io(ws, term_size, shutdown):
             if signal.SIGTERM in signal_handlers:
                 signal_handlers[signal.SIGTERM]()
             return 0

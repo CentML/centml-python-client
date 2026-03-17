@@ -29,7 +29,7 @@ def _connect_args(deployment_id, pod, shell_type):
 
 @click.command(help="Open an interactive shell to a deployment pod")
 @click.argument("deployment_id", type=int)
-@click.option("--pod", default=None, help="Specific pod name (auto-selects first running pod)")
+@click.option("--pod", default=None, help="Specify a pod name (Default: auto-selects first running pod)")
 @click.option("--shell", "shell_type", default=None, type=click.Choice(["bash", "sh", "zsh"]), help="Shell type")
 @handle_exception
 def shell(deployment_id, pod, shell_type):
