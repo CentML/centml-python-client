@@ -9,7 +9,14 @@ from centml.cli.cluster import handle_exception
 from centml.sdk import auth
 from centml.sdk.api import get_centml_client
 from centml.sdk.config import settings
-from centml.sdk.shell import PodNotFoundError, ShellError, build_ws_url, exec_session, get_running_pods, interactive_session
+from centml.sdk.shell import (
+    PodNotFoundError,
+    ShellError,
+    build_ws_url,
+    exec_session,
+    get_running_pods,
+    interactive_session,
+)
 
 
 def _resolve_pod(running_pods: list[str], pod_name: str) -> str:
@@ -20,16 +27,13 @@ def _resolve_pod(running_pods: list[str], pod_name: str) -> str:
     return pod_name
 
 
-
 def _select_pod(running_pods, deployment_id):
     click.echo(f"Multiple running pods found for deployment {deployment_id}:")
     for i, name in enumerate(running_pods, 1):
         click.echo(f"  [{i}] {name}")
 
     choice = click.prompt(
-        "Select a pod",
-        type=click.IntRange(1, len(running_pods)),
-        prompt_suffix=f" [1-{len(running_pods)}]: ",
+        "Select a pod", type=click.IntRange(1, len(running_pods)), prompt_suffix=f" [1-{len(running_pods)}]: "
     )
     return running_pods[choice - 1]
 
@@ -60,7 +64,9 @@ def _connect_args(deployment_id, pod, shell_type, first_pod=False):
 @click.argument("deployment_id", type=int)
 @click.option("--pod", default=None, help="Specify a pod name")
 @click.option("--shell", "shell_type", default=None, type=click.Choice(["bash", "sh", "zsh"]), help="Shell type")
-@click.option("--first-pod", is_flag=True, default=False, help="Auto-select the first running pod (skip interactive selection)")
+@click.option(
+    "--first-pod", is_flag=True, default=False, help="Auto-select the first running pod (skip interactive selection)"
+)
 @handle_exception
 def shell(deployment_id, pod, shell_type, first_pod):
     if not sys.stdin.isatty():
@@ -76,7 +82,9 @@ def shell(deployment_id, pod, shell_type, first_pod):
 @click.argument("command", nargs=-1, required=True, type=click.UNPROCESSED)
 @click.option("--pod", default=None, help="Specific pod name")
 @click.option("--shell", "shell_type", default=None, type=click.Choice(["bash", "sh", "zsh"]), help="Shell type")
-@click.option("--first-pod", is_flag=True, default=False, help="Auto-select the first running pod (skip interactive selection)")
+@click.option(
+    "--first-pod", is_flag=True, default=False, help="Auto-select the first running pod (skip interactive selection)"
+)
 @handle_exception
 def exec_cmd(deployment_id, command, pod, shell_type, first_pod):
     ws_url, token = _connect_args(deployment_id, pod, shell_type, first_pod)
