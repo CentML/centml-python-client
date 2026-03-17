@@ -12,7 +12,6 @@ import pytest
 
 from platform_api_python_client import PodStatus, PodDetails, RevisionPodDetails
 
-from centml.sdk.shell.exceptions import NoPodAvailableError, PodNotFoundError
 from centml.sdk.shell.session import (
     BEGIN_MARKER,
     END_MARKER,
@@ -20,7 +19,6 @@ from centml.sdk.shell.session import (
     exec_session,
     forward_io,
     interactive_session,
-    resolve_pod,
 )
 
 
@@ -92,98 +90,6 @@ class TestBuildWsUrl:
     def test_encodes_pod_name(self):
         url = build_ws_url("https://api.centml.com", 1, "pod name/special")
         assert "pod%20name" in url or "pod+name" in url
-
-
-# ===========================================================================
-# resolve_pod
-# ===========================================================================
-
-
-class TestResolvePod:
-    def test_selects_first_running(self):
-        cclient = MagicMock()
-        cclient.get_status_v3.return_value = _make_status_response(
-            [_make_revision([_make_pod("pod-a", PodStatus.RUNNING), _make_pod("pod-b", PodStatus.RUNNING)])]
-        )
-        pod_name, _ = resolve_pod(cclient, 1)
-        assert pod_name == "pod-a"
-
-    def test_raises_no_running_pods(self):
-        cclient = MagicMock()
-        cclient.get_status_v3.return_value = _make_status_response(
-            [_make_revision([_make_pod("pod-err", PodStatus.ERROR)])]
-        )
-        with pytest.raises(NoPodAvailableError, match="No running pods"):
-            resolve_pod(cclient, 1)
-
-    def test_raises_specified_pod_not_found(self):
-        cclient = MagicMock()
-        cclient.get_status_v3.return_value = _make_status_response(
-            [_make_revision([_make_pod("pod-a", PodStatus.RUNNING)])]
-        )
-        with pytest.raises(PodNotFoundError, match="pod-missing"):
-            resolve_pod(cclient, 1, pod_name="pod-missing")
-
-    def test_returns_specified_pod(self):
-        cclient = MagicMock()
-        cclient.get_status_v3.return_value = _make_status_response(
-            [_make_revision([_make_pod("pod-a", PodStatus.RUNNING), _make_pod("pod-b", PodStatus.RUNNING)])]
-        )
-        pod_name, warning = resolve_pod(cclient, 1, pod_name="pod-b")
-        assert pod_name == "pod-b"
-        assert warning is None
-
-    def test_empty_revision_list(self):
-        cclient = MagicMock()
-        cclient.get_status_v3.return_value = _make_status_response([])
-        with pytest.raises(NoPodAvailableError, match="No running pods"):
-            resolve_pod(cclient, 1)
-
-    def test_none_revision_list(self):
-        cclient = MagicMock()
-        cclient.get_status_v3.return_value = _make_status_response(None)
-        cclient.get_status_v3.return_value.revision_pod_details_list = None
-        with pytest.raises(NoPodAvailableError, match="No running pods"):
-            resolve_pod(cclient, 1)
-
-    def test_skips_pods_without_name(self):
-        cclient = MagicMock()
-        cclient.get_status_v3.return_value = _make_status_response(
-            [_make_revision([_make_pod(None, PodStatus.RUNNING), _make_pod("pod-real", PodStatus.RUNNING)])]
-        )
-        pod_name, _ = resolve_pod(cclient, 1)
-        assert pod_name == "pod-real"
-
-    def test_multiple_revisions(self):
-        cclient = MagicMock()
-        cclient.get_status_v3.return_value = _make_status_response(
-            [
-                _make_revision([_make_pod("pod-old", PodStatus.ERROR)]),
-                _make_revision([_make_pod("pod-new", PodStatus.RUNNING)]),
-            ]
-        )
-        pod_name, _ = resolve_pod(cclient, 1)
-        assert pod_name == "pod-new"
-
-    def test_multiple_running_pods_returns_warning(self):
-        cclient = MagicMock()
-        cclient.get_status_v3.return_value = _make_status_response(
-            [_make_revision([_make_pod("pod-a", PodStatus.RUNNING), _make_pod("pod-b", PodStatus.RUNNING)])]
-        )
-        pod_name, warning = resolve_pod(cclient, 1)
-        assert pod_name == "pod-a"
-        assert warning is not None
-        assert "Multiple running pods" in warning
-        assert "--pod" not in warning
-
-    def test_single_running_pod_no_warning(self):
-        cclient = MagicMock()
-        cclient.get_status_v3.return_value = _make_status_response(
-            [_make_revision([_make_pod("pod-a", PodStatus.RUNNING)])]
-        )
-        pod_name, warning = resolve_pod(cclient, 1)
-        assert pod_name == "pod-a"
-        assert warning is None
 
 
 # ===========================================================================
