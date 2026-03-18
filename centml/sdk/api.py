@@ -27,6 +27,9 @@ class CentMLClient:
     def get_status(self, id):
         return self._api.get_deployment_status_deployments_status_deployment_id_get(id)
 
+    def get_status_v3(self, deployment_id):
+        return self._api.get_deployment_status_v3_deployments_status_v3_deployment_id_get(deployment_id)
+
     def get_inference(self, id):
         """Get Inference deployment details - automatically handles both V2 and V3 deployments"""
         # Try V3 first (recommended), fallback to V2 if deployment is V2
