@@ -8,6 +8,7 @@ from platform_api_python_client import (
     CreateComputeDeploymentRequest,
     CreateCServeV3DeploymentRequest,
     ApiException,
+    InviteUserRequest,
     Metric,
 )
 
@@ -139,6 +140,10 @@ class CentMLClient:
 
     def initialize_user(self):
         return self._api.setup_stripe_customer_payments_setup_post()
+
+    def invite_user(self, email: str):
+        request = InviteUserRequest(email=email)
+        return self._api.invite_user_organizations_invite_post(request)
 
 
 @contextmanager
