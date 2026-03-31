@@ -4,33 +4,6 @@ from contextlib import ExitStack, contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from centml.sdk.shell.exceptions import PodNotFoundError
-
-# ===========================================================================
-# _resolve_pod
-# ===========================================================================
-
-
-class TestResolvePod:
-    def test_returns_valid_pod(self):
-        from centml.cli.shell import _resolve_pod
-
-        assert _resolve_pod(["pod-a", "pod-b"], "pod-b") == "pod-b"
-
-    def test_raises_pod_not_found(self):
-        from centml.cli.shell import _resolve_pod
-
-        with pytest.raises(PodNotFoundError, match="pod-missing"):
-            _resolve_pod(["pod-a"], "pod-missing")
-
-    def test_error_lists_available_pods(self):
-        from centml.cli.shell import _resolve_pod
-
-        with pytest.raises(PodNotFoundError, match="pod-a, pod-b"):
-            _resolve_pod(["pod-a", "pod-b"], "pod-c")
-
 
 def _mock_client_ctx():
     """Return a patched get_centml_client context manager."""
@@ -59,6 +32,8 @@ def _patch_deps(*, pods=None, tty=True):
             asyncio=e(patch("centml.cli.shell.asyncio")),
             sys=e(patch("centml.cli.shell.sys")),
             build_ws_url=e(patch("centml.cli.shell.build_ws_url")),
+            interactive_session=e(patch("centml.cli.shell.interactive_session", new_callable=MagicMock)),
+            exec_session=e(patch("centml.cli.shell.exec_session", new_callable=MagicMock)),
         )
         ns.auth.get_centml_token.return_value = "token"
         ns.settings.CENTML_PLATFORM_API_URL = "https://api.centml.com"

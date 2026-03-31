@@ -1,6 +1,7 @@
 """CLI commands for interactive shell and command execution in deployment pods."""
 
 import asyncio
+import shlex
 import sys
 
 import click
@@ -9,22 +10,7 @@ from centml.cli.cluster import handle_exception
 from centml.sdk import auth
 from centml.sdk.api import get_centml_client
 from centml.sdk.config import settings
-from centml.sdk.shell import (
-    PodNotFoundError,
-    ShellError,
-    build_ws_url,
-    exec_session,
-    get_running_pods,
-    interactive_session,
-)
-
-
-def _resolve_pod(running_pods: list[str], pod_name: str) -> str:
-    """Validate that *pod_name* exists in *running_pods*."""
-    if pod_name not in running_pods:
-        pods_list = ", ".join(running_pods)
-        raise PodNotFoundError(f"Pod '{pod_name}' not found. Available running pods: {pods_list}")
-    return pod_name
+from centml.sdk.shell import build_ws_url, exec_session, get_running_pods, interactive_session
 
 
 def _select_pod(running_pods, deployment_id):
@@ -45,13 +31,19 @@ def _connect_args(deployment_id, pod, shell_type, first_pod=False):
         if not running_pods:
             raise click.ClickException(f"No running pods found for deployment {deployment_id}")
 
+        if pod is not None and pod not in running_pods:
+            pods_list = ", ".join(running_pods)
+            raise click.ClickException(f"Pod '{pod}' not found. Available running pods: {pods_list}")
+
         if pod is not None:
-            try:
-                pod_name = _resolve_pod(running_pods, pod)
-            except ShellError as exc:
-                raise click.ClickException(str(exc)) from exc
+            pod_name = pod
         elif len(running_pods) == 1 or first_pod:
             pod_name = running_pods[0]
+        elif not sys.stdin.isatty():
+            raise click.ClickException(
+                "Multiple running pods found and stdin is not a TTY. "
+                "Please specify a pod with --pod or use --first-pod."
+            )
         else:
             pod_name = _select_pod(running_pods, deployment_id)
 
@@ -88,5 +80,5 @@ def shell(deployment_id, pod, shell_type, first_pod):
 @handle_exception
 def exec_cmd(deployment_id, command, pod, shell_type, first_pod):
     ws_url, token = _connect_args(deployment_id, pod, shell_type, first_pod)
-    exit_code = asyncio.run(exec_session(ws_url, token, " ".join(command)))
+    exit_code = asyncio.run(exec_session(ws_url, token, shlex.join(command)))
     sys.exit(exit_code)

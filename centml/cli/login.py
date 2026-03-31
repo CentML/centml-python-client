@@ -50,14 +50,18 @@ class OAuthHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-type", "text/html")
         self.end_headers()
-        self.wfile.write("""
+        self.wfile.write(
+            """
             <html>
                 <body>
                     <h1>Succesfully logged into CentML CLI</h1>
                     <p>You can now close this tab and continue in the CLI.</p>
                 </body>
             </html>
-            """.encode("utf-8"))
+            """.encode(
+                "utf-8"
+            )
+        )
 
     def log_message(self, format, *args):
         # Override this to suppress logging

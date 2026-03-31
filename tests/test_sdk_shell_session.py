@@ -7,6 +7,7 @@ import os
 import signal
 import urllib.parse
 from unittest.mock import AsyncMock, MagicMock, patch
+import websockets as _ws_lib
 
 import pytest
 
@@ -105,11 +106,13 @@ class TestExecSession:
             json.dumps({"Code": 0}),
         ]
         ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
+        ws.recv = AsyncMock(side_effect=_ws_lib.ConnectionClosed(None, None))
 
         with patch("centml.sdk.shell.session.websockets") as mock_ws_mod:
             mock_ws_mod.connect = MagicMock(
                 return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
             )
+            mock_ws_mod.ConnectionClosed = _ws_lib.ConnectionClosed
 
             exit_code = asyncio.run(exec_session("wss://test/ws", "fake-token", "ls -la"))
 
@@ -130,11 +133,13 @@ class TestExecSession:
         ws = AsyncMock()
         messages = [json.dumps({"data": f"{BEGIN_MARKER}\n{END_MARKER}:42\n"}), json.dumps({"Code": 42})]
         ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
+        ws.recv = AsyncMock(side_effect=_ws_lib.ConnectionClosed(None, None))
 
         with patch("centml.sdk.shell.session.websockets") as mock_ws_mod:
             mock_ws_mod.connect = MagicMock(
                 return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
             )
+            mock_ws_mod.ConnectionClosed = _ws_lib.ConnectionClosed
 
             exit_code = asyncio.run(exec_session("wss://test/ws", "fake-token", "false"))
 
@@ -162,6 +167,7 @@ class TestExecSession:
             json.dumps({"Code": 0}),
         ]
         ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
+        ws.recv = AsyncMock(side_effect=_ws_lib.ConnectionClosed(None, None))
 
         captured = []
         with (
@@ -171,6 +177,7 @@ class TestExecSession:
             mock_ws_mod.connect = MagicMock(
                 return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
             )
+            mock_ws_mod.ConnectionClosed = _ws_lib.ConnectionClosed
             mock_sys.stdout.write = lambda s: captured.append(s)
             mock_sys.stdout.flush = MagicMock()
             mock_sys.stderr.write = MagicMock()
@@ -182,9 +189,8 @@ class TestExecSession:
         assert "real output" in output
         assert "prompt$" not in output
 
-    def test_connection_closed_returns_zero(self):
-        """Graceful exit when server closes connection without Code message."""
-        import websockets as _ws_lib
+    def test_connection_closed_without_markers_returns_one(self):
+        """Connection closed without END marker is treated as failure."""
 
         ws = AsyncMock()
 
@@ -202,15 +208,18 @@ class TestExecSession:
 
             exit_code = asyncio.run(exec_session("wss://test/ws", "fake-token", "exit"))
 
-        assert exit_code == 0
+        assert exit_code == 1
 
-    def test_handles_ansi_around_markers(self):
-        """Markers wrapped in ANSI codes are still detected via pyte."""
+    def test_end_marker_without_trailing_newline(self):
+        """END marker in buffer without trailing newline is still detected."""
         ws = AsyncMock()
-        # Markers surrounded by ANSI color codes.
-        data = f"\x1b[32m{BEGIN_MARKER}\x1b[0m\noutput\n\x1b[32m{END_MARKER}:0\x1b[0m\n"
-        messages = [json.dumps({"data": data}), json.dumps({"Code": 0})]
-        ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
+
+        async def _data_then_close():
+            yield json.dumps({"data": f"{BEGIN_MARKER}\noutput line\n{END_MARKER}:0"})
+            raise _ws_lib.ConnectionClosed(None, None)
+
+        ws.__aiter__ = MagicMock(return_value=_data_then_close())
+        ws.recv = AsyncMock(side_effect=_ws_lib.ConnectionClosed(None, None))
 
         captured = []
         with (
@@ -220,6 +229,35 @@ class TestExecSession:
             mock_ws_mod.connect = MagicMock(
                 return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
             )
+            mock_ws_mod.ConnectionClosed = _ws_lib.ConnectionClosed
+            mock_sys.stdout.write = lambda s: captured.append(s)
+            mock_sys.stdout.flush = MagicMock()
+            mock_sys.stderr.write = MagicMock()
+
+            exit_code = asyncio.run(exec_session("wss://test/ws", "fake-token", "echo test"))
+
+        assert exit_code == 0
+        output = "".join(captured)
+        assert "output line" in output
+
+    def test_handles_ansi_around_markers(self):
+        """Markers wrapped in ANSI codes are still detected via pyte."""
+        ws = AsyncMock()
+        # Markers surrounded by ANSI color codes.
+        data = f"\x1b[32m{BEGIN_MARKER}\x1b[0m\noutput\n\x1b[32m{END_MARKER}:0\x1b[0m\n"
+        messages = [json.dumps({"data": data}), json.dumps({"Code": 0})]
+        ws.__aiter__ = MagicMock(return_value=_async_iter_from_list(messages))
+        ws.recv = AsyncMock(side_effect=_ws_lib.ConnectionClosed(None, None))
+
+        captured = []
+        with (
+            patch("centml.sdk.shell.session.websockets") as mock_ws_mod,
+            patch("centml.sdk.shell.session.sys") as mock_sys,
+        ):
+            mock_ws_mod.connect = MagicMock(
+                return_value=AsyncMock(__aenter__=AsyncMock(return_value=ws), __aexit__=AsyncMock(return_value=False))
+            )
+            mock_ws_mod.ConnectionClosed = _ws_lib.ConnectionClosed
             mock_sys.stdout.write = lambda s: captured.append(s)
             mock_sys.stdout.flush = MagicMock()
             mock_sys.stderr.write = MagicMock()
@@ -246,7 +284,6 @@ class TestForwardIo:
 
     def _run_forward_io(self, ws, shutdown=None):
         """Helper: run forward_io with a real pipe fd standing in for stdin."""
-        import websockets as _ws_lib
 
         if shutdown is None:
             shutdown = asyncio.Event()
@@ -270,8 +307,6 @@ class TestForwardIo:
 
     def test_connection_closed_returns_zero(self):
         """ConnectionClosed (server close frame) returns 0."""
-        import websockets as _ws_lib
-
         ws = AsyncMock()
         ws.recv = AsyncMock(side_effect=_ws_lib.ConnectionClosed(None, None))
 
@@ -279,7 +314,6 @@ class TestForwardIo:
 
     def test_data_then_close_returns_zero(self):
         """Normal data followed by server close frame returns 0."""
-        import websockets as _ws_lib
 
         ws = AsyncMock()
         ws.recv = AsyncMock(side_effect=[json.dumps({"data": "hello\r\n"}), _ws_lib.ConnectionClosed(None, None)])
@@ -288,7 +322,6 @@ class TestForwardIo:
 
     def test_shutdown_event_exits(self):
         """shutdown event causes forward_io to exit."""
-        import websockets as _ws_lib
 
         ws = AsyncMock()
 
@@ -317,8 +350,16 @@ class TestForwardIo:
                         await asyncio.sleep(0.1)
                         shutdown.set()
 
-                    asyncio.create_task(_set_shutdown())
-                    return await forward_io(ws, [80, 24], shutdown)
+                    shutdown_task = asyncio.create_task(_set_shutdown())
+                    try:
+                        return await forward_io(ws, [80, 24], shutdown)
+                    finally:
+                        if not shutdown_task.done():
+                            shutdown_task.cancel()
+                        try:
+                            await shutdown_task
+                        except asyncio.CancelledError:
+                            pass
 
                 assert asyncio.run(_run()) == 0
         finally:

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import shutil
 import signal
 import sys
@@ -11,6 +12,8 @@ import pyte
 import websockets
 
 from centml.sdk import PodStatus
+
+logger = logging.getLogger(__name__)
 
 # exec_session wraps commands between BEGIN/END markers so it can separate
 # real command output from shell noise (prompt, echoed input, login banners).
@@ -129,8 +132,10 @@ async def forward_io(ws, term_size, shutdown):
     for t in pending:
         try:
             await t
-        except (asyncio.CancelledError, Exception):
+        except asyncio.CancelledError:
             pass
+        except Exception as e:
+            logger.warning("Unexpected exception during task cleanup: %s", e, exc_info=True)
     for t in done:
         if t.exception() is not None:
             raise t.exception()
@@ -161,10 +166,16 @@ async def interactive_session(ws_url, token):
         headers = {"Authorization": f"Bearer {token}"}
         async with websockets.connect(ws_url, additional_headers=headers, close_timeout=2) as ws:
 
+            async def _safe_send_resize(rows, cols):
+                try:
+                    await ws.send(json.dumps({"operation": "resize", "rows": rows, "cols": cols}))
+                except Exception:
+                    pass
+
             def _send_resize():
                 c, r = shutil.get_terminal_size()
                 term_size[0], term_size[1] = c, r
-                asyncio.ensure_future(ws.send(json.dumps({"operation": "resize", "rows": r, "cols": c})))
+                asyncio.create_task(_safe_send_resize(r, c))
 
             loop.add_signal_handler(signal.SIGWINCH, _send_resize)
 
@@ -191,6 +202,27 @@ def _pyte_extract_text(line_stream, line_screen, text):
     line_screen.reset()
     line_stream.feed(text)
     return "".join(line_screen.buffer[0][col].data for col in range(line_screen.columns)).rstrip()
+
+
+def _parse_exit_code(clean):
+    parts = clean.split(END_MARKER + ":")
+    if len(parts) > 1:
+        try:
+            return int(parts[1].strip())
+        except ValueError:
+            pass
+    return 0
+
+
+def _process_line(clean, raw_line, is_capturing, exit_code):
+    if BEGIN_MARKER in clean:
+        return True, False, exit_code
+    if END_MARKER in clean:
+        return is_capturing, True, _parse_exit_code(clean)
+    if is_capturing:
+        sys.stdout.write(raw_line + "\n")
+        sys.stdout.flush()
+    return is_capturing, False, exit_code
 
 
 async def exec_session(ws_url, token, command):
@@ -235,21 +267,9 @@ async def exec_session(ws_url, token, command):
                     while "\n" in buffer:
                         line, buffer = buffer.split("\n", 1)
                         clean = _pyte_extract_text(line_stream, line_screen, line.rstrip("\r"))
-                        if BEGIN_MARKER in clean:
-                            is_capturing = True
-                            continue
-                        if END_MARKER in clean:
-                            parts = clean.split(END_MARKER + ":")
-                            if len(parts) > 1:
-                                try:
-                                    exit_code = int(parts[1].strip())
-                                except ValueError:
-                                    pass
-                            is_done = True
+                        is_capturing, is_done, exit_code = _process_line(clean, line, is_capturing, exit_code)
+                        if is_done:
                             break
-                        if is_capturing:
-                            sys.stdout.write(line + "\n")
-                            sys.stdout.flush()
                 elif msg.get("error"):
                     sys.stderr.write(f"Error: {msg['error']}\n")
                     return 1
@@ -257,4 +277,24 @@ async def exec_session(ws_url, token, command):
                     break
         except websockets.ConnectionClosed:
             pass
+
+        if not is_done and buffer:
+            for remaining in buffer.split("\n"):
+                remaining = remaining.rstrip("\r")
+                if not remaining:
+                    continue
+                clean = _pyte_extract_text(line_stream, line_screen, remaining)
+                is_capturing, is_done, exit_code = _process_line(clean, remaining, is_capturing, exit_code)
+                if is_done:
+                    break
+
+        if not is_done:
+            exit_code = 1
+        else:
+            try:
+                while True:
+                    await asyncio.wait_for(ws.recv(), timeout=5)
+            except (asyncio.TimeoutError, websockets.ConnectionClosed):
+                pass
+
         return exit_code
