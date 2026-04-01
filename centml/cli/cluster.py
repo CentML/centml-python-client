@@ -232,3 +232,38 @@ def resume(id):
     with get_centml_client() as cclient:
         cclient.resume(id)
         click.echo("Deployment has been resumed")
+
+
+@click.command(help="Show GPU capacity across clusters")
+@click.option("--cluster-id", type=int, default=None, help="Filter to a specific cluster")
+@handle_exception
+def capacity(cluster_id):
+    with get_centml_client() as cclient:
+        clusters = cclient.get_capacity(cluster_id)
+
+        if clusters is None:
+            click.echo("No accelerator capacity available")
+            return
+
+        rows = []
+        for cluster in clusters:
+            for gpu in cluster.gpu_types:
+                utilization = (gpu.used_gpus / gpu.total_gpus * 100) if gpu.total_gpus > 0 else 0
+                rows.append(
+                    [
+                        cluster.cluster_name,
+                        gpu.gpu_type,
+                        gpu.used_gpus,
+                        gpu.total_gpus,
+                        f"{utilization:.1f}%",
+                    ]
+                )
+
+        click.echo(
+            tabulate(
+                rows,
+                headers=["Cluster", "GPU Type", "Used", "Total", "Utilization"],
+                tablefmt="rounded_outline",
+                disable_numparse=True,
+            )
+        )
