@@ -430,10 +430,6 @@ disable=raw-checker-failed,
         too-many-nested-blocks,
         too-many-ancestors,                 # our ir functor may have many ancestors
         redefined-builtin,
-        unsupported-assignment-operation,   # might happen in hidet script
-        unsubscriptable-object,             # might happen in hidet script
-        cell-var-from-loop,                 # might happen in hidet script
-        invalid-unary-operand-type,         # might happen in hidet script
         arguments-differ,                   # will happen when we over forward function
         consider-using-enumerate,
         no-self-use,
