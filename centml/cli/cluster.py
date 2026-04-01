@@ -249,15 +249,7 @@ def capacity(cluster_id):
         for cluster in clusters:
             for gpu in cluster.gpu_types:
                 utilization = (gpu.used_gpus / gpu.total_gpus * 100) if gpu.total_gpus > 0 else 0
-                rows.append(
-                    [
-                        cluster.cluster_name,
-                        gpu.gpu_type,
-                        gpu.used_gpus,
-                        gpu.total_gpus,
-                        f"{utilization:.1f}%",
-                    ]
-                )
+                rows.append([cluster.cluster_name, gpu.gpu_type, gpu.used_gpus, gpu.total_gpus, f"{utilization:.1f}%"])
 
         click.echo(
             tabulate(
