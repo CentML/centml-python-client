@@ -241,7 +241,7 @@ def capacity(cluster_id):
     with get_centml_client() as cclient:
         clusters = cclient.get_capacity(cluster_id)
 
-        if clusters is None:
+        if not clusters:
             click.echo("No accelerator capacity available")
             return
 
