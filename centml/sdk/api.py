@@ -145,6 +145,9 @@ class CentMLClient:
         request = InviteUserRequest(email=email)
         return self._api.invite_user_organizations_invite_post(request)
 
+    def get_capacity(self, cluster_id=None):
+        return self._api.list_cluster_capacity_capacity_get(cluster_id=cluster_id).results
+
 
 @contextmanager
 def get_centml_client():
