@@ -28,7 +28,7 @@ def format_event(event: dict) -> str:
 
 
 def main():
-    stream = False
+    stream = True
     end_time = int(datetime.now(timezone.utc).timestamp() * 1000)
     start_time = end_time - int(timedelta(hours=HOURS_BACK).total_seconds() * 1000)
 
