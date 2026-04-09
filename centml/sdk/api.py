@@ -162,8 +162,8 @@ class CentMLClient:
         revision_number: int,
         start_time: int,
         end_time: int,
+        line_count: int = 100,
         start_from_head: bool = True,
-        line_count: int = None,
         stream: bool = False,
     ):
         """Fetch logs for a deployment within a time window, handling pagination automatically.
@@ -174,6 +174,7 @@ class CentMLClient:
         If stream=True, returns a generator that yields events as each page is fetched.
         If stream=False (default), returns a flat list of all events.
         """
+
         def _iter_events():
             next_page_token = None
             while True:
