@@ -3,7 +3,7 @@ from datetime import datetime, timezone, timedelta
 from centml.sdk.api import get_centml_client
 
 # --- Configuration ---
-DEPLOYMENT_ID = 1234  # Replace with your deployment ID
+DEPLOYMENT_ID = 8170  # Replace with your deployment ID
 REVISION_NUMBER = 10
 HOURS_BACK = 1  # Fetch logs from the last N hours
 
@@ -39,6 +39,21 @@ def main():
     )
     print()
 
+    # --- Streaming: print events as each page arrives ---
+    print("=== Streaming mode ===")
+    with get_centml_client() as cclient:
+        for event in cclient.get_deployment_logs(
+            deployment_id=DEPLOYMENT_ID,
+            revision_number=REVISION_NUMBER,
+            start_time=start_time,
+            end_time=end_time,
+            start_from_head=False,
+            stream=True,
+        ):
+            print(format_event(event))
+
+    # --- Batch: collect all events then process ---
+    print("\n=== Batch mode ===")
     with get_centml_client() as cclient:
         events = cclient.get_deployment_logs(
             deployment_id=DEPLOYMENT_ID,

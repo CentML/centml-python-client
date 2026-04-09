@@ -164,31 +164,37 @@ class CentMLClient:
         end_time: int,
         start_from_head: bool = True,
         line_count: int = None,
+        stream: bool = False,
     ):
-        """Fetch all logs for a deployment within a time window, handling pagination automatically.
+        """Fetch logs for a deployment within a time window, handling pagination automatically.
 
         start_time and end_time are Unix timestamps in milliseconds.
         Use get_deployment_revisions() to find the current revision number.
+
+        If stream=True, returns a generator that yields events as each page is fetched.
+        If stream=False (default), returns a flat list of all events.
         """
-        all_events = []
-        next_page_token = None
+        def _iter_events():
+            next_page_token = None
+            while True:
+                response = self._api.get_deployment_logs_v3_deployments_logs_v3_deployment_id_revision_number_get(
+                    deployment_id=deployment_id,
+                    revision_number=revision_number,
+                    start_time=start_time,
+                    end_time=end_time,
+                    next_page_token=next_page_token,
+                    start_from_head=start_from_head,
+                    line_count=line_count,
+                )
+                yield from response.events
+                next_page_token = response.next_page_token
+                if not next_page_token:
+                    break
 
-        while True:
-            response = self._api.get_deployment_logs_v3_deployments_logs_v3_deployment_id_revision_number_get(
-                deployment_id=deployment_id,
-                revision_number=revision_number,
-                start_time=start_time,
-                end_time=end_time,
-                next_page_token=next_page_token,
-                start_from_head=start_from_head,
-                line_count=line_count,
-            )
-            all_events.extend(response.events)
-            next_page_token = response.next_page_token
-            if not next_page_token:
-                break
+        if stream:
+            return _iter_events()
 
-        return all_events
+        return list(_iter_events())
 
 
 @contextmanager
