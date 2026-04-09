@@ -89,10 +89,6 @@ py-version=3.8
 # Discover python modules and packages in the file system subtree.
 recursive=no
 
-# When enabled, pylint would attempt to guess common misconfiguration and emit
-# user-friendly hints instead of false-positive error messages.
-suggestion-mode=yes
-
 # Allow loading of arbitrary C extensions. Extensions are imported into the
 # active Python interpreter and may run arbitrary code.
 unsafe-load-any-extension=no
@@ -430,10 +426,6 @@ disable=raw-checker-failed,
         too-many-nested-blocks,
         too-many-ancestors,                 # our ir functor may have many ancestors
         redefined-builtin,
-        unsupported-assignment-operation,   # might happen in hidet script
-        unsubscriptable-object,             # might happen in hidet script
-        cell-var-from-loop,                 # might happen in hidet script
-        invalid-unary-operand-type,         # might happen in hidet script
         arguments-differ,                   # will happen when we over forward function
         consider-using-enumerate,
         no-self-use,
