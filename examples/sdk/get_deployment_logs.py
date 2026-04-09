@@ -3,7 +3,7 @@ from datetime import datetime, timezone, timedelta
 from centml.sdk.api import get_centml_client
 
 # --- Configuration ---
-DEPLOYMENT_ID = 8170  # Replace with your deployment ID
+DEPLOYMENT_ID = 1234  # Replace with your deployment ID
 REVISION_NUMBER = 10
 HOURS_BACK = 1  # Fetch logs from the last N hours
 
