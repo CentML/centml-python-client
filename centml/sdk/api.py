@@ -151,6 +151,45 @@ class CentMLClient:
     def get_capacity(self, cluster_id=None):
         return self._api.list_cluster_capacity_capacity_get(cluster_id=cluster_id).results
 
+    def get_deployment_revisions(self, deployment_id: int):
+        return self._api.get_deployment_revisions_deployments_revisions_deployment_id_get(
+            deployment_id=deployment_id
+        ).results
+
+    def get_deployment_logs(
+        self,
+        deployment_id: int,
+        revision_number: int,
+        start_time: int,
+        end_time: int,
+        start_from_head: bool = True,
+        line_count: int = None,
+    ):
+        """Fetch all logs for a deployment within a time window, handling pagination automatically.
+
+        start_time and end_time are Unix timestamps in milliseconds.
+        Use get_deployment_revisions() to find the current revision number.
+        """
+        all_events = []
+        next_page_token = None
+
+        while True:
+            response = self._api.get_deployment_logs_v3_deployments_logs_v3_deployment_id_revision_number_get(
+                deployment_id=deployment_id,
+                revision_number=revision_number,
+                start_time=start_time,
+                end_time=end_time,
+                next_page_token=next_page_token,
+                start_from_head=start_from_head,
+                line_count=line_count,
+            )
+            all_events.extend(response.events)
+            next_page_token = response.next_page_token
+            if not next_page_token:
+                break
+
+        return all_events
+
 
 @contextmanager
 def get_centml_client():
