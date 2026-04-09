@@ -28,6 +28,7 @@ def format_event(event: dict) -> str:
 
 
 def main():
+    stream = False
     end_time = int(datetime.now(timezone.utc).timestamp() * 1000)
     start_time = end_time - int(timedelta(hours=HOURS_BACK).total_seconds() * 1000)
 
@@ -39,37 +40,35 @@ def main():
     )
     print()
 
-    # --- Streaming: print events as each page arrives ---
-    print("=== Streaming mode ===")
     with get_centml_client() as cclient:
-        for event in cclient.get_deployment_logs(
-            deployment_id=DEPLOYMENT_ID,
-            revision_number=REVISION_NUMBER,
-            start_time=start_time,
-            end_time=end_time,
-            start_from_head=False,
-            stream=True,
-        ):
-            print(format_event(event))
+        if stream:
+            # Streaming: print events as each page arrives
+            for event in cclient.get_deployment_logs(
+                deployment_id=DEPLOYMENT_ID,
+                revision_number=REVISION_NUMBER,
+                start_time=start_time,
+                end_time=end_time,
+                start_from_head=False,
+                stream=stream,
+            ):
+                print(format_event(event))
+        else:
+            # Batch: collect all events then process
+            events = cclient.get_deployment_logs(
+                deployment_id=DEPLOYMENT_ID,
+                revision_number=REVISION_NUMBER,
+                start_time=start_time,
+                end_time=end_time,
+                start_from_head=False,
+            )
 
-    # --- Batch: collect all events then process ---
-    print("\n=== Batch mode ===")
-    with get_centml_client() as cclient:
-        events = cclient.get_deployment_logs(
-            deployment_id=DEPLOYMENT_ID,
-            revision_number=REVISION_NUMBER,
-            start_time=start_time,
-            end_time=end_time,
-            start_from_head=False,
-        )
+            if not events:
+                print("No logs found in the given time window.")
+                return
 
-    if not events:
-        print("No logs found in the given time window.")
-        return
-
-    print(f"Found {len(events)} log entries:\n")
-    for event in events:
-        print(format_event(event))
+            print(f"Found {len(events)} log entries:\n")
+            for event in events:
+                print(format_event(event))
 
 
 if __name__ == "__main__":
