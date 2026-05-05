@@ -103,6 +103,41 @@ def _get_ready_status(cclient, deployment):
     return click.style(style[0], fg=style[1], bg=style[2])
 
 
+def _get_status_error_messages(cclient, deployment):
+    if deployment.status != DeploymentStatus.ACTIVE:
+        return []
+
+    try:
+        status = cclient.get_status_v3(deployment.id)
+    except ApiException as e:
+        if e.status not in [400, 404]:
+            raise
+
+        status = cclient.get_status(deployment.id)
+        error_message = getattr(status, "error_message", None)
+        return [error_message] if error_message else []
+
+    messages = []
+    seen_messages = set()
+
+    def add_message(label, error_message):
+        if not error_message or error_message in seen_messages:
+            return
+
+        seen_messages.add(error_message)
+        messages.append(f"{label}: {error_message}")
+
+    for revision in status.revision_pod_details_list or []:
+        revision_label = f"revision {revision.revision_number}" if revision.revision_number is not None else "revision"
+        add_message(revision_label, revision.error_message)
+
+        for pod in revision.pod_details_list or []:
+            pod_label = pod.name or "pod"
+            add_message(f"{revision_label} / {pod_label}", pod.error_message)
+
+    return messages
+
+
 @click.command(help="List all deployments")
 @click.argument("type", type=click.Choice(list(depl_name_to_type_map.keys())), required=False, default=None)
 def ls(type):
@@ -150,23 +185,23 @@ def get(type, id):
             sys.exit("Please enter correct deployment type")
 
         ready_status = _get_ready_status(cclient, deployment)
+        status_error_messages = _get_status_error_messages(cclient, deployment)
         _, id_to_hw_map = _get_hw_to_id_map(cclient, deployment.cluster_id)
         hw = id_to_hw_map[deployment.hardware_instance_id]
+        detail_rows = [
+            ("Name", deployment.name),
+            ("Status", ready_status),
+            ("Endpoint", deployment.endpoint_url),
+            ("Created at", deployment.created_at.strftime("%Y-%m-%d %H:%M:%S")),
+            ("Hardware", f"{hw.name} ({hw.num_gpu}x {hw.gpu_type})"),
+            ("Cost", f"{hw.cost_per_hr / 100} credits/hr"),
+        ]
 
-        click.echo(
-            tabulate(
-                [
-                    ("Name", deployment.name),
-                    ("Status", ready_status),
-                    ("Endpoint", deployment.endpoint_url),
-                    ("Created at", deployment.created_at.strftime("%Y-%m-%d %H:%M:%S")),
-                    ("Hardware", f"{hw.name} ({hw.num_gpu}x {hw.gpu_type})"),
-                    ("Cost", f"{hw.cost_per_hr / 100} credits/hr"),
-                ],
-                tablefmt="rounded_outline",
-                disable_numparse=True,
-            )
-        )
+        click.echo(tabulate(detail_rows, tablefmt="rounded_outline", disable_numparse=True))
+        if status_error_messages:
+            click.echo("\nStatus errors:")
+            for message in status_error_messages:
+                click.echo(f"- {message}")
 
         click.echo("Additional deployment configurations:")
         if depl_type in [DeploymentType.INFERENCE_V2, DeploymentType.INFERENCE_V3]:
