@@ -37,9 +37,9 @@ def build_ws_url(api_url, deployment_id, pod_name, shell_type=None):
 
 
 def get_running_pods(cclient, deployment_id) -> list[str]:
-    status = cclient.get_status_v3(deployment_id)
+    status = cclient.get_status(deployment_id)
     running_pods = []
-    for revision in status.revision_pod_details_list or []:
+    for revision in getattr(status, "revision_pod_details_list", None) or []:
         for pod in revision.pod_details_list or []:
             if pod.status == PodStatus.RUNNING and pod.name:
                 running_pods.append(pod.name)

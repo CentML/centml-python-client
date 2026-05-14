@@ -16,6 +16,9 @@ from centml.sdk import auth
 from centml.sdk.config import settings
 
 
+STATUS_V3_DEPLOYMENT_TYPES = {DeploymentType.INFERENCE_V3, DeploymentType.CSERVE_V3}
+
+
 class CentMLClient:
     def __init__(self, api):
         self._api: platform_api_python_client.EXTERNALApi = api
@@ -25,11 +28,18 @@ class CentMLClient:
         deployments = sorted(results, reverse=True, key=lambda d: d.created_at)
         return deployments
 
-    def get_status(self, id):
-        return self._api.get_deployment_status_deployments_status_deployment_id_get(id)
+    def get_status(self, deployment):
+        deployment_id = getattr(deployment, "id", deployment)
+        deployment_type = getattr(deployment, "type", None)
 
-    def get_status_v3(self, deployment_id):
-        return self._api.get_deployment_status_v3_deployments_status_v3_deployment_id_get(deployment_id)
+        if deployment_type in STATUS_V3_DEPLOYMENT_TYPES:
+            return self._api.get_deployment_status_v3_deployments_status_v3_deployment_id_get(deployment_id)
+
+        status = self._api.get_deployment_status_deployments_status_deployment_id_get(deployment_id)
+        if deployment_type is None and getattr(status, "type", None) in STATUS_V3_DEPLOYMENT_TYPES:
+            return self._api.get_deployment_status_v3_deployments_status_v3_deployment_id_get(deployment_id)
+
+        return status
 
     def get_inference(self, id):
         """Get Inference deployment details - automatically handles both V2 and V3 deployments"""

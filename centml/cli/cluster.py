@@ -75,11 +75,8 @@ def _get_replica_info(deployment):
         return {"min": "N/A", "max": "N/A"}
 
 
-def _get_ready_status(cclient, deployment):
+def _get_ready_status(deployment, service_status):
     api_status = deployment.status
-    service_status = (
-        cclient.get_status(deployment.id).service_status if deployment.status == DeploymentStatus.ACTIVE else None
-    )
 
     status_styles = {
         (DeploymentStatus.PAUSED, None): ("paused", "yellow", "black"),
@@ -103,37 +100,32 @@ def _get_ready_status(cclient, deployment):
     return click.style(style[0], fg=style[1], bg=style[2])
 
 
-def _get_status_error_messages(cclient, deployment):
-    if deployment.status != DeploymentStatus.ACTIVE:
+def _append_status_error_message(messages, seen_messages, label, error_message):
+    if not error_message or error_message in seen_messages:
+        return
+
+    seen_messages.add(error_message)
+    messages.append(f"{label}: {error_message}")
+
+
+def _get_status_error_messages(status_response):
+    if status_response is None:
         return []
 
-    try:
-        status = cclient.get_status_v3(deployment.id)
-    except ApiException as e:
-        if e.status not in [400, 404]:
-            raise
-
-        status = cclient.get_status(deployment.id)
-        error_message = getattr(status, "error_message", None)
-        return [error_message] if error_message else []
+    error_message = getattr(status_response, "error_message", None)
+    if error_message:
+        return [error_message]
 
     messages = []
     seen_messages = set()
 
-    def add_message(label, error_message):
-        if not error_message or error_message in seen_messages:
-            return
-
-        seen_messages.add(error_message)
-        messages.append(f"{label}: {error_message}")
-
-    for revision in status.revision_pod_details_list or []:
+    for revision in getattr(status_response, "revision_pod_details_list", None) or []:
         revision_label = f"revision {revision.revision_number}" if revision.revision_number is not None else "revision"
-        add_message(revision_label, revision.error_message)
+        _append_status_error_message(messages, seen_messages, revision_label, revision.error_message)
 
-        for pod in revision.pod_details_list or []:
+        for pod in getattr(revision, "pod_details_list", None) or []:
             pod_label = pod.name or "pod"
-            add_message(f"{revision_label} / {pod_label}", pod.error_message)
+            _append_status_error_message(messages, seen_messages, f"{revision_label} / {pod_label}", pod.error_message)
 
     return messages
 
@@ -184,8 +176,10 @@ def get(type, id):
         else:
             sys.exit("Please enter correct deployment type")
 
-        ready_status = _get_ready_status(cclient, deployment)
-        status_error_messages = _get_status_error_messages(cclient, deployment)
+        deployment_status = cclient.get_status(deployment) if deployment.status == DeploymentStatus.ACTIVE else None
+        service_status = deployment_status.service_status if deployment_status is not None else None
+        ready_status = _get_ready_status(deployment, service_status)
+        status_error_messages = _get_status_error_messages(deployment_status)
         _, id_to_hw_map = _get_hw_to_id_map(cclient, deployment.cluster_id)
         hw = id_to_hw_map[deployment.hardware_instance_id]
         detail_rows = [
