@@ -15,7 +15,6 @@ from platform_api_python_client import (
 from centml.sdk import auth
 from centml.sdk.config import settings
 
-
 STATUS_V3_DEPLOYMENT_TYPES = {DeploymentType.INFERENCE_V3, DeploymentType.CSERVE_V3}
 
 
