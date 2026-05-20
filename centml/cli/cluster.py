@@ -176,7 +176,7 @@ def get(type, id):
         else:
             sys.exit("Please enter correct deployment type")
 
-        deployment_status = cclient.get_status(deployment) if deployment.status == DeploymentStatus.ACTIVE else None
+        deployment_status = cclient.get_status(deployment.id) if deployment.status == DeploymentStatus.ACTIVE else None
         service_status = deployment_status.service_status if deployment_status is not None else None
         ready_status = _get_ready_status(deployment, service_status)
         status_error_messages = _get_status_error_messages(deployment_status)

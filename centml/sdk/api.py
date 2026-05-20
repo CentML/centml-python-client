@@ -27,18 +27,16 @@ class CentMLClient:
         deployments = sorted(results, reverse=True, key=lambda d: d.created_at)
         return deployments
 
-    def get_status(self, deployment):
-        deployment_id = getattr(deployment, "id", deployment)
-        deployment_type = getattr(deployment, "type", None)
-
-        if deployment_type in STATUS_V3_DEPLOYMENT_TYPES:
-            return self._api.get_deployment_status_v3_deployments_status_v3_deployment_id_get(deployment_id)
-
-        status = self._api.get_deployment_status_deployments_status_deployment_id_get(deployment_id)
-        if deployment_type is None and getattr(status, "type", None) in STATUS_V3_DEPLOYMENT_TYPES:
-            return self._api.get_deployment_status_v3_deployments_status_v3_deployment_id_get(deployment_id)
-
-        return status
+    def get_status(self, id):
+        try:
+            return self._api.get_deployment_status_v3_deployments_status_v3_deployment_id_get(id)
+        except ApiException as e:
+            if e.status in [404, 400]:
+                try:
+                    return self._api.get_deployment_status_deployments_status_deployment_id_get(id)
+                except ApiException as v2_error:
+                    raise e from v2_error
+            raise
 
     def get_inference(self, id):
         """Get Inference deployment details - automatically handles both V2 and V3 deployments"""
