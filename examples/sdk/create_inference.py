@@ -23,12 +23,14 @@ def main():
             max_unavailable=0,  # Keep all pods available during updates
             healthcheck="/",
             concurrency=10,
-            # Helper reads ./nginx.conf and wraps it; pass an inline
-            # ConfigFileMount(filename=..., mount_path=..., content=...) if
-            # the content is already in memory.
+            # Mounts ./default.conf at /etc/nginx/conf.d/default.conf. mount_path
+            # is the parent directory; filename defaults to os.path.basename(path)
+            # so the resulting file lands at mount_path/filename. Pass an inline
+            # ConfigFileMount(filename=..., mount_path=..., content=...) if the
+            # content is already in memory.
             config_file=load_config_file_mount(
-                path="./nginx.conf",
-                mount_path="/etc/nginx/conf.d/default.conf",
+                path="./default.conf",
+                mount_path="/etc/nginx/conf.d",
             ),
         )
         response = cclient.create_inference(request)
