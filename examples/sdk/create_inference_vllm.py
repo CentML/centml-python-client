@@ -6,9 +6,13 @@ from centml.sdk.utils.config_file import load_config_file_mount
 
 def main():
     with get_centml_client() as cclient:
-        # Mounts ./chat_template.jinja at /etc/vllm/chat_template.jinja and
-        # tells vLLM to use it via --chat-template. mount_path is the parent
-        # directory; filename defaults to os.path.basename(path).
+        # Mounts ./vllm_config.yaml at /etc/vllm/vllm_config.yaml and lets vLLM
+        # consume the whole config via --config. mount_path is the parent
+        # directory; filename defaults to os.path.basename(path) so the file
+        # lands at mount_path/filename. The sibling vllm_config.yaml in this
+        # directory shows a realistic Llama-3.1-8B + EAGLE3 speculative-decoding
+        # setup; edit it (model, dtype, tensor-parallel-size, speculative-config,
+        # etc.) to match the workload before deploying.
         request = CreateInferenceV3DeploymentRequest(
             name="vllm-llama",
             cluster_id=1000,
@@ -23,13 +27,8 @@ def main():
             healthcheck="/health",
             concurrency=10,
             env_vars={"HF_TOKEN": "<your-hf-token>"},
-            command=(
-                "python -m vllm.entrypoints.openai.api_server "
-                "--model meta-llama/Llama-3.2-3B-Instruct "
-                "--port 8000 "
-                "--chat-template /etc/vllm/chat_template.jinja"
-            ),
-            config_file=load_config_file_mount(path="./chat_template.jinja", mount_path="/etc/vllm"),
+            command="python -m vllm.entrypoints.openai.api_server --port 8000 --config /etc/vllm/vllm_config.yaml",
+            config_file=load_config_file_mount(path="./vllm_config.yaml", mount_path="/etc/vllm"),
         )
         response = cclient.create_inference(request)
         print("Create deployment response: ", response)

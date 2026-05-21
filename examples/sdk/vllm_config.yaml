@@ -1,0 +1,23 @@
+model: meta-llama/Llama-3.1-8B-Instruct
+tokenizer: meta-llama/Llama-3.1-8B-Instruct
+runner: generate
+dtype: auto
+gpu-memory-utilization: 0.9
+max-num-seqs: 2048
+tokenizer-mode: auto
+seed: 0
+tensor-parallel-size: 1
+pipeline-parallel-size: 1
+block-size: 16
+attention-backend: FLASHINFER
+distributed-executor-backend: uni
+enable-prefix-caching: true
+enable-chunked-prefill: true
+max-num-batched-tokens: 1024
+speculative-config:
+  method: eagle3
+  model: centml/EAGLE3-Llama3.1-8B-Instruct
+  num_speculative_tokens: 3
+  draft_tensor_parallel_size: 1
+enable-auto-tool-choice: true
+tool-call-parser: llama3_json
