@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from centml.cli.cluster import _get_service_status, _get_status_error_messages
+from centml.cli.cluster import _get_ready_status, _get_service_status, _get_status_error_messages
 from centml.sdk import DeploymentStatus, DeploymentType, RolloutStatus, ServiceStatus
 
 
@@ -82,6 +82,24 @@ def test_status_error_messages_include_legacy_status_message():
     status_response = SimpleNamespace(error_message="legacy service failure")
 
     assert _get_status_error_messages(status_response) == ["legacy service failure"]
+
+
+def test_ready_status_supports_completed_service_status():
+    deployment = SimpleNamespace(status=DeploymentStatus.ACTIVE)
+
+    assert "completed" in _get_ready_status(deployment, ServiceStatus.COMPLETED)
+
+
+def test_ready_status_supports_cleaned_up_service_status():
+    deployment = SimpleNamespace(status=DeploymentStatus.ACTIVE)
+
+    assert "cleanedUp" in _get_ready_status(deployment, ServiceStatus.CLEANEDUP)
+
+
+def test_ready_status_supports_failed_service_status():
+    deployment = SimpleNamespace(status=DeploymentStatus.ACTIVE)
+
+    assert "failed" in _get_ready_status(deployment, ServiceStatus.FAILED)
 
 
 @contextmanager

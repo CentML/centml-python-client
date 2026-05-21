@@ -102,6 +102,9 @@ def _get_ready_status(deployment, service_status):
         (DeploymentStatus.ACTIVE, ServiceStatus.INITIALIZING): ("starting", "black", "white"),
         (DeploymentStatus.ACTIVE, ServiceStatus.MISSING): ("starting", "black", "white"),
         (DeploymentStatus.ACTIVE, ServiceStatus.NOTREADY): ("starting", "black", "white"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.COMPLETED): ("completed", "green", "black"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.CLEANEDUP): ("cleanedUp", "white", "black"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.FAILED): ("failed", "red", "black"),
         (DeploymentStatus.ACTIVE, ServiceStatus.ERROR): ("error", "red", "black"),
         (DeploymentStatus.ACTIVE, ServiceStatus.CREATECONTAINERCONFIGERROR): (
             "createContainerConfigError",
