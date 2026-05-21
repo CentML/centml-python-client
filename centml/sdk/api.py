@@ -7,6 +7,7 @@ from platform_api_python_client import (
     CreateInferenceV3DeploymentRequest,
     CreateComputeDeploymentRequest,
     CreateCServeV3DeploymentRequest,
+    CreateJobDeploymentRequest,
     ApiException,
     InviteUserRequest,
     Metric,
@@ -58,6 +59,9 @@ class CentMLClient:
     def get_compute(self, id):
         return self._api.get_compute_deployment_deployments_compute_deployment_id_get(id)
 
+    def get_job(self, id):
+        return self._api.get_job_deployment_deployments_job_deployment_id_get(id)
+
     def get_cserve(self, id):
         """Get CServe deployment details - automatically handles both V2 and V3 deployments"""
         # Try V3 first (recommended), fallback to V2 if deployment is V2
@@ -80,6 +84,9 @@ class CentMLClient:
 
     def create_compute(self, request: CreateComputeDeploymentRequest):
         return self._api.create_compute_deployment_deployments_compute_post(request)
+
+    def create_job(self, request: CreateJobDeploymentRequest):
+        return self._api.create_job_deployment_deployments_job_post(request)
 
     def create_cserve(self, request: CreateCServeV3DeploymentRequest):
         return self._api.create_cserve_v3_deployment_deployments_cserve_v3_post(request)

@@ -5,4 +5,4 @@ pyjwt>=2.8.0
 cryptography==46.0.7
 websockets>=16.0
 pyte>=0.8.0
-platform-api-python-client==4.9.0
+platform-api-python-client==4.10.0
