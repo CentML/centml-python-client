@@ -27,7 +27,7 @@ def main():
             healthcheck="/health",
             concurrency=10,
             env_vars={"HF_TOKEN": "<your-hf-token>"},
-            command="python -m vllm.entrypoints.openai.api_server --port 8000 --config /etc/vllm/vllm_config.yaml",
+            command="python3 -m vllm.entrypoints.openai.api_server --config /etc/vllm/vllm_config.yaml",
             config_file=load_config_file_mount(path="./vllm_config.yaml", mount_path="/etc/vllm"),
         )
         response = cclient.create_inference(request)
