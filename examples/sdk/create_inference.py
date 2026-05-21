@@ -28,10 +28,7 @@ def main():
             # so the resulting file lands at mount_path/filename. Pass an inline
             # ConfigFileMount(filename=..., mount_path=..., content=...) if the
             # content is already in memory.
-            config_file=load_config_file_mount(
-                path="./default.conf",
-                mount_path="/etc/nginx/conf.d",
-            ),
+            config_file=load_config_file_mount(path="./default.conf", mount_path="/etc/nginx/conf.d"),
         )
         response = cclient.create_inference(request)
         print("Create deployment response: ", response)
