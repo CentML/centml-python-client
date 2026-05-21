@@ -144,15 +144,16 @@ def test_get_job_routes_to_job_api_and_displays_job_config():
 
     with _patch_cluster_client() as client:
         client.get_job.return_value = deployment
+        client.get_status.return_value = SimpleNamespace(service_status=ServiceStatus.HEALTHY)
         client.get_hardware_instances.return_value = [hardware]
 
         result = runner.invoke(get, ["job", "123"])
 
     assert result.exit_code == 0
     client.get_job.assert_called_once_with(123)
-    client.get_status.assert_not_called()
+    client.get_status.assert_called_once_with(123)
     assert "test-job" in result.output
-    assert "active" in result.output
+    assert "ready" in result.output
     assert "Endpoint" not in result.output
     assert "https://jobs.example.com/test-job" not in result.output
     assert "registry.example.com/job:latest" in result.output
