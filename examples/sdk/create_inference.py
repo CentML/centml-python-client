@@ -1,6 +1,7 @@
 import centml
 from centml.sdk.api import get_centml_client
 from centml.sdk import DeploymentType, CreateInferenceV3DeploymentRequest, UserVaultType
+from centml.sdk.utils.config_file import load_config_file_mount
 
 
 def main():
@@ -22,6 +23,13 @@ def main():
             max_unavailable=0,  # Keep all pods available during updates
             healthcheck="/",
             concurrency=10,
+            # Helper reads ./nginx.conf and wraps it; pass an inline
+            # ConfigFileMount(filename=..., mount_path=..., content=...) if
+            # the content is already in memory.
+            config_file=load_config_file_mount(
+                path="./nginx.conf",
+                mount_path="/etc/nginx/conf.d/default.conf",
+            ),
         )
         response = cclient.create_inference(request)
         print("Create deployment response: ", response)
