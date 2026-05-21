@@ -39,3 +39,14 @@ def test_utf8_multibyte_content_roundtrips(tmp_path):
 def test_missing_file_raises_filenotfound(tmp_path):
     with pytest.raises(FileNotFoundError):
         load_config_file_mount(str(tmp_path / "does-not-exist.conf"), "/etc/x")
+
+
+def test_preserves_crlf_line_endings(tmp_path):
+    # Windows-authored configs use \r\n; the helper must not silently
+    # normalize them to \n when uploading to the server.
+    src = tmp_path / "windows.conf"
+    src.write_bytes(b"line1\r\nline2\r\n")
+
+    mount = load_config_file_mount(str(src), "/etc/app")
+
+    assert mount.content == "line1\r\nline2\r\n"
