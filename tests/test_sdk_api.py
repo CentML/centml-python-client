@@ -64,10 +64,7 @@ def test_create_job_delegates_to_platform_client():
     expected_response = MagicMock()
     api.create_job_deployment_deployments_job_post.return_value = expected_response
     request = CreateJobDeploymentRequest(
-        name="test-job",
-        cluster_id=1,
-        hardware_instance_id=2,
-        image_url="registry.example.com/job:latest",
+        name="test-job", cluster_id=1, hardware_instance_id=2, image_url="registry.example.com/job:latest"
     )
     client = CentMLClient(api)
 
