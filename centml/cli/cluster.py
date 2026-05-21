@@ -222,11 +222,7 @@ def get(type, id):
         else:
             sys.exit("Please enter correct deployment type")
 
-        deployment_status = (
-            None
-            if depl_type == DeploymentType.JOB or deployment.status != DeploymentStatus.ACTIVE
-            else cclient.get_status(deployment.id)
-        )
+        deployment_status = cclient.get_status(deployment.id) if deployment.status == DeploymentStatus.ACTIVE else None
         revision_number = getattr(deployment, "revision_number", None)
         service_status = _get_service_status(deployment_status, revision_number)
         ready_status = _get_ready_status(deployment, service_status)
@@ -289,8 +285,7 @@ def get(type, id):
         elif depl_type == DeploymentType.JOB:
             display_rows = [
                 ("Image", deployment.image_url),
-                ("Command", deployment.command or "None"),
-                ("Arguments", deployment.args or "None"),
+                ("Command", deployment.original_command or "None"),
                 ("Environment variables", deployment.env_vars or "None"),
                 ("Completions", deployment.completions),
                 ("Parallelism", deployment.parallelism),
