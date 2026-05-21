@@ -1,7 +1,12 @@
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
-from centml.cli.cluster import _get_service_status, _get_status_error_messages
-from centml.sdk import RolloutStatus, ServiceStatus
+from click.testing import CliRunner
+
+from centml.cli.cluster import _get_ready_status, _get_service_status, _get_status_error_messages
+from centml.sdk import DeploymentStatus, DeploymentType, RolloutStatus, ServiceStatus
 
 
 def test_service_status_uses_legacy_service_status_when_present():
@@ -77,3 +82,98 @@ def test_status_error_messages_include_legacy_status_message():
     status_response = SimpleNamespace(error_message="legacy service failure")
 
     assert _get_status_error_messages(status_response) == ["legacy service failure"]
+
+
+def test_ready_status_supports_completed_service_status():
+    deployment = SimpleNamespace(status=DeploymentStatus.ACTIVE)
+
+    assert "completed" in _get_ready_status(deployment, ServiceStatus.COMPLETED)
+
+
+def test_ready_status_supports_cleaned_up_service_status():
+    deployment = SimpleNamespace(status=DeploymentStatus.ACTIVE)
+
+    assert "cleanedUp" in _get_ready_status(deployment, ServiceStatus.CLEANEDUP)
+
+
+def test_ready_status_supports_failed_service_status():
+    deployment = SimpleNamespace(status=DeploymentStatus.ACTIVE)
+
+    assert "failed" in _get_ready_status(deployment, ServiceStatus.FAILED)
+
+
+@contextmanager
+def _patch_cluster_client():
+    client = MagicMock()
+    context = MagicMock()
+    context.__enter__.return_value = client
+    context.__exit__.return_value = False
+
+    with patch("centml.cli.cluster.get_centml_client", return_value=context):
+        yield client
+
+
+def _deployment(**overrides):
+    defaults = {
+        "id": 123,
+        "name": "test-job",
+        "type": DeploymentType.JOB,
+        "status": DeploymentStatus.PAUSED,
+        "created_at": datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc),
+        "cluster_id": 1,
+        "hardware_instance_id": 2,
+        "endpoint_url": "https://jobs.example.com/test-job",
+        "image_url": "registry.example.com/job:latest",
+        "command": ["python", "main.py"],
+        "args": ["--epochs", "1"],
+        "original_command": "python main.py --epochs 1",
+        "env_vars": {"ENV": "test"},
+        "completions": 1,
+        "parallelism": 1,
+        "enable_logging": True,
+    }
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+def test_ls_accepts_job_type_and_displays_jobs():
+    from centml.cli.cluster import ls
+
+    deployment = _deployment()
+    runner = CliRunner()
+
+    with _patch_cluster_client() as client:
+        client.get.return_value = [deployment]
+
+        result = runner.invoke(ls, ["job"])
+
+    assert result.exit_code == 0
+    client.get.assert_called_once_with(DeploymentType.JOB)
+    assert "test-job" in result.output
+    assert "job" in result.output
+
+
+def test_get_job_routes_to_job_api_and_displays_job_config():
+    from centml.cli.cluster import get
+
+    deployment = _deployment(status=DeploymentStatus.ACTIVE)
+    hardware = SimpleNamespace(id=2, name="h100", num_gpu=8, gpu_type="H100", cost_per_hr=1200)
+    runner = CliRunner()
+
+    with _patch_cluster_client() as client:
+        client.get_job.return_value = deployment
+        client.get_status.return_value = SimpleNamespace(service_status=ServiceStatus.HEALTHY)
+        client.get_hardware_instances.return_value = [hardware]
+
+        result = runner.invoke(get, ["job", "123"])
+
+    assert result.exit_code == 0
+    client.get_job.assert_called_once_with(123)
+    client.get_status.assert_called_once_with(123)
+    assert "test-job" in result.output
+    assert "ready" in result.output
+    assert "Endpoint" not in result.output
+    assert "https://jobs.example.com/test-job" not in result.output
+    assert "registry.example.com/job:latest" in result.output
+    assert "Completions" in result.output
+    assert "Parallelism" in result.output

@@ -26,6 +26,7 @@ depl_type_to_name_map = {
     DeploymentType.CSERVE_V2: "cserve",
     DeploymentType.CSERVE_V3: "cserve",
     DeploymentType.RAG: "rag",
+    DeploymentType.JOB: "job",
 }
 # use latest type to for user requests
 depl_name_to_type_map = {
@@ -33,6 +34,7 @@ depl_name_to_type_map = {
     "cserve": DeploymentType.CSERVE_V3,
     "compute": DeploymentType.COMPUTE_V2,
     "rag": DeploymentType.RAG,
+    "job": DeploymentType.JOB,
 }
 rollout_status_to_service_status_map = {
     RolloutStatus.HEALTHY: ServiceStatus.HEALTHY,
@@ -100,6 +102,9 @@ def _get_ready_status(deployment, service_status):
         (DeploymentStatus.ACTIVE, ServiceStatus.INITIALIZING): ("starting", "black", "white"),
         (DeploymentStatus.ACTIVE, ServiceStatus.MISSING): ("starting", "black", "white"),
         (DeploymentStatus.ACTIVE, ServiceStatus.NOTREADY): ("starting", "black", "white"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.COMPLETED): ("completed", "green", "black"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.CLEANEDUP): ("cleanedUp", "white", "black"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.FAILED): ("failed", "red", "black"),
         (DeploymentStatus.ACTIVE, ServiceStatus.ERROR): ("error", "red", "black"),
         (DeploymentStatus.ACTIVE, ServiceStatus.CREATECONTAINERCONFIGERROR): (
             "createContainerConfigError",
@@ -215,6 +220,8 @@ def get(type, id):
             deployment = cclient.get_compute(id)
         elif depl_type in [DeploymentType.CSERVE_V2, DeploymentType.CSERVE_V3]:
             deployment = cclient.get_cserve(id)  # handles both V2 and V3
+        elif depl_type == DeploymentType.JOB:
+            deployment = cclient.get_job(id)
         else:
             sys.exit("Please enter correct deployment type")
 
@@ -228,11 +235,12 @@ def get(type, id):
         detail_rows = [
             ("Name", deployment.name),
             ("Status", ready_status),
-            ("Endpoint", deployment.endpoint_url),
             ("Created at", deployment.created_at.strftime("%Y-%m-%d %H:%M:%S")),
             ("Hardware", f"{hw.name} ({hw.num_gpu}x {hw.gpu_type})"),
             ("Cost", f"{hw.cost_per_hr / 100} credits/hr"),
         ]
+        if depl_type != DeploymentType.JOB:
+            detail_rows.insert(2, ("Endpoint", deployment.endpoint_url))
 
         click.echo(tabulate(detail_rows, tablefmt="rounded_outline", disable_numparse=True))
         if status_error_messages:
@@ -274,6 +282,17 @@ def get(type, id):
                 ),
                 ("Replicas", replica_info),
                 ("Max concurrency", deployment.concurrency or "None"),
+            ]
+
+            click.echo(tabulate(display_rows, tablefmt="rounded_outline", disable_numparse=True))
+        elif depl_type == DeploymentType.JOB:
+            display_rows = [
+                ("Image", deployment.image_url),
+                ("Command", deployment.original_command or "None"),
+                ("Environment variables", deployment.env_vars or "None"),
+                ("Completions", deployment.completions),
+                ("Parallelism", deployment.parallelism),
+                ("Logging", deployment.enable_logging),
             ]
 
             click.echo(tabulate(display_rows, tablefmt="rounded_outline", disable_numparse=True))
