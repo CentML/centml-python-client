@@ -108,6 +108,7 @@ def _deployment(**overrides):
         "image_url": "registry.example.com/job:latest",
         "command": ["python", "main.py"],
         "args": ["--epochs", "1"],
+        "original_command": "python main.py --epochs 1",
         "env_vars": {"ENV": "test"},
         "completions": 1,
         "parallelism": 1,
