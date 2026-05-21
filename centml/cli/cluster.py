@@ -229,9 +229,7 @@ def get(type, id):
         )
         revision_number = getattr(deployment, "revision_number", None)
         service_status = _get_service_status(deployment_status, revision_number)
-        ready_status = (
-            deployment.status.value if depl_type == DeploymentType.JOB else _get_ready_status(deployment, service_status)
-        )
+        ready_status = _get_ready_status(deployment, service_status)
         status_error_messages = _get_status_error_messages(deployment_status)
         _, id_to_hw_map = _get_hw_to_id_map(cclient, deployment.cluster_id)
         hw = id_to_hw_map[deployment.hardware_instance_id]
