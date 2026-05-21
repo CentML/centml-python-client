@@ -3,7 +3,14 @@ from functools import wraps
 from typing import Dict
 import click
 from tabulate import tabulate
-from centml.sdk import DeploymentType, DeploymentStatus, ServiceStatus, ApiException, HardwareInstanceResponse
+from centml.sdk import (
+    DeploymentType,
+    DeploymentStatus,
+    ServiceStatus,
+    RolloutStatus,
+    ApiException,
+    HardwareInstanceResponse,
+)
 from centml.sdk.api import get_centml_client
 
 # convert deployment type enum to a user friendly name
@@ -26,6 +33,12 @@ depl_name_to_type_map = {
     "cserve": DeploymentType.CSERVE_V3,
     "compute": DeploymentType.COMPUTE_V2,
     "rag": DeploymentType.RAG,
+}
+rollout_status_to_service_status_map = {
+    RolloutStatus.HEALTHY: ServiceStatus.HEALTHY,
+    RolloutStatus.MISSING: ServiceStatus.MISSING,
+    RolloutStatus.PROGRESSING: ServiceStatus.INITIALIZING,
+    RolloutStatus.DEGRADED: ServiceStatus.ERROR,
 }
 
 
@@ -75,18 +88,18 @@ def _get_replica_info(deployment):
         return {"min": "N/A", "max": "N/A"}
 
 
-def _get_ready_status(cclient, deployment):
+def _get_ready_status(deployment, service_status):
     api_status = deployment.status
-    service_status = (
-        cclient.get_status(deployment.id).service_status if deployment.status == DeploymentStatus.ACTIVE else None
-    )
 
     status_styles = {
         (DeploymentStatus.PAUSED, None): ("paused", "yellow", "black"),
         (DeploymentStatus.DELETED, None): ("deleted", "white", "black"),
         (DeploymentStatus.ACTIVE, ServiceStatus.HEALTHY): ("ready", "green", "black"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.SCALINGUP): ("starting", "black", "white"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.PULLING): ("starting", "black", "white"),
         (DeploymentStatus.ACTIVE, ServiceStatus.INITIALIZING): ("starting", "black", "white"),
         (DeploymentStatus.ACTIVE, ServiceStatus.MISSING): ("starting", "black", "white"),
+        (DeploymentStatus.ACTIVE, ServiceStatus.NOTREADY): ("starting", "black", "white"),
         (DeploymentStatus.ACTIVE, ServiceStatus.ERROR): ("error", "red", "black"),
         (DeploymentStatus.ACTIVE, ServiceStatus.CREATECONTAINERCONFIGERROR): (
             "createContainerConfigError",
@@ -101,6 +114,62 @@ def _get_ready_status(cclient, deployment):
     style = status_styles.get((api_status, service_status), ("unknown", "black", "white"))
     # Handle foreground and background colors
     return click.style(style[0], fg=style[1], bg=style[2])
+
+
+def _get_service_status(status_response, revision_number):
+    if status_response is None:
+        return None
+
+    service_status = getattr(status_response, "service_status", None)
+    if service_status is not None:
+        return service_status
+
+    revision_pod_details_list = getattr(status_response, "revision_pod_details_list", None) or []
+    current_revision = next(
+        (
+            revision
+            for revision in revision_pod_details_list
+            if getattr(revision, "revision_number", None) == revision_number
+        ),
+        (
+            revision_pod_details_list[0]
+            if revision_pod_details_list and getattr(revision_pod_details_list[0], "revision_number") is None
+            else None
+        ),
+    )
+    revision_status = getattr(current_revision, "revision_status", None)
+
+    return revision_status or rollout_status_to_service_status_map.get(getattr(status_response, "rollout_status", None))
+
+
+def _append_status_error_message(messages, seen_messages, label, error_message):
+    if not error_message or error_message in seen_messages:
+        return
+
+    seen_messages.add(error_message)
+    messages.append(f"{label}: {error_message}")
+
+
+def _get_status_error_messages(status_response):
+    if status_response is None:
+        return []
+
+    error_message = getattr(status_response, "error_message", None)
+    if error_message:
+        return [error_message]
+
+    messages = []
+    seen_messages = set()
+
+    for revision in getattr(status_response, "revision_pod_details_list", None) or []:
+        revision_label = f"revision {revision.revision_number}" if revision.revision_number is not None else "revision"
+        _append_status_error_message(messages, seen_messages, revision_label, revision.error_message)
+
+        for pod in getattr(revision, "pod_details_list", None) or []:
+            pod_label = pod.name or "pod"
+            _append_status_error_message(messages, seen_messages, f"{revision_label} / {pod_label}", pod.error_message)
+
+    return messages
 
 
 @click.command(help="List all deployments")
@@ -149,24 +218,27 @@ def get(type, id):
         else:
             sys.exit("Please enter correct deployment type")
 
-        ready_status = _get_ready_status(cclient, deployment)
+        deployment_status = cclient.get_status(deployment.id) if deployment.status == DeploymentStatus.ACTIVE else None
+        revision_number = getattr(deployment, "revision_number", None)
+        service_status = _get_service_status(deployment_status, revision_number)
+        ready_status = _get_ready_status(deployment, service_status)
+        status_error_messages = _get_status_error_messages(deployment_status)
         _, id_to_hw_map = _get_hw_to_id_map(cclient, deployment.cluster_id)
         hw = id_to_hw_map[deployment.hardware_instance_id]
+        detail_rows = [
+            ("Name", deployment.name),
+            ("Status", ready_status),
+            ("Endpoint", deployment.endpoint_url),
+            ("Created at", deployment.created_at.strftime("%Y-%m-%d %H:%M:%S")),
+            ("Hardware", f"{hw.name} ({hw.num_gpu}x {hw.gpu_type})"),
+            ("Cost", f"{hw.cost_per_hr / 100} credits/hr"),
+        ]
 
-        click.echo(
-            tabulate(
-                [
-                    ("Name", deployment.name),
-                    ("Status", ready_status),
-                    ("Endpoint", deployment.endpoint_url),
-                    ("Created at", deployment.created_at.strftime("%Y-%m-%d %H:%M:%S")),
-                    ("Hardware", f"{hw.name} ({hw.num_gpu}x {hw.gpu_type})"),
-                    ("Cost", f"{hw.cost_per_hr / 100} credits/hr"),
-                ],
-                tablefmt="rounded_outline",
-                disable_numparse=True,
-            )
-        )
+        click.echo(tabulate(detail_rows, tablefmt="rounded_outline", disable_numparse=True))
+        if status_error_messages:
+            click.echo("\nStatus errors:")
+            for message in status_error_messages:
+                click.echo(f"- {message}")
 
         click.echo("Additional deployment configurations:")
         if depl_type in [DeploymentType.INFERENCE_V2, DeploymentType.INFERENCE_V3]:

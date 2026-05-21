@@ -15,6 +15,8 @@ from platform_api_python_client import (
 from centml.sdk import auth
 from centml.sdk.config import settings
 
+STATUS_V3_DEPLOYMENT_TYPES = {DeploymentType.INFERENCE_V3, DeploymentType.CSERVE_V3}
+
 
 class CentMLClient:
     def __init__(self, api):
@@ -26,10 +28,15 @@ class CentMLClient:
         return deployments
 
     def get_status(self, id):
-        return self._api.get_deployment_status_deployments_status_deployment_id_get(id)
-
-    def get_status_v3(self, deployment_id):
-        return self._api.get_deployment_status_v3_deployments_status_v3_deployment_id_get(deployment_id)
+        try:
+            return self._api.get_deployment_status_v3_deployments_status_v3_deployment_id_get(id)
+        except ApiException as e:
+            if e.status in [404, 400]:
+                try:
+                    return self._api.get_deployment_status_deployments_status_deployment_id_get(id)
+                except ApiException as v2_error:
+                    raise e from v2_error
+            raise
 
     def get_inference(self, id):
         """Get Inference deployment details - automatically handles both V2 and V3 deployments"""
