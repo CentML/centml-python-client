@@ -8,6 +8,7 @@ from platform_api_python_client import (
     CreateComputeDeploymentRequest,
     CreateCServeV3DeploymentRequest,
     CreateJobDeploymentRequest,
+    CreateHardwareInstanceRequest,
     ApiException,
     InviteUserRequest,
     Metric,
@@ -120,6 +121,12 @@ class CentMLClient:
         return self._api.get_hardware_instances_hardware_instances_get(
             cluster_id=cluster_id if cluster_id else None
         ).results
+
+    def create_hardware_instance(self, request: CreateHardwareInstanceRequest):
+        return self._api.create_hardware_instance_hardware_instances_post(request)
+
+    def delete_hardware_instance(self, hardware_instance_id: int):
+        return self._api.delete_hardware_instance_hardware_instances_hardware_instance_id_delete(hardware_instance_id)
 
     def get_prebuilt_images(self, depl_type: DeploymentType):
         return self._api.get_prebuilt_images_prebuilt_images_get(type=depl_type)

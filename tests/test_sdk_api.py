@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from platform_api_python_client import CreateJobDeploymentRequest
+from platform_api_python_client import CreateJobDeploymentRequest, CreateHardwareInstanceRequest
 
 from centml.sdk import ApiException
 from centml.sdk.api import CentMLClient
@@ -72,3 +72,50 @@ def test_create_job_delegates_to_platform_client():
 
     assert response is expected_response
     api.create_job_deployment_deployments_job_post.assert_called_once_with(request)
+
+
+def test_get_hardware_instances_returns_results():
+    api = MagicMock()
+    expected_results = [SimpleNamespace(id=1), SimpleNamespace(id=2)]
+    api.get_hardware_instances_hardware_instances_get.return_value = SimpleNamespace(results=expected_results)
+    client = CentMLClient(api)
+
+    response = client.get_hardware_instances(cluster_id=5)
+
+    assert response is expected_results
+    api.get_hardware_instances_hardware_instances_get.assert_called_once_with(cluster_id=5)
+
+
+def test_create_hardware_instance_delegates_to_platform_client():
+    api = MagicMock()
+    expected_response = MagicMock()
+    api.create_hardware_instance_hardware_instances_post.return_value = expected_response
+    request = CreateHardwareInstanceRequest(
+        cluster_id=1,
+        name="h100-test",
+        gpu_type="H100",
+        num_gpu=8,
+        cpu=64000,
+        memory=128000,
+        accelerator_resource_key="nvidia.com/gpu",
+        node_affinity_labels={"gpu": "h100"},
+        accelerator_memory=80000,
+    )
+    client = CentMLClient(api)
+
+    response = client.create_hardware_instance(request)
+
+    assert response is expected_response
+    api.create_hardware_instance_hardware_instances_post.assert_called_once_with(request)
+
+
+def test_delete_hardware_instance_delegates_to_platform_client():
+    api = MagicMock()
+    expected_response = MagicMock()
+    api.delete_hardware_instance_hardware_instances_hardware_instance_id_delete.return_value = expected_response
+    client = CentMLClient(api)
+
+    response = client.delete_hardware_instance(123)
+
+    assert response is expected_response
+    api.delete_hardware_instance_hardware_instances_hardware_instance_id_delete.assert_called_once_with(123)
