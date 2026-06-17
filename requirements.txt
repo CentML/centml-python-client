@@ -6,3 +6,4 @@ cryptography==46.0.7
 websockets>=16.0
 pyte>=0.8.0
 platform-api-python-client==4.15.0
+click>=8.4.1
