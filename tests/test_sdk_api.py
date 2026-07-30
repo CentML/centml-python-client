@@ -1,10 +1,17 @@
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
-from platform_api_python_client import CreateJobDeploymentRequest, CreateHardwareInstanceRequest
+import platform_api_python_client
+from platform_api_python_client import (
+    CreateDynamoDeploymentRequest,
+    CreateHardwareInstanceRequest,
+    CreateJobDeploymentRequest,
+    DeploymentType,
+)
 
 from centml.sdk import ApiException
-from centml.sdk.api import CentMLClient
+from centml.sdk.api import CentMLClient, get_centml_client
+from centml.sdk.config import settings
 
 
 def test_get_status_uses_v3_endpoint():
@@ -72,6 +79,89 @@ def test_create_job_delegates_to_platform_client():
 
     assert response is expected_response
     api.create_job_deployment_deployments_job_post.assert_called_once_with(request)
+
+
+def _dynamo_request():
+    return CreateDynamoDeploymentRequest(
+        name="test-dynamo",
+        cluster_id=1,
+        hardware_instance_id=2,
+        model="Qwen/Qwen3-0.6B",
+        endpoint_bearer_token="test-only",
+    )
+
+
+def test_generated_client_exposes_dynamo_contract():
+    assert DeploymentType.DYNAMO.value == "dynamo"
+    assert hasattr(platform_api_python_client.EXTERNALApi, "get_dynamo_deployment_deployments_dynamo_deployment_id_get")
+    assert hasattr(platform_api_python_client.EXTERNALApi, "create_dynamo_deployment_deployments_dynamo_post")
+    assert hasattr(platform_api_python_client.EXTERNALApi, "update_dynamo_deployment_deployments_dynamo_put")
+
+
+def test_get_dynamo_delegates_to_platform_client():
+    api = MagicMock()
+    expected_response = MagicMock()
+    api.get_dynamo_deployment_deployments_dynamo_deployment_id_get.return_value = expected_response
+    client = CentMLClient(api)
+
+    response = client.get_dynamo(123)
+
+    assert response is expected_response
+    api.get_dynamo_deployment_deployments_dynamo_deployment_id_get.assert_called_once_with(123)
+
+
+def test_create_dynamo_delegates_to_platform_client():
+    api = MagicMock()
+    expected_response = MagicMock()
+    api.create_dynamo_deployment_deployments_dynamo_post.return_value = expected_response
+    request = _dynamo_request()
+    client = CentMLClient(api)
+
+    response = client.create_dynamo(request)
+
+    assert response is expected_response
+    api.create_dynamo_deployment_deployments_dynamo_post.assert_called_once_with(request)
+
+
+def test_update_dynamo_delegates_to_platform_client():
+    api = MagicMock()
+    expected_response = MagicMock()
+    api.update_dynamo_deployment_deployments_dynamo_put.return_value = expected_response
+    request = _dynamo_request()
+    client = CentMLClient(api)
+
+    response = client.update_dynamo(123, request)
+
+    assert response is expected_response
+    api.update_dynamo_deployment_deployments_dynamo_put.assert_called_once_with(123, request)
+
+
+def test_get_centml_client_uses_authenticated_generated_client():
+    configuration = MagicMock()
+    api_client_context = MagicMock()
+    generated_api_client = MagicMock()
+    generated_external_api = MagicMock()
+    expected_clusters = MagicMock()
+    generated_external_api.get_clusters_clusters_get.return_value = expected_clusters
+    api_client_context.__enter__.return_value = generated_api_client
+
+    with (
+        patch("centml.sdk.api.auth.get_centml_token", return_value="test-access-token") as get_token,
+        patch(
+            "centml.sdk.api.platform_api_python_client.Configuration", return_value=configuration
+        ) as configuration_cls,
+        patch("centml.sdk.api.platform_api_python_client.ApiClient", return_value=api_client_context) as api_client_cls,
+        patch(
+            "centml.sdk.api.platform_api_python_client.EXTERNALApi", return_value=generated_external_api
+        ) as external_api_cls,
+    ):
+        with get_centml_client() as client:
+            assert client.get_clusters() is expected_clusters
+
+    get_token.assert_called_once_with()
+    configuration_cls.assert_called_once_with(host=settings.CENTML_PLATFORM_API_URL, access_token="test-access-token")
+    api_client_cls.assert_called_once_with(configuration)
+    external_api_cls.assert_called_once_with(generated_api_client)
 
 
 def test_get_hardware_instances_returns_results():

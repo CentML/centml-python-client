@@ -7,6 +7,7 @@ from platform_api_python_client import (
     CreateInferenceV3DeploymentRequest,
     CreateComputeDeploymentRequest,
     CreateCServeV3DeploymentRequest,
+    CreateDynamoDeploymentRequest,
     CreateJobDeploymentRequest,
     CreateHardwareInstanceRequest,
     ApiException,
@@ -80,6 +81,9 @@ class CentMLClient:
                 # For other errors (auth, network, etc.), raise immediately
                 raise
 
+    def get_dynamo(self, id):
+        return self._api.get_dynamo_deployment_deployments_dynamo_deployment_id_get(id)
+
     def create_inference(self, request: CreateInferenceV3DeploymentRequest):
         return self._api.create_inference_v3_deployment_deployments_inference_v3_post(request)
 
@@ -92,6 +96,9 @@ class CentMLClient:
     def create_cserve(self, request: CreateCServeV3DeploymentRequest):
         return self._api.create_cserve_v3_deployment_deployments_cserve_v3_post(request)
 
+    def create_dynamo(self, request: CreateDynamoDeploymentRequest):
+        return self._api.create_dynamo_deployment_deployments_dynamo_post(request)
+
     def update_inference(self, deployment_id: int, request: CreateInferenceV3DeploymentRequest):
         return self._api.update_inference_v3_deployment_deployments_inference_v3_put(deployment_id, request)
 
@@ -100,6 +107,9 @@ class CentMLClient:
 
     def update_cserve(self, deployment_id: int, request: CreateCServeV3DeploymentRequest):
         return self._api.update_cserve_v3_deployment_deployments_cserve_v3_put(deployment_id, request)
+
+    def update_dynamo(self, deployment_id: int, request: CreateDynamoDeploymentRequest):
+        return self._api.update_dynamo_deployment_deployments_dynamo_put(deployment_id, request)
 
     def _update_status(self, id, new_status):
         status_req = platform_api_python_client.DeploymentStatusRequest(status=new_status)
