@@ -29,6 +29,7 @@ def list_hardware_instances():
     for hw in sorted(instances, key=lambda x: x.id):
         cluster = clusters.get(hw.cluster_id)
         cluster_name = cluster.display_name if cluster else f"cluster {hw.cluster_id}"
+        print(f"ID:        {hw.id}")
         print(f"Name:      {hw.name}")
         print(f"Cluster:   {cluster_name}")
         print(f"GPU Type:  {hw.gpu_type}")

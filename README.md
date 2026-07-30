@@ -13,6 +13,46 @@ Alternatively to build from source, clone this repo then inside the project's ba
 pip install . 
 ```
 
+### Authentication
+
+For interactive use, authenticate once with the CLI. SDK examples reuse the stored
+credentials and refresh them when needed.
+
+```bash
+centml login
+python examples/sdk/validate_auth.py
+```
+
+For service-to-service use, provide both service-account environment variables:
+
+```bash
+export CENTML_SERVICE_ACCOUNT_ID="<service-account-id>"
+export CENTML_SERVICE_ACCOUNT_SECRET="<service-account-secret>"
+python examples/sdk/validate_auth.py
+```
+
+`CENTML_PLATFORM_API_URL` can be set when targeting a non-production API.
+
+### Dynamo SDK example
+
+The Dynamo example uses SDK authentication separately from the bearer token that
+protects the deployed inference endpoint:
+
+```bash
+export CENTML_CLUSTER_ID="<cluster-id>"
+export CENTML_HARDWARE_INSTANCE_ID="<hardware-instance-id>"
+export CENTML_ENDPOINT_BEARER_TOKEN="<new-endpoint-token>"
+# Required only for gated Hugging Face models:
+export HF_TOKEN="<hugging-face-token>"
+
+python examples/sdk/create_dynamo.py
+```
+
+Use `python examples/sdk/get_clusters.py` and
+`python examples/sdk/manage_hardware_instances.py` to discover the required IDs.
+Creating the example reserves GPU capacity and may incur usage charges. It does not
+delete the deployment automatically.
+
 ### Un-installation
 
 To uninstall `centml`, simply do:
