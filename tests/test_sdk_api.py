@@ -7,6 +7,7 @@ from platform_api_python_client import (
     CreateHardwareInstanceRequest,
     CreateJobDeploymentRequest,
     DeploymentType,
+    UpdateClusterMetadataRequest,
 )
 
 from centml.sdk import ApiException
@@ -162,6 +163,24 @@ def test_get_centml_client_uses_authenticated_generated_client():
     configuration_cls.assert_called_once_with(host=settings.CENTML_PLATFORM_API_URL, access_token="test-access-token")
     api_client_cls.assert_called_once_with(configuration)
     external_api_cls.assert_called_once_with(generated_api_client)
+
+
+def test_generated_client_exposes_cluster_metadata_contract():
+    assert hasattr(platform_api_python_client.EXTERNALApi, "update_cluster_metadata_clusters_cluster_id_metadata_put")
+    assert hasattr(platform_api_python_client, "UpdateClusterMetadataRequest")
+
+
+def test_update_cluster_metadata_delegates_to_platform_client():
+    api = MagicMock()
+    expected_response = MagicMock()
+    api.update_cluster_metadata_clusters_cluster_id_metadata_put.return_value = expected_response
+    request = UpdateClusterMetadataRequest(deployment_creation_disabled=True)
+    client = CentMLClient(api)
+
+    response = client.update_cluster_metadata(42, request)
+
+    assert response is expected_response
+    api.update_cluster_metadata_clusters_cluster_id_metadata_put.assert_called_once_with(42, request)
 
 
 def test_get_hardware_instances_returns_results():
