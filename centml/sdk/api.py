@@ -10,6 +10,7 @@ from platform_api_python_client import (
     CreateDynamoDeploymentRequest,
     CreateJobDeploymentRequest,
     CreateHardwareInstanceRequest,
+    UpdateClusterMetadataRequest,
     ApiException,
     InviteUserRequest,
     Metric,
@@ -126,6 +127,9 @@ class CentMLClient:
 
     def get_clusters(self):
         return self._api.get_clusters_clusters_get()
+
+    def update_cluster_metadata(self, cluster_id: int, request: UpdateClusterMetadataRequest):
+        return self._api.update_cluster_metadata_clusters_cluster_id_metadata_put(cluster_id, request)
 
     def get_hardware_instances(self, cluster_id=None):
         return self._api.get_hardware_instances_hardware_instances_get(

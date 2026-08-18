@@ -7,6 +7,7 @@ This script displays cluster information including:
 - Cluster Name (Prometheus-compatible identifier)
 - Display Name (human-readable)
 - Region
+- Whether new deployment creation is disabled on the cluster
 """
 
 import click
@@ -30,10 +31,11 @@ def display_clusters(clusters):
 
     for cluster in sorted(clusters, key=lambda x: x.id):
         region = cluster.region if cluster.region else "N/A"
-        click.echo(f"ID:           {cluster.id}")
-        click.echo(f"Cluster Name: {cluster.cluster_name}")
-        click.echo(f"Display Name: {cluster.display_name}")
-        click.echo(f"Region:       {region}")
+        click.echo(f"ID:                           {cluster.id}")
+        click.echo(f"Cluster Name:                 {cluster.cluster_name}")
+        click.echo(f"Display Name:                 {cluster.display_name}")
+        click.echo(f"Region:                       {region}")
+        click.echo(f"Deployment Creation Disabled: {cluster.deployment_creation_disabled}")
         click.echo("-" * 40)
 
 
