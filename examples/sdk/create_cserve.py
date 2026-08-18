@@ -51,6 +51,16 @@ def main():
         print("Deployment details: ", deployment)
 
         """
+        ### Scale replicas in place (no new revision / no rolling update)
+        # Changing only min_replicas and/or max_replicas on the same Create*
+        # request updates the selected revision in place; revision_number stays put.
+        # Any other field change still creates a new revision.
+        qwen_config.min_replicas = 2
+        qwen_config.max_replicas = 4
+        cclient.update_cserve(deployment.id, qwen_config)
+        scaled = cclient.get_cserve(deployment.id)
+        print(f"Scaled to {scaled.min_replicas}-{scaled.max_replicas}; revision {scaled.revision_number}")
+
         ### Pause the deployment
         cclient.pause(deployment.id)
 
