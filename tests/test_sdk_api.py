@@ -166,9 +166,7 @@ def test_get_centml_client_uses_authenticated_generated_client():
 
 
 def test_generated_client_exposes_cluster_metadata_contract():
-    assert hasattr(
-        platform_api_python_client.EXTERNALApi, "update_cluster_metadata_clusters_cluster_id_metadata_put"
-    )
+    assert hasattr(platform_api_python_client.EXTERNALApi, "update_cluster_metadata_clusters_cluster_id_metadata_put")
     assert hasattr(platform_api_python_client, "UpdateClusterMetadataRequest")
 
 
