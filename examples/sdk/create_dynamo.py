@@ -58,9 +58,15 @@ def main():
         # client.resume(deployment.id)
         # client.delete(deployment.id)
         #
-        # To update a Dynamo deployment, construct a new
-        # CreateDynamoDeploymentRequest and call:
-        # client.update_dynamo(deployment.id, updated_request)
+        # Scale replicas in place (no new revision / no rolling update):
+        # Changing only min_replicas and/or max_replicas on the same Create*
+        # request updates the selected revision in place; revision_number stays put.
+        # Any other field change still creates a new revision.
+        # request.min_replicas = 2
+        # request.max_replicas = 4
+        # client.update_dynamo(deployment.id, request)
+        # scaled = client.get_dynamo(deployment.id)
+        # print(f"Scaled to {scaled.min_replicas}-{scaled.max_replicas}; revision {scaled.revision_number}")
 
     print(f"Created Dynamo deployment {deployment.id}: {deployment.endpoint_url}")
     print(f"Model: {deployment.model}")

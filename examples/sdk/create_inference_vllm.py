@@ -37,6 +37,16 @@ def main():
         print("Deployment details: ", deployment)
 
         '''
+        ### Scale replicas in place (no new revision / no rolling update)
+        # Changing only min_replicas and/or max_replicas on the same Create*
+        # request updates the selected revision in place; revision_number stays put.
+        # Any other field change still creates a new revision.
+        request.min_replicas = 1
+        request.max_replicas = 3
+        cclient.update_inference(deployment.id, request)
+        scaled = cclient.get_inference(deployment.id)
+        print(f"Scaled to {scaled.min_replicas}-{scaled.max_replicas}; revision {scaled.revision_number}")
+
         ### Pause the deployment
         cclient.pause(deployment.id)
 
