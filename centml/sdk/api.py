@@ -31,6 +31,17 @@ MAX_LOG_PAGE_LINES = 5000  # server-side ceiling for max_lines
 LOG_DEDUP_RETENTION_MS = 300_000
 
 
+def _recent_anchor(events: list) -> list:
+    """Trailing slice within LOG_DEDUP_RETENTION_MS of the newest event — everything
+    an after anchor contributes (the exclusive boundary and the look-behind dedup
+    ids), without rescanning the whole accumulated window on every page."""
+    cutoff = events[-1].timestamp - LOG_DEDUP_RETENTION_MS
+    first_recent = len(events)
+    while first_recent > 0 and events[first_recent - 1].timestamp >= cutoff:
+        first_recent -= 1
+    return events[first_recent:]
+
+
 @dataclass(frozen=True)
 class DeploymentLogEvent:
     """One log line with its pod attached — logs_v4 events carry no pod name, so
@@ -305,7 +316,7 @@ class CentMLClient:
             while True:
                 # after is exclusive, so start_time - 1 admits lines at start_time itself;
                 # start_time 0 (or None) means the whole window — scan from the head.
-                anchor: Union[list, int] = events if events else (start_time - 1 if start_time else 0)
+                anchor: Union[list, int] = _recent_anchor(events) if events else (start_time - 1 if start_time else 0)
                 page = self.get_deployment_logs(
                     deployment_id, revision_number, pod_name, after=anchor, max_lines=MAX_LOG_PAGE_LINES
                 )
@@ -379,18 +390,11 @@ class DeploymentLogSession:
         tailing. Rare late arrivals sort into the window below its newest lines."""
         if not self._events:
             return self.fetch_older(max_lines=max_lines)
-        # Only the trailing retention window matters to the primitive (boundary +
-        # look-behind dedup ids); passing it keeps long tails from scanning the
-        # whole window on every poll.
-        cutoff = self._events[-1].timestamp - LOG_DEDUP_RETENTION_MS
-        first_recent = len(self._events)
-        while first_recent > 0 and self._events[first_recent - 1].timestamp >= cutoff:
-            first_recent -= 1
         delta = self._client.get_deployment_logs(
             self._deployment_id,
             self._revision_number,
             self._pod,
-            after=self._events[first_recent:],
+            after=_recent_anchor(self._events),
             max_lines=max_lines,
         )
         for event in delta:

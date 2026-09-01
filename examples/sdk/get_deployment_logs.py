@@ -49,8 +49,8 @@ def main():
         # The same paging is available statelessly via get_deployment_logs, anchored
         # on events you already hold — useful when you manage storage yourself:
         #   page  = cclient.get_deployment_logs(DEPLOYMENT_ID, REVISION_NUMBER, pod=pod)  # tail
-        #   older = cclient.get_deployment_logs(..., pod=pod, before=page)  # [] = beginning
-        #   newer = cclient.get_deployment_logs(..., pod=pod, after=page)   # [] = nothing new
+        #   older = cclient.get_deployment_logs(..., pod=pod, before=page)  # empty return = beginning
+        #   newer = cclient.get_deployment_logs(..., pod=pod, after=page)   # empty return = nothing new
         # A specific time window (all pods merged, oldest first, pod on each event):
         #   window = cclient.get_deployment_logs_range(
         #       DEPLOYMENT_ID, REVISION_NUMBER, start_time=t1_ms, end_time=t2_ms
