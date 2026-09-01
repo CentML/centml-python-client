@@ -241,8 +241,10 @@ class CentMLClient:
             lines still landing near that boundary are included on top of max_lines
             and may sort below events you already hold (order by id if that matters).
         Either anchor also accepts a bare epoch-millisecond int as the (exclusive)
-        boundary itself; an int after anchor holds no event ids, so the re-delivered
-        span at the boundary comes through undeduplicated.
+        boundary itself — after=0 scans from the head of the log window; an int after
+        anchor holds no event ids, so the re-delivered span at the boundary comes
+        through undeduplicated. An empty anchor list raises ValueError. Pages never
+        split a millisecond, so a delivered boundary millisecond is always complete.
         """
         if before is not None and after is not None:
             raise ValueError("before and after are mutually exclusive")
@@ -253,6 +255,11 @@ class CentMLClient:
         boundary_timestamp = None
         if isinstance(anchor, int):
             boundary_timestamp = anchor
+        elif anchor is not None and len(anchor) == 0:
+            raise ValueError(
+                "anchor events must be non-empty; omit the anchor for the tail page, "
+                "or pass an epoch-ms boundary (after=0 reads from the head)"
+            )
         elif anchor:
             anchor_events = anchor
             timestamps = [event.timestamp for event in anchor_events]
@@ -298,7 +305,7 @@ class CentMLClient:
             while True:
                 # after is exclusive, so start_time - 1 admits lines at start_time itself;
                 # start_time 0 (or None) means the whole window — scan from the head.
-                anchor: Union[list, int] = events if events else (start_time - 1 if start_time else [])
+                anchor: Union[list, int] = events if events else (start_time - 1 if start_time else 0)
                 page = self.get_deployment_logs(
                     deployment_id, revision_number, pod_name, after=anchor, max_lines=MAX_LOG_PAGE_LINES
                 )
@@ -355,7 +362,11 @@ class DeploymentLogSession:
         fetches the newest page (tail). Returns the page; empty list = no older
         lines exist (yet)."""
         page = self._client.get_deployment_logs(
-            self._deployment_id, self._revision_number, self._pod, before=self._events, max_lines=max_lines
+            self._deployment_id,
+            self._revision_number,
+            self._pod,
+            before=[self._events[0]] if self._events else None,
+            max_lines=max_lines,
         )
         self._events[:0] = page
         return page
@@ -368,8 +379,19 @@ class DeploymentLogSession:
         tailing. Rare late arrivals sort into the window below its newest lines."""
         if not self._events:
             return self.fetch_older(max_lines=max_lines)
+        # Only the trailing retention window matters to the primitive (boundary +
+        # look-behind dedup ids); passing it keeps long tails from scanning the
+        # whole window on every poll.
+        cutoff = self._events[-1].timestamp - LOG_DEDUP_RETENTION_MS
+        first_recent = len(self._events)
+        while first_recent > 0 and self._events[first_recent - 1].timestamp >= cutoff:
+            first_recent -= 1
         delta = self._client.get_deployment_logs(
-            self._deployment_id, self._revision_number, self._pod, after=self._events, max_lines=max_lines
+            self._deployment_id,
+            self._revision_number,
+            self._pod,
+            after=self._events[first_recent:],
+            max_lines=max_lines,
         )
         for event in delta:
             if event.id > self._events[-1].id:

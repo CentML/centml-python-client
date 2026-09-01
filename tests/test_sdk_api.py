@@ -329,17 +329,28 @@ def test_get_deployment_logs_after_drops_redelivered_lines_but_keeps_late_arriva
     assert [e.id for e in events] == ["15-l", "3-c"]
 
 
-def test_get_deployment_logs_after_empty_anchor_reads_from_head():
+def test_get_deployment_logs_zero_after_anchor_reads_from_head():
     api = MagicMock()
     api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.return_value = _log_page(_log_event("1-a", 1000))
     client = CentMLClient(api)
 
-    events = client.get_deployment_logs(123, 2, pod="pod-a", after=[])
+    events = client.get_deployment_logs(123, 2, pod="pod-a", after=0)
 
     assert [e.id for e in events] == ["1-a"]
     call = api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.call_args
     assert call.kwargs["fetch_newer"] is True
-    assert call.kwargs["timestamp"] is None
+    assert call.kwargs["timestamp"] == 0
+
+
+def test_get_deployment_logs_rejects_empty_anchor_lists():
+    api = MagicMock()
+    client = CentMLClient(api)
+
+    for kwargs in ({"before": []}, {"after": []}):
+        with pytest.raises(ValueError):
+            client.get_deployment_logs(123, 2, pod="pod-a", **kwargs)
+
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.assert_not_called()
 
 
 def test_get_deployment_logs_after_empty_page_signals_nothing_new():
@@ -366,7 +377,7 @@ def test_get_deployment_logs_rejects_before_and_after_together():
     client = CentMLClient(api)
 
     with pytest.raises(ValueError):
-        client.get_deployment_logs(123, 2, pod="pod-a", before=[_log_event("1-a", 1000)], after=[])
+        client.get_deployment_logs(123, 2, pod="pod-a", before=[_log_event("1-a", 1000)], after=0)
 
     api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.assert_not_called()
 
@@ -523,7 +534,7 @@ def test_get_deployment_logs_range_open_ended_reads_full_history():
 
     assert [e.id for e in events] == ["1-a", "2-b"]
     calls = api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.call_args_list
-    assert calls[0].kwargs["timestamp"] is None and calls[0].kwargs["fetch_newer"] is True
+    assert calls[0].kwargs["timestamp"] == 0 and calls[0].kwargs["fetch_newer"] is True
 
 
 def test_get_deployment_logs_range_merges_all_pods_by_id():
@@ -533,7 +544,7 @@ def test_get_deployment_logs_range_merges_all_pods_by_id():
     )
 
     def pages(**kwargs):
-        if kwargs["timestamp"] is not None:
+        if kwargs["timestamp"]:
             return _log_page()
         if kwargs["pod"] == "pod-a":
             return _log_page(_log_event("1-a", 1000), _log_event("3-a", 3000))
@@ -585,3 +596,40 @@ def test_get_deployment_logs_range_rejects_inverted_window():
         client.get_deployment_logs_range(123, 2, pod="pod-a", start_time=2000, end_time=1000)
 
     api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.assert_not_called()
+
+
+def test_log_session_merges_by_production_shaped_ids():
+    def _real_id(ms, suffix):
+        return f"{ms * 10**6:019d}-{suffix}"
+
+    api = MagicMock()
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = [
+        _log_page(_log_event(_real_id(1000, "aa"), 1000), _log_event(_real_id(2000, "bb"), 2000)),
+        _log_page(_log_event(_real_id(1500, "ll"), 1500), _log_event(_real_id(3000, "cc"), 3000)),
+    ]
+    session = _session(api)
+    session.fetch_newer()
+    session.fetch_newer()
+
+    assert [e.timestamp for e in session.events] == [1000, 1500, 2000, 3000]
+
+
+def test_log_session_long_window_keeps_boundary_and_dedup_correct():
+    api = MagicMock()
+    old_events = [_log_event(f"{i}-x", i) for i in range(1, 4)]  # far older than the retention window
+    recent = _log_event("900000-y", 900_000)
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = [
+        # Look-behind re-delivers the recent held line next to a fresh one.
+        _log_page(_log_event("900000-y", 900_000), _log_event("901000-z", 901_000)),
+        _log_page(_log_event("0-w", 500)),
+    ]
+    session = _session(api, events=old_events + [recent])
+
+    delta = session.fetch_newer()
+    assert [e.id for e in delta] == ["901000-z"]
+    call = api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.call_args
+    assert call.kwargs["fetch_newer"] is True and call.kwargs["timestamp"] == 900_000
+
+    session.fetch_older()
+    call = api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.call_args
+    assert call.kwargs["fetch_newer"] is False and call.kwargs["timestamp"] == 1

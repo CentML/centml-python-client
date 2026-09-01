@@ -7,6 +7,7 @@ from centml.sdk.api import get_centml_client
 DEPLOYMENT_ID = 1234  # Replace with your deployment ID
 REVISION_NUMBER = 10
 TAIL_SECONDS = 30  # How long to keep polling for new lines after reading history
+TAIL_LINES = 20  # How much history to print before tailing
 
 
 def format_event(event) -> str:
@@ -32,8 +33,9 @@ def main():
         # Read the full history: newest page first, then page back to the beginning.
         while session.fetch_older():
             pass
-        print(f"Found {len(session.events)} log entries:\n")
-        for event in session.events:
+        events = session.events
+        print(f"Found {len(events)} log entries; showing the last {TAIL_LINES}:\n")
+        for event in events[-TAIL_LINES:]:
             print(format_event(event))
 
         # Keep tailing: each call returns only the lines the session does not hold yet.
