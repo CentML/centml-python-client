@@ -53,6 +53,22 @@ Use `python examples/sdk/get_clusters.py` and
 Creating the example reserves GPU capacity and may incur usage charges. It does not
 delete the deployment automatically.
 
+### Deployment logs SDK example
+
+Logs are read per pod. Discover pod names with `get_deployment_pods()` (terminated
+pods still within log retention are included), then read with a
+`deployment_log_session()`: `fetch_older()` pages toward the beginning of history and
+`fetch_newer()` returns only new lines, while the session keeps the merged, ordered
+log in `.events`. `get_deployment_logs_range()` fetches a specific time window
+(epoch-millisecond bounds, both optional) and, with `pod=None`, merges every pod's
+stream chronologically. The same paging is available statelessly through
+`get_deployment_logs(before=..., after=...)`, anchored on events you already hold
+or on a bare epoch-millisecond boundary:
+
+```bash
+python examples/sdk/get_deployment_logs.py
+```
+
 ### Un-installation
 
 To uninstall `centml`, simply do:
