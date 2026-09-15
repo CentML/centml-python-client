@@ -385,10 +385,12 @@ class CentMLClient:
         stream. Cross-pod ordering is strict while any pod is still catching up on
         history; once every pod is at the tip, a fetched line is held for at most
         one poll_interval so concurrent pods interleave, and a single-pod stream
-        releases immediately. Lines are yielded in timestamp order; a line that
-        reaches the log store later than the server's ~15s re-delivery window is
-        appended when it arrives rather than inserted in place (the previous
-        CloudWatch-based read path dropped such lines entirely).
+        releases immediately. Lines are yielded in timestamp order, except that one
+        reaching the log store after its timestamp has passed that release point is
+        appended rather than inserted: a single-pod follow appends any late line, a
+        multi-pod follow keeps order for lines under one poll_interval late. They are
+        still delivered exactly once, within the server's ~15s re-delivery window —
+        the previous CloudWatch-based read path dropped such lines entirely.
 
         start_time (epoch ms, inclusive) bounds the beginning; None reads from the
         start of the log window. follow=False returns once every pod is caught up,

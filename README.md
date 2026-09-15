@@ -64,9 +64,11 @@ pod — discover names with `get_deployment_pods()` (terminated pods still withi
 retention are included). Lines are yielded in timestamp order: cross-pod ordering is
 strict while catching up on history; at the tip, concurrent pods interleave within
 one `poll_interval`, a single-pod tail is released immediately, and a line reaching
-the log store later than the server's ~15s re-delivery window is appended when it
-arrives rather than inserted in place (the previous CloudWatch-based read path
-dropped such lines entirely).
+the log store after its timestamp has passed that release point is appended rather
+than inserted — so a single-pod follow appends any late line and a multi-pod follow
+keeps order for lines under one `poll_interval` late. Such lines are still delivered
+exactly once, within the server's ~15s re-delivery window; the previous
+CloudWatch-based read path dropped them entirely.
 
 For non-streaming access: `get_deployment_logs_range()` fetches a specific time
 window as a list (epoch-millisecond bounds, both optional; `pod=None` merges every
