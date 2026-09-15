@@ -55,13 +55,19 @@ delete the deployment automatically.
 
 ### Deployment logs SDK example
 
-Logs are read per pod. Discover pod names with `get_deployment_pods()` (terminated
-pods still within log retention are included), then read with a
-`deployment_log_session()`: `fetch_older()` pages toward the beginning of history and
-`fetch_newer()` returns only new lines, while the session keeps the merged, ordered
-log in `.events`. `get_deployment_logs_range()` fetches a specific time window
-(epoch-millisecond bounds, both optional) and, with `pod=None`, merges every pod's
-stream chronologically. The same paging is available statelessly through
+`iter_deployment_logs()` streams a revision's logs lazily, oldest first, each line
+exactly once, with bounded memory however long the log is — by default merging every
+pod chronologically (each event carries its pod name). `follow=False` returns once
+caught up; `follow=True` keeps tailing and picks up new pods of the revision as they
+first log. `start_time` (epoch ms) bounds the beginning and `pod=` restricts to one
+pod — discover names with `get_deployment_pods()` (terminated pods still within log
+retention are included).
+
+For non-streaming access: `get_deployment_logs_range()` fetches a specific time
+window as a list (epoch-millisecond bounds, both optional; `pod=None` merges every
+pod). A `deployment_log_session()` pages one pod statefully — `fetch_older()` toward
+the beginning of history, `fetch_newer()` for only-new lines — keeping the merged,
+ordered log in `.events`. The same paging is available statelessly through
 `get_deployment_logs(before=..., after=...)`, anchored on events you already hold
 or on a bare epoch-millisecond boundary:
 
