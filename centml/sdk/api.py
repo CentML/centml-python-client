@@ -1,7 +1,9 @@
+import time
 from bisect import insort
 from contextlib import contextmanager
-from dataclasses import dataclass
-from typing import List, Optional, Union
+from dataclasses import dataclass, field
+from heapq import heappop, heappush
+from typing import Dict, Iterator, List, Optional, Union
 
 import platform_api_python_client
 from platform_api_python_client import (
@@ -29,6 +31,12 @@ MAX_LOG_PAGE_LINES = 5000  # server-side ceiling for max_lines
 # The server re-delivers a ~15s look-behind window on fetch-newer requests; only the
 # caller's events within this generous margin of the boundary can be re-delivered.
 LOG_DEDUP_RETENTION_MS = 300_000
+# In a followed multi-pod merge, a pod that stops logging holds back the merged
+# stream at most this many poll intervals before its peers' buffers flush past it.
+LOG_MERGE_HOLD_POLLS = 2
+# How often a followed multi-pod merge re-lists the revision's pods to pick up
+# replacements and scale-ups.
+LOG_POD_REFRESH_SECONDS = 15.0
 
 
 def _recent_anchor(events: list) -> list:
@@ -51,6 +59,17 @@ class DeploymentLogEvent:
     timestamp: int
     message: str
     pod: str
+
+
+@dataclass
+class _PodLogTail:
+    """Per-pod cursor for iter_deployment_logs: the trimmed dedup window it holds,
+    the newest timestamp it has fetched (its merge-watermark contribution), and
+    when it last produced data (monotonic; gates the silent-pod hold)."""
+
+    last_data: float
+    held: List[DeploymentLogEvent] = field(default_factory=list)
+    frontier: int = -1
 
 
 class CentMLClient:
@@ -333,6 +352,89 @@ class CentMLClient:
             ]
         merged.sort(key=lambda event: event.id)
         return merged
+
+    # pylint: disable=R0917
+    def iter_deployment_logs(
+        self,
+        deployment_id: int,
+        revision_number: int,
+        pod: Optional[str] = None,
+        start_time: Optional[int] = None,
+        follow: bool = False,
+        poll_interval: float = 2.0,
+        max_lines: int = MAX_LOG_PAGE_LINES,
+    ) -> Iterator[DeploymentLogEvent]:
+        """Stream a revision's logs lazily, oldest first, each line exactly once,
+        each event carrying its pod name. Pages are fetched as the iterator is
+        consumed, and the state held per pod is trimmed to the server's
+        re-delivery window, so memory stays bounded however many lines stream by.
+
+        pod=None merges every pod of the revision into one stream ordered by
+        (timestamp, id); pods are buffered and emitted up to the merge watermark
+        (the oldest frontier any pod has fetched to). start_time (epoch ms,
+        inclusive) bounds the beginning; None reads from the start of the log
+        window. follow=False returns once every pod is caught up. follow=True
+        keeps tailing: caught-up pods are re-polled every poll_interval seconds
+        and the revision's pod list is re-read every LOG_POD_REFRESH_SECONDS so
+        replacement pods join the merge as they first log. While following, a
+        pod silent for LOG_MERGE_HOLD_POLLS poll intervals stops gating the
+        watermark, so cross-pod ordering is best-effort beyond that bound; a
+        single-pod stream is always strictly ordered.
+        """
+        initial_boundary = start_time - 1 if start_time else 0
+        now = time.monotonic()
+        last_refresh = now
+        pods = [pod] if pod is not None else self.get_deployment_pods(deployment_id, revision_number)
+        tails: Dict[str, _PodLogTail] = {name: _PodLogTail(last_data=now) for name in pods}
+        pending: list = []  # min-heap of (timestamp, id, event) awaiting the watermark
+
+        while True:
+            if follow and pod is None and time.monotonic() - last_refresh >= LOG_POD_REFRESH_SECONDS:
+                last_refresh = time.monotonic()
+                for name in self.get_deployment_pods(deployment_id, revision_number):
+                    if name not in tails:
+                        tails[name] = _PodLogTail(last_data=last_refresh)
+
+            fetched_any = False
+            for name, tail in list(tails.items()):
+                page = self.get_deployment_logs(
+                    deployment_id, revision_number, name, after=tail.held or initial_boundary, max_lines=max_lines
+                )
+                if not page:
+                    if not follow:
+                        del tails[name]  # caught up: stop gating the watermark on it
+                    continue
+                fetched_any = True
+                tail.last_data = time.monotonic()
+                for raw in page:
+                    event = DeploymentLogEvent(id=raw.id, timestamp=raw.timestamp, message=raw.message, pod=name)
+                    if tail.held and event.id <= tail.held[-1].id:
+                        # Late arrival inside the look-behind span: keep the held window
+                        # id-ordered (id order == time order) so trimming stays correct.
+                        insort(tail.held, event, key=lambda held_event: held_event.id)
+                    else:
+                        tail.held.append(event)
+                    # Anchoring at start_time - 1 re-delivers the look-behind span below
+                    # start_time; those ids must be held for dedup but never emitted.
+                    if start_time is None or event.timestamp >= start_time:
+                        heappush(pending, (event.timestamp, event.id, event))
+                tail.held = _recent_anchor(tail.held)
+                tail.frontier = tail.held[-1].timestamp
+
+            if follow:
+                hold_cap = LOG_MERGE_HOLD_POLLS * poll_interval
+                gating = [t.frontier for t in tails.values() if time.monotonic() - t.last_data <= hold_cap]
+            else:
+                gating = [t.frontier for t in tails.values()]
+            watermark = min(gating) if gating else None
+            while pending and (watermark is None or pending[0][0] <= watermark):
+                yield heappop(pending)[2]
+
+            if not follow:
+                if not tails:
+                    return
+            elif not fetched_any:
+                time.sleep(poll_interval)
 
     def deployment_log_session(
         self, deployment_id: int, revision_number: int, pod: str, events: Optional[list] = None
