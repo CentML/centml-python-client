@@ -282,7 +282,10 @@ class CentMLClient:
         boundary itself — after=0 scans from the head of the log window; an int after
         anchor holds no event ids, so the re-delivered span at the boundary comes
         through undeduplicated. An empty anchor list raises ValueError. Pages never
-        split a millisecond, so a delivered boundary millisecond is always complete.
+        split a millisecond, so a delivered boundary millisecond is complete unless it
+        holds more than the log store's 5000-line per-query ceiling — past that the page
+        carries the 5000 nearest its direction (the newest when paging older, the oldest
+        when paging newer), independently of max_lines.
         """
         if before is not None and after is not None:
             raise ValueError("before and after are mutually exclusive")
