@@ -61,7 +61,12 @@ pod chronologically (each event carries its pod name). `follow=False` returns on
 caught up; `follow=True` keeps tailing and picks up new pods of the revision as they
 first log. `start_time` (epoch ms) bounds the beginning and `pod=` restricts to one
 pod — discover names with `get_deployment_pods()` (terminated pods still within log
-retention are included).
+retention are included). Lines are yielded in timestamp order: cross-pod ordering is
+strict while catching up on history; at the tip, concurrent pods interleave within
+one `poll_interval`, a single-pod tail is released immediately, and a line reaching
+the log store later than the server's ~15s re-delivery window is appended when it
+arrives rather than inserted in place (the previous CloudWatch-based read path
+dropped such lines entirely).
 
 For non-streaming access: `get_deployment_logs_range()` fetches a specific time
 window as a list (epoch-millisecond bounds, both optional; `pod=None` merges every

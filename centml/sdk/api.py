@@ -2,7 +2,6 @@ import time
 from bisect import insort
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from heapq import heappop, heappush
 from typing import Dict, Iterator, List, Optional, Union
 
 import platform_api_python_client
@@ -31,11 +30,16 @@ MAX_LOG_PAGE_LINES = 5000  # server-side ceiling for max_lines
 # The server re-delivers a ~15s look-behind window on fetch-newer requests; only the
 # caller's events within this generous margin of the boundary can be re-delivered.
 LOG_DEDUP_RETENTION_MS = 300_000
-# In a followed multi-pod merge, a pod that stops logging holds back the merged
-# stream at most this many poll intervals before its peers' buffers flush past it.
-LOG_MERGE_HOLD_POLLS = 2
+# Merge backpressure: a pod with this many pages buffered ahead of the merge watermark
+# is not fetched further until the watermark catches up. Two pages keep the merge fed
+# (one page draining while the next waits) yet cap the lookahead, so a pod far ahead
+# in time — typically a live pod merged with a terminated predecessor — buffers a
+# couple of pages instead of its whole history.
+LOG_MERGE_BUFFER_PAGES = 2
 # How often a followed multi-pod merge re-lists the revision's pods to pick up
-# replacements and scale-ups.
+# replacements and scale-ups. Mirrors the server's ~15s fetch-newer look-behind
+# horizon: pod discovery lags a new pod's first line by no more than the span the
+# server itself re-delivers for late-arriving data.
 LOG_POD_REFRESH_SECONDS = 15.0
 
 
@@ -63,13 +67,17 @@ class DeploymentLogEvent:
 
 @dataclass
 class _PodLogTail:
-    """Per-pod cursor for iter_deployment_logs: the trimmed dedup window it holds,
-    the newest timestamp it has fetched (its merge-watermark contribution), and
-    when it last produced data (monotonic; gates the silent-pod hold)."""
+    """Per-pod cursor for iter_deployment_logs: the trimmed dedup window it holds (the
+    anchor), the fetched-but-unreleased events awaiting the merge watermark, the newest
+    fetched timestamp (its watermark contribution while catching up), whether its last
+    poll found nothing new, and — once caught up — the earliest monotonic time it may
+    be polled again."""
 
-    last_data: float
     held: List[DeploymentLogEvent] = field(default_factory=list)
+    buffer: List[DeploymentLogEvent] = field(default_factory=list)
     frontier: int = -1
+    caught_up: bool = False
+    next_poll_at: float = 0.0
 
 
 class CentMLClient:
@@ -366,46 +374,63 @@ class CentMLClient:
     ) -> Iterator[DeploymentLogEvent]:
         """Stream a revision's logs lazily, oldest first, each line exactly once,
         each event carrying its pod name. Pages are fetched as the iterator is
-        consumed, and the state held per pod is trimmed to the server's
-        re-delivery window, so memory stays bounded however many lines stream by.
+        consumed; per pod, the dedup window is trimmed to the server's re-delivery
+        span and at most LOG_MERGE_BUFFER_PAGES pages sit buffered ahead of the
+        merge, so memory stays bounded however many lines stream by.
 
-        pod=None merges every pod of the revision into one stream ordered by
-        (timestamp, id); pods are buffered and emitted up to the merge watermark
-        (the oldest frontier any pod has fetched to). start_time (epoch ms,
-        inclusive) bounds the beginning; None reads from the start of the log
-        window. follow=False returns once every pod is caught up. follow=True
-        keeps tailing: caught-up pods are re-polled every poll_interval seconds
-        and the revision's pod list is re-read every LOG_POD_REFRESH_SECONDS so
-        replacement pods join the merge as they first log. While following, a
-        pod silent for LOG_MERGE_HOLD_POLLS poll intervals stops gating the
-        watermark, so cross-pod ordering is best-effort beyond that bound; a
-        single-pod stream is always strictly ordered.
+        pod=None merges every pod of the revision into one (timestamp, id)-ordered
+        stream. Cross-pod ordering is strict while any pod is still catching up on
+        history; once every pod is at the tip, a fetched line is held for at most
+        one poll_interval so concurrent pods interleave, and a single-pod stream
+        releases immediately. Lines are yielded in timestamp order; a line that
+        reaches the log store later than the server's ~15s re-delivery window is
+        appended when it arrives rather than inserted in place (the previous
+        CloudWatch-based read path dropped such lines entirely).
+
+        start_time (epoch ms, inclusive) bounds the beginning; None reads from the
+        start of the log window. follow=False returns once every pod is caught up,
+        draining the merge buffers fully. follow=True keeps tailing: each
+        caught-up pod is re-polled at most once per poll_interval, the pod list is
+        re-read every LOG_POD_REFRESH_SECONDS so replacement pods join the merge
+        as they first log, and a caught-up pod that has left the pod list is
+        dropped from polling (its dedup window is kept in case it is listed
+        again).
         """
         initial_boundary = start_time - 1 if start_time else 0
-        now = time.monotonic()
-        last_refresh = now
-        pods = [pod] if pod is not None else self.get_deployment_pods(deployment_id, revision_number)
-        tails: Dict[str, _PodLogTail] = {name: _PodLogTail(last_data=now) for name in pods}
-        pending: list = []  # min-heap of (timestamp, id, event) awaiting the watermark
+        buffer_limit = LOG_MERGE_BUFFER_PAGES * max_lines
+        merge_delay_ms = int(poll_interval * 1000)
+        last_refresh = time.monotonic()
+        listed = [pod] if pod is not None else self.get_deployment_pods(deployment_id, revision_number)
+        tails: Dict[str, _PodLogTail] = {name: _PodLogTail() for name in listed}
+        retired: Dict[str, _PodLogTail] = {}
 
         while True:
             if follow and pod is None and time.monotonic() - last_refresh >= LOG_POD_REFRESH_SECONDS:
                 last_refresh = time.monotonic()
-                for name in self.get_deployment_pods(deployment_id, revision_number):
+                listed = self.get_deployment_pods(deployment_id, revision_number)
+                for name in listed:
                     if name not in tails:
-                        tails[name] = _PodLogTail(last_data=last_refresh)
+                        # a retired pod that reappears resumes from its own dedup window,
+                        # so nothing it already delivered is re-yielded
+                        tails[name] = retired.pop(name, _PodLogTail())
 
-            fetched_any = False
             for name, tail in list(tails.items()):
+                if len(tail.buffer) >= buffer_limit:
+                    continue  # backpressure: let the merge watermark catch up before fetching more
+                if tail.caught_up and (not follow or time.monotonic() < tail.next_poll_at):
+                    continue
                 page = self.get_deployment_logs(
                     deployment_id, revision_number, name, after=tail.held or initial_boundary, max_lines=max_lines
                 )
                 if not page:
-                    if not follow:
-                        del tails[name]  # caught up: stop gating the watermark on it
+                    tail.caught_up = True
+                    tail.next_poll_at = time.monotonic() + poll_interval
+                    if follow and pod is None and name not in listed and not tail.buffer:
+                        # gone from the pod list and caught up: stop polling it — it was
+                        # not gating the watermark, so nothing waits on its removal
+                        retired[name] = tails.pop(name)
                     continue
-                fetched_any = True
-                tail.last_data = time.monotonic()
+                tail.caught_up = False
                 for raw in page:
                     event = DeploymentLogEvent(id=raw.id, timestamp=raw.timestamp, message=raw.message, pod=name)
                     if tail.held and event.id <= tail.held[-1].id:
@@ -417,24 +442,55 @@ class CentMLClient:
                     # Anchoring at start_time - 1 re-delivers the look-behind span below
                     # start_time; those ids must be held for dedup but never emitted.
                     if start_time is None or event.timestamp >= start_time:
-                        heappush(pending, (event.timestamp, event.id, event))
+                        if tail.buffer and event.id <= tail.buffer[-1].id:
+                            insort(tail.buffer, event, key=lambda buffered_event: buffered_event.id)
+                        else:
+                            tail.buffer.append(event)
                 tail.held = _recent_anchor(tail.held)
                 tail.frontier = tail.held[-1].timestamp
 
-            if follow:
-                hold_cap = LOG_MERGE_HOLD_POLLS * poll_interval
-                gating = [t.frontier for t in tails.values() if time.monotonic() - t.last_data <= hold_cap]
+            # The dedup window (~15s of server re-delivery) and the merge delay are two
+            # different concerns: the former decides what `held` keeps for the anchor,
+            # the latter only how long a fetched line waits so concurrent pods interleave.
+            lagging = [tail.frontier for tail in tails.values() if not tail.caught_up]
+            if lagging:
+                watermark = min(lagging)  # catching up: strict cross-pod order
+            elif not follow or len(tails) <= 1:
+                # every pod caught up with nothing to merge against: release everything —
+                # follow=False must drain fully before returning, and a single-pod tail
+                # must not invent latency the old single-stream reader never had
+                watermark = None
             else:
-                gating = [t.frontier for t in tails.values()]
-            watermark = min(gating) if gating else None
-            while pending and (watermark is None or pending[0][0] <= watermark):
-                yield heappop(pending)[2]
+                # steady-state multi-pod tail: hold a line just long enough for the
+                # peers' pages to arrive. Client wall clock against server timestamps:
+                # skew only shifts this interleave window, never drops a line.
+                watermark = int(time.time() * 1000) - merge_delay_ms
+            ready: List[DeploymentLogEvent] = []
+            for tail in tails.values():
+                cut = 0
+                while cut < len(tail.buffer) and (watermark is None or tail.buffer[cut].timestamp <= watermark):
+                    cut += 1
+                if cut:
+                    ready += tail.buffer[:cut]
+                    del tail.buffer[:cut]
+            ready.sort(key=lambda event: (event.timestamp, event.id))
+            yield from ready
 
             if not follow:
-                if not tails:
+                if all(tail.caught_up for tail in tails.values()):
                     return
-            elif not fetched_any:
-                time.sleep(poll_interval)
+                continue
+            now = time.monotonic()
+            if any(
+                len(tail.buffer) < buffer_limit and (not tail.caught_up or now >= tail.next_poll_at)
+                for tail in tails.values()
+            ):
+                continue  # something is fetchable right now
+            next_wake = min(
+                (tail.next_poll_at for tail in tails.values() if len(tail.buffer) < buffer_limit),
+                default=now + poll_interval,
+            )
+            time.sleep(max(0.0, min(next_wake - now, poll_interval)))
 
     def deployment_log_session(
         self, deployment_id: int, revision_number: int, pod: str, events: Optional[list] = None

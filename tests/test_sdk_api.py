@@ -1,3 +1,5 @@
+import time
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -13,7 +15,7 @@ from platform_api_python_client import (
 )
 
 from centml.sdk import ApiException
-from centml.sdk.api import CentMLClient, get_centml_client
+from centml.sdk.api import LOG_DEDUP_RETENTION_MS, LOG_MERGE_BUFFER_PAGES, CentMLClient, get_centml_client
 from centml.sdk.config import settings
 
 
@@ -636,7 +638,9 @@ def test_log_session_long_window_keeps_boundary_and_dedup_correct():
 
 
 class _FakeClock:
-    """Deterministic stand-in for time.monotonic/time.sleep in follow-mode tests."""
+    """Deterministic stand-in for time.monotonic/time.time/time.sleep in follow-mode tests."""
+
+    EPOCH = 1_700_000_000.0  # wall-clock base at epoch scale, for the merge-delay watermark
 
     def __init__(self, max_sleeps=100):
         self.now = 0.0
@@ -646,6 +650,12 @@ class _FakeClock:
     def monotonic(self):
         return self.now
 
+    def time(self):
+        return self.EPOCH + self.now
+
+    def wall_ms(self):
+        return int(self.time() * 1000)
+
     def sleep(self, seconds):
         self.sleeps += 1
         if self.sleeps > self._max_sleeps:
@@ -653,8 +663,14 @@ class _FakeClock:
         self.now += seconds
 
 
-def _clock_patches(clock):
-    return (patch("centml.sdk.api.time.monotonic", clock.monotonic), patch("centml.sdk.api.time.sleep", clock.sleep))
+@contextmanager
+def _patched_clock(clock):
+    with (
+        patch("centml.sdk.api.time.monotonic", clock.monotonic),
+        patch("centml.sdk.api.time.time", clock.time),
+        patch("centml.sdk.api.time.sleep", clock.sleep),
+    ):
+        yield clock
 
 
 def test_iter_deployment_logs_yields_first_page_before_fetching_the_next():
@@ -745,8 +761,6 @@ def test_iter_deployment_logs_start_time_holds_gray_lines_below_the_window():
 
 
 def test_iter_deployment_logs_held_state_stays_within_the_dedup_window():
-    from centml.sdk.api import LOG_DEDUP_RETENTION_MS
-
     step_ms = 10_000
     pages = [
         _log_page(*(_log_event(f"{(p * 100 + i) * step_ms:09d}-x", (p * 100 + i) * step_ms) for i in range(100)))
@@ -812,9 +826,8 @@ def test_iter_deployment_logs_follow_polls_at_the_poll_interval():
     )
     client = CentMLClient(api)
     clock = _FakeClock(max_sleeps=3)
-    monotonic_patch, sleep_patch = _clock_patches(clock)
 
-    with monotonic_patch, sleep_patch:
+    with _patched_clock(clock):
         stream = client.iter_deployment_logs(123, 2, pod="pod-a", follow=True, poll_interval=2.0)
         assert next(stream).id == "1-a"
         with pytest.raises(TimeoutError):
@@ -832,9 +845,8 @@ def test_iter_deployment_logs_follow_delivers_lines_appended_later():
     )
     client = CentMLClient(api)
     clock = _FakeClock()
-    monotonic_patch, sleep_patch = _clock_patches(clock)
 
-    with monotonic_patch, sleep_patch:
+    with _patched_clock(clock):
         stream = client.iter_deployment_logs(123, 2, pod="pod-a", follow=True)
         assert next(stream).id == "1-a"
         assert next(stream).id == "2-b"
@@ -855,9 +867,8 @@ def test_iter_deployment_logs_follow_picks_up_pods_that_appear_later():
     api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = pages
     client = CentMLClient(api)
     clock = _FakeClock()
-    monotonic_patch, sleep_patch = _clock_patches(clock)
 
-    with monotonic_patch, sleep_patch:
+    with _patched_clock(clock):
         stream = client.iter_deployment_logs(123, 2, follow=True, poll_interval=2.0)
         assert next(stream).id == "1-a"
         appeared = next(stream)
@@ -866,26 +877,226 @@ def test_iter_deployment_logs_follow_picks_up_pods_that_appear_later():
     assert api.get_deployment_pods_deployments_pods_deployment_id_revision_number_get.call_count >= 2
 
 
-def test_iter_deployment_logs_follow_flushes_past_a_silent_pod():
+def test_iter_deployment_logs_follow_does_not_gate_on_a_caught_up_silent_pod():
     api = MagicMock()
     api.get_deployment_pods_deployments_pods_deployment_id_revision_number_get.return_value = SimpleNamespace(
         pods=["pod-a", "pod-b"]
     )
-    clock = _FakeClock()
-    pod_a_pages = iter([_log_page(_log_event("1-a", 1000), _log_event("3-a", 3000))])
+    pod_a_pages = iter(
+        [_log_page(_log_event("1-a", 1000), _log_event("3-a", 3000)), _log_page(_log_event("4-a", 4000))]
+    )
 
     def pages(**kwargs):
-        clock.now += 1.0  # requests take wall time; lets the silent-pod hold expire
         if kwargs["pod"] == "pod-a":
             return next(pod_a_pages, _log_page())
         return _log_page(_log_event("2-b", 2000)) if not kwargs["timestamp"] else _log_page()
 
     api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = pages
     client = CentMLClient(api)
-    monotonic_patch, sleep_patch = _clock_patches(clock)
+    clock = _FakeClock()
 
-    with monotonic_patch, sleep_patch:
+    with _patched_clock(clock):
         stream = client.iter_deployment_logs(123, 2, follow=True, poll_interval=2.0)
-        # pod-b's frontier (2000) gates 3-a at first; once pod-b stays silent past
-        # the hold, the buffer flushes past it instead of stalling forever.
-        assert [next(stream).id for _ in range(3)] == ["1-a", "2-b", "3-a"]
+        # Round one: pod-b's frontier (2000) gates 3-a. After pod-b polls empty it is
+        # caught up and stops gating, so pod-a's lines flow without any hold window.
+        assert [next(stream).id for _ in range(4)] == ["1-a", "2-b", "3-a", "4-a"]
+
+
+def test_iter_deployment_logs_backpressures_a_pod_far_ahead_of_the_watermark():
+    # A terminated old pod gates the watermark while a live pod's history is far newer;
+    # without backpressure every old-pod round would buffer another new-pod page, growing
+    # the merge buffer with the live pod's whole history.
+    api = MagicMock()
+    api.get_deployment_pods_deployments_pods_deployment_id_revision_number_get.return_value = SimpleNamespace(
+        pods=["pod-old", "pod-new"]
+    )
+    events = {
+        "pod-old": [_log_event(f"old-{i:04d}", 1000 + i) for i in range(100)],
+        "pod-new": [_log_event(f"new-{i:04d}", 10_000_000 + i) for i in range(100)],
+    }
+
+    def pages(**kwargs):
+        newer = [e for e in events[kwargs["pod"]] if e.timestamp > (kwargs["timestamp"] or 0)]
+        return _log_page(*newer[: kwargs["max_lines"]])
+
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = pages
+    client = CentMLClient(api)
+
+    calls = {"pod-old": 0, "pod-new": 0}
+    new_calls_while_old_active = []
+    original = CentMLClient.get_deployment_logs
+
+    def spying_get_deployment_logs(self, *args, **kwargs):
+        calls[args[2]] += 1
+        if args[2] == "pod-old":
+            new_calls_while_old_active.append(calls["pod-new"])
+        return original(self, *args, **kwargs)
+
+    with patch.object(CentMLClient, "get_deployment_logs", spying_get_deployment_logs):
+        yielded = list(client.iter_deployment_logs(123, 2, max_lines=10))
+
+    assert [e.id for e in yielded] == [e.id for e in events["pod-old"]] + [e.id for e in events["pod-new"]]
+    # While the old pod was still draining, the new pod was fetched at most its buffer
+    # cap (LOG_MERGE_BUFFER_PAGES pages), not once per round.
+    assert max(new_calls_while_old_active) <= LOG_MERGE_BUFFER_PAGES
+    assert calls["pod-new"] == 11  # 10 data pages + 1 empty page, none wasted on re-polls
+
+
+def test_iter_deployment_logs_follow_single_pod_appends_late_arrivals():
+    # A line that reaches the log store late is re-delivered with a fresh id and yields
+    # after newer lines — visible late delivery, where the CloudWatch path dropped it.
+    api = MagicMock()
+    responses = iter(
+        [
+            _log_page(*(_log_event(f"{1000 + i}-x", 1000 + i) for i in range(5))),
+            _log_page(_log_event("1002-late", 1002), _log_event("2000-f", 2000)),
+        ]
+    )
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = lambda **kwargs: next(
+        responses, _log_page()
+    )
+    client = CentMLClient(api)
+    clock = _FakeClock()
+
+    with _patched_clock(clock):
+        stream = client.iter_deployment_logs(123, 2, pod="pod-a", follow=True)
+        got = [next(stream).id for _ in range(7)]
+
+    assert got == ["1000-x", "1001-x", "1002-x", "1003-x", "1004-x", "1002-late", "2000-f"]
+
+
+def test_iter_deployment_logs_drains_lines_newer_than_the_merge_delay_on_return():
+    # follow=False must drain the merge buffers unconditionally once every pod is caught
+    # up; lines newer than any time-based watermark must not be silently dropped.
+    recent_ms = int(time.time() * 1000) + 60_000
+    api = MagicMock()
+    api.get_deployment_pods_deployments_pods_deployment_id_revision_number_get.return_value = SimpleNamespace(
+        pods=["pod-a", "pod-b"]
+    )
+
+    def pages(**kwargs):
+        if kwargs["timestamp"]:
+            return _log_page()
+        if kwargs["pod"] == "pod-a":
+            return _log_page(_log_event("1000-a", 1000), _log_event(f"{recent_ms}-a", recent_ms))
+        return _log_page(_log_event("500-b", 500))
+
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = pages
+    client = CentMLClient(api)
+
+    events = list(client.iter_deployment_logs(123, 2))
+
+    assert [e.id for e in events] == ["500-b", "1000-a", f"{recent_ms}-a"]
+
+
+def test_iter_deployment_logs_follow_retires_pods_gone_from_the_pod_list():
+    api = MagicMock()
+    pod_lists = iter([["pod-a", "pod-b"]])
+    api.get_deployment_pods_deployments_pods_deployment_id_revision_number_get.side_effect = lambda **kwargs: (
+        SimpleNamespace(pods=next(pod_lists, ["pod-a"]))
+    )
+    clock = _FakeClock()
+    calls = {"pod-a": 0, "pod-b": 0}
+    pod_b_pages = iter([_log_page(_log_event("500-b", 500))])
+
+    def pages(**kwargs):
+        clock.now += 0.5  # requests take wall time, letting poll pacing and refresh advance
+        calls[kwargs["pod"]] += 1
+        if kwargs["pod"] == "pod-b":
+            return next(pod_b_pages, _log_page())
+        step = calls["pod-a"]
+        return _log_page(_log_event(f"{10_000 + step}-a", 10_000 + step))
+
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = pages
+    client = CentMLClient(api)
+
+    with _patched_clock(clock):
+        stream = client.iter_deployment_logs(123, 2, follow=True, poll_interval=2.0)
+        first_batch = [next(stream) for _ in range(40)]
+        calls_b_after_retirement = calls["pod-b"]
+        second_batch = [next(stream) for _ in range(30)]
+
+    # pod-b left the pod list at the first refresh and was caught up: polling it stopped.
+    assert calls["pod-b"] == calls_b_after_retirement
+    # Its one line was delivered exactly once, and nothing else was lost or duplicated.
+    ids = [e.id for e in first_batch + second_batch]
+    assert ids.count("500-b") == 1 and len(set(ids)) == len(ids)
+
+
+def test_iter_deployment_logs_follow_holds_steady_state_lines_for_the_merge_delay():
+    # Multi-pod steady state: a residual line above a peer's frontier is released once
+    # the merge delay (one poll_interval) has passed, not held indefinitely and not
+    # released before its peers had a chance to interleave.
+    api = MagicMock()
+    api.get_deployment_pods_deployments_pods_deployment_id_revision_number_get.return_value = SimpleNamespace(
+        pods=["pod-a", "pod-b"]
+    )
+    clock = _FakeClock()
+    fresh_ms = clock.wall_ms() - 10
+    fetch_time = {}
+
+    def pages(**kwargs):
+        if kwargs["timestamp"]:
+            return _log_page()
+        if kwargs["pod"] == "pod-a":
+            fetch_time["fresh"] = clock.now
+            return _log_page(_log_event(f"{fresh_ms - 5000}-a", fresh_ms - 5000), _log_event(f"{fresh_ms}-a", fresh_ms))
+        return _log_page(_log_event(f"{fresh_ms - 6000}-b", fresh_ms - 6000))
+
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = pages
+    client = CentMLClient(api)
+
+    with _patched_clock(clock):
+        stream = client.iter_deployment_logs(123, 2, follow=True, poll_interval=2.0)
+        assert next(stream).id == f"{fresh_ms - 6000}-b"
+        assert next(stream).id == f"{fresh_ms - 5000}-a"
+        released = next(stream)
+
+    assert released.id == f"{fresh_ms}-a"
+    assert clock.now - fetch_time["fresh"] >= 2.0  # held for the merge delay, then released
+
+
+def test_iter_deployment_logs_follow_single_pod_releases_without_merge_delay():
+    api = MagicMock()
+    clock = _FakeClock()
+    fresh_ms = clock.wall_ms() - 10
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = [
+        _log_page(_log_event(f"{fresh_ms}-a", fresh_ms))
+    ]
+    client = CentMLClient(api)
+
+    with _patched_clock(clock):
+        stream = client.iter_deployment_logs(123, 2, pod="pod-a", follow=True)
+        assert next(stream).id == f"{fresh_ms}-a"
+
+    assert clock.sleeps == 0  # released in its own fetch round: no invented tail latency
+
+
+def test_iter_deployment_logs_follow_paces_caught_up_pods_while_a_peer_streams():
+    api = MagicMock()
+    api.get_deployment_pods_deployments_pods_deployment_id_revision_number_get.return_value = SimpleNamespace(
+        pods=["pod-a", "pod-b"]
+    )
+    clock = _FakeClock()
+    calls = {"pod-a": 0, "pod-b": 0}
+
+    def pages(**kwargs):
+        clock.now += 0.5  # requests take wall time
+        calls[kwargs["pod"]] += 1
+        if kwargs["pod"] == "pod-b":
+            return _log_page()  # permanently idle
+        step = calls["pod-a"]
+        return _log_page(_log_event(f"{10_000 + step}-a", 10_000 + step))
+
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = pages
+    client = CentMLClient(api)
+
+    with _patched_clock(clock):
+        stream = client.iter_deployment_logs(123, 2, follow=True, poll_interval=2.0)
+        for _ in range(20):
+            next(stream)
+
+    # The idle pod is re-polled at most once per poll_interval of elapsed time, not once
+    # per round of its streaming peer.
+    assert calls["pod-b"] <= clock.now / 2.0 + 2
+    assert calls["pod-b"] < calls["pod-a"] / 2
