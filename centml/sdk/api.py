@@ -19,6 +19,7 @@ from platform_api_python_client import (
     InviteUserRequest,
     Metric,
 )
+from typing_extensions import deprecated
 
 from centml.sdk import auth
 from centml.sdk.config import settings
@@ -250,6 +251,7 @@ class CentMLClient:
         ).pods
 
     # pylint: disable=R0917
+    @deprecated("get_deployment_logs() is deprecated; use fetch_logs() instead")
     def get_deployment_logs(
         self,
         deployment_id: int,
@@ -282,7 +284,6 @@ class CentMLClient:
         carries the 5000 nearest its direction (the newest when paging older, the oldest
         when paging newer), independently of max_lines.
         """
-        warnings.warn("get_deployment_logs() is deprecated; use fetch_logs() instead", DeprecationWarning, stacklevel=2)
         return self._fetch_log_page(
             deployment_id, revision_number, pod, before=before, after=after, max_lines=max_lines
         )
@@ -336,6 +337,7 @@ class CentMLClient:
         return [event for event in response.events if event.id not in held_event_ids]
 
     # pylint: disable=R0917
+    @deprecated("get_deployment_logs_range() is deprecated; use fetch_logs() instead")
     def get_deployment_logs_range(
         self,
         deployment_id: int,
@@ -350,9 +352,6 @@ class CentMLClient:
         optional — an open end reads to the beginning or the present), oldest first.
         pod=None reads all pods of the revision and merges the streams
         chronologically; each returned event carries its pod name."""
-        warnings.warn(
-            "get_deployment_logs_range() is deprecated; use fetch_logs() instead", DeprecationWarning, stacklevel=2
-        )
         if start_time is not None and end_time is not None and start_time > end_time:
             raise ValueError("start_time must not exceed end_time")
 
@@ -613,6 +612,7 @@ class CentMLClient:
             if watermark is None:
                 return
 
+    @deprecated("deployment_log_session() is deprecated; use fetch_logs() instead")
     def deployment_log_session(
         self, deployment_id: int, revision_number: int, pod: str, events: Optional[list] = None
     ) -> "DeploymentLogSession":
@@ -621,9 +621,14 @@ class CentMLClient:
         Stateful reader for one pod's logs that tracks fetched pages and anchors
         every request itself — see DeploymentLogSession. Seed events with logs a
         previous session (or get_deployment_logs) returned for the same pod."""
-        return DeploymentLogSession(self, deployment_id, revision_number, pod, events)
+        with warnings.catch_warnings():
+            # This call already warned via its own decorator; constructing the
+            # (also-deprecated) session class must not warn a second time.
+            warnings.simplefilter("ignore", DeprecationWarning)
+            return DeploymentLogSession(self, deployment_id, revision_number, pod, events)
 
 
+@deprecated("DeploymentLogSession is deprecated; use CentMLClient.fetch_logs() instead")
 class DeploymentLogSession:
     """Deprecated: use CentMLClient.fetch_logs() instead.
 
@@ -635,11 +640,6 @@ class DeploymentLogSession:
 
     # pylint: disable=R0917
     def __init__(self, client: CentMLClient, deployment_id: int, revision_number: int, pod: str, events=None):
-        warnings.warn(
-            "DeploymentLogSession is deprecated; use CentMLClient.fetch_logs() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         self._client = client
         self._deployment_id = deployment_id
         self._revision_number = revision_number

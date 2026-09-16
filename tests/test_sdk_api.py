@@ -19,6 +19,7 @@ from centml.sdk.api import (
     LOG_MERGE_BUFFER_PAGES,
     MAX_LOG_PAGE_LINES,
     CentMLClient,
+    DeploymentLogSession,
     get_centml_client,
 )
 from centml.sdk.config import settings
@@ -924,8 +925,13 @@ def test_deprecated_log_readers_warn_and_name_the_replacement():
         client.get_deployment_logs(123, 2, pod="pod-a")
     with pytest.warns(DeprecationWarning, match="fetch_logs"):
         client.get_deployment_logs_range(123, 2)
-    with pytest.warns(DeprecationWarning, match="fetch_logs"):
+    with pytest.warns(DeprecationWarning, match="fetch_logs") as caught:
         session = client.deployment_log_session(123, 2, "pod-a")
+    # Exactly one warning: the method's own, not a second from constructing the
+    # (also-deprecated) session class inside it.
+    assert len(caught) == 1
+    with pytest.warns(DeprecationWarning, match="fetch_logs"):
+        DeploymentLogSession(client, 123, 2, "pod-a")
 
     # The deprecated paths still work, and a constructed session fetches without
     # re-warning on the SDK's own internal page calls.
