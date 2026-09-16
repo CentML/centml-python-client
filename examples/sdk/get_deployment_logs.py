@@ -6,9 +6,8 @@ from centml.sdk.api import get_centml_client
 # --- Configuration ---
 DEPLOYMENT_ID = 1234  # Replace with your deployment ID
 REVISION_NUMBER = 10
-RECENT_LINES = 20  # How many of the newest stored lines to peek at
+WINDOW_MINUTES = 10  # How far back the window read looks
 TAIL_LINES = 20  # How many tailed lines to print before stopping the tail loop
-OVERLAP_MS = 30_000  # Covers the server's ~15s late-arrival re-delivery span
 POLL_SECONDS = 2.0
 
 
@@ -19,58 +18,40 @@ def format_event(event) -> str:
 
 def main():
     with get_centml_client() as cclient:
-        # The newest stored lines, without reading the whole history: newest_first
-        # walks the window backward, one chunk at a time. Direction changes only
-        # the order chunks arrive — lines inside each chunk are always ascending.
-        print(f"Newest {RECENT_LINES} lines of deployment {DEPLOYMENT_ID} revision {REVISION_NUMBER}:\n")
+        # Discover pod names; terminated pods still within log retention are included.
+        pods = cclient.get_deployment_pods(DEPLOYMENT_ID, REVISION_NUMBER)
+        pod = pods[0]
+
+        # A window read: start_time/end_time are epoch ms, inclusive. With end_time
+        # set the iterator terminates once the window is delivered. fetch_logs is
+        # lazy — chunks are yielded as they are fetched, with bounded memory
+        # however large the window.
+        now_ms = int(time.time() * 1000)
+        print(f"Last {WINDOW_MINUTES} minutes of pod {pod}:\n")
+        count = 0
+        for chunk in cclient.fetch_logs(
+            DEPLOYMENT_ID, REVISION_NUMBER, pod, start_time=now_ms - WINDOW_MINUTES * 60_000, end_time=now_ms
+        ):
+            for event in chunk:
+                print(format_event(event))
+            count += len(chunk)
+        print(f"\nThe window holds {count} lines.")
+
+        # A tail: without end_time the same generator never terminates. start_time
+        # defaults to the moment of the call, and once caught up the generator
+        # yields an empty chunk each time nothing new is stored yet — the caller
+        # decides when to sleep or break. No line is ever delivered twice.
+        print(f"\nTailing pod {pod}; stopping after {TAIL_LINES} new lines...")
         printed = 0
-        for chunk in cclient.fetch_logs(DEPLOYMENT_ID, REVISION_NUMBER, newest_first=True, chunk_size=RECENT_LINES):
+        for chunk in cclient.fetch_logs(DEPLOYMENT_ID, REVISION_NUMBER, pod):
+            if not chunk:
+                time.sleep(POLL_SECONDS)
+                continue
             for event in chunk:
                 print(format_event(event))
             printed += len(chunk)
-            if printed >= RECENT_LINES:
+            if printed >= TAIL_LINES:
                 break
-
-        # A full chronological read, all pods merged. fetch_logs is lazy — chunks
-        # are yielded as they are fetched, with bounded memory however large the
-        # window — and always terminates once caught up. Bound the window with
-        # start_time/end_time (epoch ms, inclusive) when the history is long.
-        count = 0
-        for chunk in cclient.fetch_logs(DEPLOYMENT_ID, REVISION_NUMBER):
-            count += len(chunk)
-        print(f"\nFull retained history holds {count} lines.")
-
-        # Tailing is a caller loop: re-call a forward fetch_logs with the next
-        # window starting OVERLAP_MS below the newest seen line, so lines the log
-        # store delivers late (up to ~15s after their timestamp) are not skipped,
-        # and deduplicate by event.id. Only ids inside the overlap window can come
-        # back again, so trimming `seen` to it keeps the loop's memory bounded.
-        print(f"\nTailing; stopping after {TAIL_LINES} new lines...")
-        seen = {}  # event id -> timestamp, trimmed to the overlap window each round
-        boundary = int(time.time() * 1000)  # newest timestamp seen so far
-        printed = 0
-        while printed < TAIL_LINES:
-            for chunk in cclient.fetch_logs(
-                DEPLOYMENT_ID, REVISION_NUMBER, start_time=max(boundary - OVERLAP_MS, 0), newest_first=False
-            ):
-                for event in chunk:
-                    if event.id in seen:
-                        continue
-                    seen[event.id] = event.timestamp
-                    boundary = max(boundary, event.timestamp)
-                    print(format_event(event))
-                    printed += 1
-            cutoff = boundary - OVERLAP_MS
-            seen = {event_id: ts for event_id, ts in seen.items() if ts >= cutoff}
-            time.sleep(POLL_SECONDS)
-
-        # A single pod (discover names with get_deployment_pods; terminated pods
-        # still within log retention are included), with caller-sized chunks:
-        #   pods = cclient.get_deployment_pods(DEPLOYMENT_ID, REVISION_NUMBER)
-        #   for chunk in cclient.fetch_logs(
-        #       DEPLOYMENT_ID, REVISION_NUMBER, pod=pods[0], start_time=t1_ms, end_time=t2_ms, chunk_size=500
-        #   ):
-        #       ...
 
 
 if __name__ == "__main__":

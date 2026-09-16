@@ -55,135 +55,39 @@ delete the deployment automatically.
 
 ### Deployment logs SDK example
 
-`fetch_logs()` is the one way to read deployment logs: it fetches a revision's
-stored log lines within a time window (`start_time`/`end_time`, epoch ms,
-inclusive; omit either bound to leave that side unbounded) and yields them lazily
-as chunks of up to `chunk_size` `DeploymentLogEvent` — each line at most once,
-each event carrying its pod name, with bounded memory however large the window.
-`newest_first` selects only the order chunks arrive: `False` (the default) walks
-the window oldest chunk first, `True` newest chunk first; lines inside every chunk
-are always in ascending `(timestamp, id)` order. So the bare call reads the full
-retained history chronologically, `newest_first=True` starts from the newest
-stored line and walks backward, and `start_time` alone catches up from a known
-point to the present. By default every pod of the revision is merged into one
-stream; pass `pod=` to read a single pod — discover names with
-`get_deployment_pods()` (terminated pods still within log retention are included):
+`fetch_logs()` is the one way to read deployment logs: it fetches one pod's stored
+log lines within a time window (`start_time`/`end_time`, epoch ms, inclusive) and
+yields them lazily, oldest first, as chunks of up to `chunk_size`
+`DeploymentLogEvent` — each line at most once, with bounded memory however long
+the stream. Discover pod names with `get_deployment_pods()` (terminated pods
+still within log retention are included). `start_time` defaults to the moment of
+the call; with `end_time` set the iterator terminates once the window is
+delivered:
 
 ```python
-for chunk in cclient.fetch_logs(DEPLOYMENT_ID, REVISION, start_time=t1_ms, end_time=t2_ms):
+for chunk in cclient.fetch_logs(DEPLOYMENT_ID, REVISION, pod, start_time=t1_ms, end_time=t2_ms):
     for event in chunk:
         print(event.pod, event.message)
 ```
 
-The iterator always terminates, and its exhaustion is the only termination signal:
-one that yields nothing means the window holds no stored lines (aged out of
-retention, before the deployment existed, an unknown pod, or genuinely empty).
-Reading backward, note that a line the log store receives late for a time region
-the walk has already passed is absent from that call: everything older than
-roughly the read's start minus the ingest lag (~15s) is complete, and when
-completeness of the newest lines matters, read forward. There is no follow mode:
-tailing is a caller loop that re-calls a forward `fetch_logs` with a later
-`start_time` and deduplicates by `event.id`:
+Without `end_time` the same generator tails: it never terminates, and once caught
+up it yields an empty chunk each time nothing new is stored yet — the caller
+decides when to sleep or break:
 
 ```python
 import time
 
-OVERLAP_MS = 30_000  # covers the server's ~15s late-arrival re-delivery span
-POLL_SECONDS = 2.0
-
-seen = {}  # event id -> timestamp, trimmed to the overlap window each round
-boundary = int(time.time() * 1000)  # newest timestamp seen so far
-while True:
-    for chunk in cclient.fetch_logs(
-        DEPLOYMENT_ID, REVISION, start_time=max(boundary - OVERLAP_MS, 0), newest_first=False
-    ):
-        for event in chunk:
-            if event.id in seen:
-                continue
-            seen[event.id] = event.timestamp
-            boundary = max(boundary, event.timestamp)
-            print(event.pod, event.message)
-    cutoff = boundary - OVERLAP_MS
-    seen = {event_id: ts for event_id, ts in seen.items() if ts >= cutoff}
-    time.sleep(POLL_SECONDS)
-```
-
-Two properties of this loop matter. Consecutive windows overlap on purpose: the log
-store may deliver a line up to ~15 seconds after its timestamp, so starting each call
-`OVERLAP_MS` below the newest seen line is what keeps late arrivals from being
-skipped — do not advance `start_time` past that span to avoid the duplicates. And the
-dedup state is bounded: only ids inside the overlap window can come back again, so
-`seen` is trimmed to that window each round and never grows with the stream.
-
-`python examples/sdk/get_deployment_logs.py` runs a newest-first peek, a full
-chronological read and this tail loop. `get_deployment_logs()`, `get_deployment_logs_range()` and
-`deployment_log_session()` still work but are deprecated in favor of `fetch_logs()`
-and raise a `DeprecationWarning` on use.
-
-### Migrating deployment log reads from 0.5.x
-
-`get_deployment_logs()` kept its name but not its signature, and is now deprecated:
-`start_time`, `end_time`, `line_count`, `start_from_head` and `stream` are gone, and
-`fetch_logs()` is the replacement for every read. A 0.5.x call raises `TypeError`
-(or a validation error, if its arguments were positional) rather than returning
-something wrong, so no call site fails silently.
-
-| To | 0.5.x | now |
-|---|---|---|
-| Read a time window | `get_deployment_logs(id, rev, start_time=, end_time=)` | `fetch_logs(id, rev, start_time=, end_time=)` |
-| Stream a window lazily | the same call with `stream=True` | `fetch_logs(...)` — chunks are yielded as they are fetched |
-| Take the newest lines first | `start_from_head=False` | `fetch_logs(id, rev, newest_first=True)` |
-| Read from the beginning | `start_from_head=True` | `fetch_logs(id, rev)` — oldest first is the default |
-| Cap what one iteration hands you | `line_count=n` | `chunk_size=n` |
-| Tell which pod a line came from | parse `kubernetes.pod_name` out of `message` | `event.pod` |
-| Keep tailing past the window | not supported | re-call `fetch_logs` with overlapping windows (the tail loop above) |
-
-A whole-window read loses its envelope parsing, because `message` is now the log line
-itself rather than a JSON record wrapping it:
-
-```python
-# 0.5.x
-events = cclient.get_deployment_logs(DEPLOYMENT_ID, REVISION, start_time=t1, end_time=t2)
-for event in events:
-    record = json.loads(event["message"])
-    print(record["kubernetes"]["pod_name"], record["log"])
-
-# now
-for chunk in cclient.fetch_logs(DEPLOYMENT_ID, REVISION, start_time=t1, end_time=t2):
+for chunk in cclient.fetch_logs(DEPLOYMENT_ID, REVISION, pod):
+    if not chunk:
+        time.sleep(2)
+        continue
     for event in chunk:
         print(event.pod, event.message)
 ```
 
-A `stream=True` loop becomes a `fetch_logs()` loop, which yields each chunk as it
-arrives just as the old generator yielded pages:
-
-```python
-# 0.5.x
-for event in cclient.get_deployment_logs(
-    DEPLOYMENT_ID, REVISION, start_time=t1, end_time=t2, stream=True
-):
-    print(json.loads(event["message"])["log"])
-
-# now
-for chunk in cclient.fetch_logs(DEPLOYMENT_ID, REVISION, start_time=t1, end_time=t2):
-    for event in chunk:
-        print(event.message)
-```
-
-One contract change to check error handling against: a revision that does not exist
-now answers 404 where the old endpoint answered 400.
-
-The 0.6.0 readers — `get_deployment_logs()` page anchoring, `get_deployment_logs_range()`
-and `deployment_log_session()` — still work but are deprecated and warn on use; the
-look-behind anchoring they exposed is handled inside `fetch_logs()`:
-
-| 0.6.0 | now |
-|---|---|
-| `get_deployment_logs(id, rev, pod)` — newest page of one pod | `fetch_logs(id, rev, pod=pod, newest_first=True)` and take the first chunk |
-| `get_deployment_logs(id, rev, pod, after=events)` — page newer than held events | `fetch_logs(id, rev, pod=pod, start_time=boundary_ms)` (the tail loop above for repeated polling) |
-| `get_deployment_logs_range(id, rev, start_time=, end_time=)` | `fetch_logs(id, rev, start_time=, end_time=)` — chunked and lazy instead of one list |
-| `deployment_log_session(...).fetch_older()` loop | `fetch_logs(id, rev, pod=pod, newest_first=True)` — one iterator walks back to the start |
-| `session.fetch_newer()` polling | the tail loop above |
+`python examples/sdk/get_deployment_logs.py` runs both. `get_deployment_logs()`,
+`get_deployment_logs_range()` and `deployment_log_session()` still work but are
+deprecated in favor of `fetch_logs()` and raise a `DeprecationWarning` on use.
 
 ### Un-installation
 
