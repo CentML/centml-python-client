@@ -20,13 +20,18 @@ def main():
     with get_centml_client() as cclient:
         # Discover pod names; terminated pods still within log retention are included.
         pods = cclient.get_deployment_pods(DEPLOYMENT_ID, REVISION_NUMBER)
+        if not pods:
+            print("No pods have logged for this revision yet.")
+            return
+
         pod = pods[0]
 
         # A window read: start_time/end_time are epoch ms, inclusive. With end_time
-        # set the iterator terminates once the window is delivered. fetch_logs is
-        # lazy — each server page is yielded as one chunk, with bounded memory
-        # however large the window. chunk_size is also the number of lines
-        # requested per round trip, so a bulk read wants a large value.
+        # set the iterator terminates once the window is delivered or the store has
+        # no more lines to give. fetch_logs is lazy — each server page is yielded as
+        # one chunk, and only a short dedup window is held however large the read.
+        # chunk_size is also the number of lines requested per round trip, so a bulk
+        # read wants a large value.
         now_ms = int(time.time() * 1000)
         print(f"Last {WINDOW_MINUTES} minutes of pod {pod}:\n")
         count = 0

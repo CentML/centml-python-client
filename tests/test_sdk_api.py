@@ -672,8 +672,8 @@ def _replaying_log_server(all_events, look_behind_ms=15_000, page_cap=None):
         limit = min(kwargs["max_lines"], page_cap or kwargs["max_lines"])
         boundary = kwargs["timestamp"]
         newer = [e for e in all_events if e.timestamp > boundary][:limit]
-        gray = [e for e in all_events if boundary - look_behind_ms < e.timestamp <= boundary]
-        return _log_page(*sorted(gray + newer, key=lambda e: e.id))
+        look_behind = [e for e in all_events if boundary - look_behind_ms < e.timestamp <= boundary]
+        return _log_page(*sorted(look_behind + newer, key=lambda e: e.id))
 
     return respond
 
@@ -820,11 +820,10 @@ def test_fetch_logs_open_ended_yields_empty_chunks_and_resumes_without_duplicate
     assert next(stream) == []
 
 
-def test_fetch_logs_does_not_livelock_on_gray_span_redelivery():
-    # Regression: with a bare int boundary the re-delivered look-behind span keeps
-    # every page non-empty forever (measured against dev: 9 iterations of the same
-    # 7 gray lines before the naive port was declared wedged). The held anchor
-    # dedupes the gray span away, so the bounded read terminates.
+def test_fetch_logs_does_not_livelock_on_look_behind_redelivery():
+    # A bare int boundary alone would never terminate: the re-delivered look-behind
+    # span keeps every page non-empty and the boundary never advances past it. The
+    # held anchor dedupes the span away, so the bounded read terminates.
     all_events = [_log_event(f"{1000 + i:05d}-x", 1000 + i) for i in range(30)]
     api = MagicMock()
     api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = _replaying_log_server(
@@ -839,7 +838,7 @@ def test_fetch_logs_does_not_livelock_on_gray_span_redelivery():
     assert api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.call_count == 4
 
 
-def test_fetch_logs_start_time_holds_gray_lines_below_the_window():
+def test_fetch_logs_start_time_holds_look_behind_lines_below_the_window():
     all_events = [
         _log_event("04990-w", 4990),
         _log_event("04995-x", 4995),
@@ -946,6 +945,53 @@ def test_fetch_logs_validates_eagerly_at_the_call_not_the_first_next():
             client.fetch_logs(123, 2, pod="pod-a", **kwargs)
 
     api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.assert_not_called()
+
+
+def test_fetch_logs_accepts_both_ends_of_the_chunk_size_range():
+    api = MagicMock()
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.return_value = _log_page()
+    client = CentMLClient(api)
+
+    for chunk_size in (1, MAX_LOG_PAGE_LINES):
+        list(client.fetch_logs(123, 2, pod="pod-a", start_time=1, end_time=10_000, chunk_size=chunk_size))
+
+    sent = [
+        call.kwargs["max_lines"]
+        for call in api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.call_args_list
+    ]
+    assert sent == [1, MAX_LOG_PAGE_LINES]
+
+
+def test_fetch_logs_start_time_zero_clamps_the_boundary():
+    api = MagicMock()
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.return_value = _log_page()
+    client = CentMLClient(api)
+
+    list(client.fetch_logs(123, 2, pod="pod-a", start_time=0, end_time=10_000))
+
+    # after is exclusive, but the server rejects a negative boundary, so start_time 0
+    # clamps to 0 — which already admits every stored line.
+    first_call = api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.call_args_list[0]
+    assert first_call.kwargs["timestamp"] == 0
+
+
+def test_fetch_logs_failed_page_leaves_delivered_chunks_whole():
+    api = MagicMock()
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = [
+        _log_page(_log_event("1-a", 1000), _log_event("2-b", 2000)),
+        ApiException(status=503),
+    ]
+    client = CentMLClient(api)
+
+    stream = client.fetch_logs(123, 2, pod="pod-a", start_time=1, end_time=10_000, chunk_size=2)
+
+    assert [e.id for e in next(stream)] == ["1-a", "2-b"]
+    with pytest.raises(ApiException):
+        next(stream)
+    # The failure ends the iterator, as it would any generator; the caller resumes
+    # with a new fetch_logs anchored on the last event it holds.
+    with pytest.raises(StopIteration):
+        next(stream)
 
 
 def test_fetch_logs_is_lazy_until_the_first_next():

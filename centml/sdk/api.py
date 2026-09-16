@@ -46,9 +46,19 @@ def _recent_anchor(events: list) -> list:
 
 
 @dataclass(frozen=True)
+class _LogAnchor:
+    """All an after anchor takes from an event: the dedup id and the timestamp the
+    boundary and the retention trim read. Holding these instead of whole events keeps
+    a long-running fetch_logs off the message text it has already handed out."""
+
+    id: str
+    timestamp: int
+
+
+@dataclass(frozen=True)
 class DeploymentLogEvent:
     """One log line with its pod attached — logs_v4 events carry no pod name, so
-    the SDK attributes each line to the pod it was fetched from."""
+    merged multi-pod views need the SDK to attribute each line itself."""
 
     id: str
     timestamp: int
@@ -261,10 +271,7 @@ class CentMLClient:
         boundary itself — after=0 scans from the head of the log window; an int after
         anchor holds no event ids, so the re-delivered span at the boundary comes
         through undeduplicated. An empty anchor list raises ValueError. Pages never
-        split a millisecond, so a delivered boundary millisecond is complete unless it
-        holds more than the log store's 5000-line per-query ceiling — past that the page
-        carries the 5000 nearest its direction (the newest when paging older, the oldest
-        when paging newer), independently of max_lines.
+        split a millisecond, so a delivered boundary millisecond is always complete.
         """
         return self._fetch_log_page(
             deployment_id, revision_number, pod, before=before, after=after, max_lines=max_lines
@@ -391,7 +398,9 @@ class CentMLClient:
         called (not at the first next()), so lines logged while the generator sits
         unstarted are not skipped; pass an earlier start_time to read history.
 
-        With end_time set the iterator terminates once the window is delivered.
+        With end_time set the iterator terminates once the window is delivered or
+        the store has no more lines to give, whichever comes first — an end_time
+        in the future does not keep it polling until then.
         Without end_time it never terminates — once caught up it yields an empty
         chunk each time nothing new is stored yet, and the caller decides when to
         sleep or break:
@@ -402,11 +411,18 @@ class CentMLClient:
                     continue
                 ...
 
-        Nothing is fetched before the first next(), and memory stays bounded
-        however long the stream: the dedup anchor is trimmed to the server's ~15s
-        re-delivery span, so no line is delivered twice — across empty chunks too.
+        Nothing is fetched before the first next(), and memory is bounded by the
+        dedup window rather than by the length of the stream: the anchor holds
+        only the ids and timestamps of the last LOG_DEDUP_RETENTION_MS, a
+        generous margin over the server's re-delivery span, so no line is
+        delivered twice — across empty chunks too.
+
         A line the log store received late lands in a later chunk than its
-        timestamp position, never duplicated; lines inside each chunk are always
+        timestamp position, never duplicated, as long as it lands inside that
+        re-delivery span (~15s). This reader only ever pages forward, and the
+        server re-delivers the span behind the boundary only; a line whose
+        timestamp falls further than the span behind the newest line already
+        delivered is never returned at all. Lines inside each chunk are always
         in ascending (timestamp, id) order.
 
         If a page request fails the iterator raises and, like any generator,
@@ -438,19 +454,20 @@ class CentMLClient:
                 past_end = False
                 chunk: List[DeploymentLogEvent] = []
                 for raw in page:
+                    anchor_event = _LogAnchor(id=raw.id, timestamp=raw.timestamp)
                     if held and raw.id <= held[-1].id:
                         # Late arrival inside the look-behind span: keep the held window
                         # id-ordered (id order == time order) so trimming stays correct.
-                        insort(held, raw, key=lambda held_event: held_event.id)
+                        insort(held, anchor_event, key=lambda held_event: held_event.id)
                     else:
-                        held.append(raw)
+                        held.append(anchor_event)
                     # Anchoring at start_ms - 1 re-delivers the look-behind span below
                     # start_ms; those ids must be held for dedup but never emitted.
                     if raw.timestamp < start_ms:
                         continue
                     if end_time is not None and raw.timestamp > end_time:
                         past_end = True
-                        continue
+                        break
                     event = DeploymentLogEvent(id=raw.id, timestamp=raw.timestamp, message=raw.message, pod=pod)
                     # The server orders a page by nanosecond timestamp only, never by
                     # the id's hash suffix, so lines sharing one nanosecond can arrive
@@ -459,7 +476,7 @@ class CentMLClient:
                         insort(chunk, event, key=lambda chunk_event: (chunk_event.timestamp, chunk_event.id))
                     else:
                         chunk.append(event)
-                if held:
+                if page:
                     held = _recent_anchor(held)
                 if chunk:
                     yield chunk

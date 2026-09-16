@@ -58,14 +58,16 @@ delete the deployment automatically.
 `fetch_logs()` is the one way to read deployment logs: it fetches one pod's stored
 log lines within a time window (`start_time`/`end_time`, epoch ms, inclusive) and
 yields them lazily, oldest first, as chunks of `DeploymentLogEvent` — each line at
-most once, with bounded memory however long the stream. `chunk_size` (1 to 5000)
+most once, holding only a short dedup window in memory however long the stream.
+`chunk_size` (1 to 5000)
 is the number of lines requested from the server per round trip and each server
 page becomes one chunk, so a bulk read of history wants a large `chunk_size` —
 the log read path is rate-limited upstream, and a small `chunk_size` over a large
 window multiplies requests. Discover pod names with `get_deployment_pods()`
 (terminated pods still within log retention are included). `start_time` defaults
 to the moment of the call; with `end_time` set the iterator terminates once the
-window is delivered:
+window is delivered or the store has no more lines to give, whichever comes
+first:
 
 ```python
 for chunk in cclient.fetch_logs(DEPLOYMENT_ID, REVISION, pod, start_time=t1_ms, end_time=t2_ms):
@@ -90,7 +92,7 @@ for chunk in cclient.fetch_logs(DEPLOYMENT_ID, REVISION, pod):
 
 `python examples/sdk/get_deployment_logs.py` runs both. `get_deployment_logs()`,
 `get_deployment_logs_range()` and `deployment_log_session()` still work but are
-deprecated in favor of `fetch_logs()` and raise a `DeprecationWarning` on use.
+deprecated in favor of `fetch_logs()` and emit a `DeprecationWarning` on use.
 
 ### Un-installation
 
