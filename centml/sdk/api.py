@@ -659,7 +659,7 @@ class DeploymentLogSession:
         """Fetch the page older than the window and prepend it; on an empty session
         fetches the newest page (tail). Returns the page; empty list = no older
         lines exist (yet)."""
-        page = self._client._fetch_log_page(  # pylint: disable=protected-access
+        page = self._client._fetch_log_page(
             self._deployment_id,
             self._revision_number,
             self._pod,
@@ -677,7 +677,7 @@ class DeploymentLogSession:
         tailing. Rare late arrivals sort into the window below its newest lines."""
         if not self._events:
             return self.fetch_older(max_lines=max_lines)
-        delta = self._client._fetch_log_page(  # pylint: disable=protected-access
+        delta = self._client._fetch_log_page(
             self._deployment_id,
             self._revision_number,
             self._pod,
