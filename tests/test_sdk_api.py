@@ -857,6 +857,22 @@ def test_fetch_logs_start_time_holds_look_behind_lines_below_the_window():
     assert first_call.kwargs["timestamp"] == 4999  # after is exclusive: admits start_time itself
 
 
+def test_fetch_logs_page_filtered_away_entirely_yields_nothing_not_an_empty_chunk():
+    api = MagicMock()
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = [
+        _log_page(_log_event("04990-w", 4990), _log_event("04995-x", 4995)),
+        _log_page(_log_event("06000-z", 6000)),
+    ]
+    client = CentMLClient(api)
+
+    stream = client.fetch_logs(123, 2, pod="pod-a", start_time=5000)
+
+    # An empty chunk means "caught up", so a page holding only look-behind lines
+    # below start_time must fetch again rather than claim the stream is idle.
+    assert [e.id for e in next(stream)] == ["06000-z"]
+    assert api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.call_count == 2
+
+
 def test_fetch_logs_held_state_stays_within_the_dedup_window():
     step_ms = 10_000
     pages = [

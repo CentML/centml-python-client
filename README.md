@@ -59,11 +59,11 @@ delete the deployment automatically.
 log lines within a time window (`start_time`/`end_time`, epoch ms, inclusive) and
 yields them lazily, oldest first, as chunks of `DeploymentLogEvent` — each line at
 most once, holding only a short dedup window in memory however long the stream.
-`chunk_size` (1 to 5000)
-is the number of lines requested from the server per round trip and each server
-page becomes one chunk, so a bulk read of history wants a large `chunk_size` —
-the log read path is rate-limited upstream, and a small `chunk_size` over a large
-window multiplies requests. Discover pod names with `get_deployment_pods()`
+`chunk_size` (1 to 5000) is the number of lines requested from the server per
+round trip and each server page that carries window lines becomes one chunk, so
+a bulk read of history wants a large `chunk_size` — the log read path is
+rate-limited upstream, and a small `chunk_size` over a large window multiplies
+requests. Discover pod names with `get_deployment_pods()`
 (terminated pods still within log retention are included). `start_time` defaults
 to the moment of the call; with `end_time` set the iterator terminates once the
 window is delivered or the store has no more lines to give, whichever comes

@@ -47,9 +47,9 @@ def _recent_anchor(events: list) -> list:
 
 @dataclass(frozen=True)
 class _LogAnchor:
-    """All an after anchor takes from an event: the dedup id and the timestamp the
-    boundary and the retention trim read. Holding these instead of whole events keeps
-    a long-running fetch_logs off the message text it has already handed out."""
+    """The two fields an after anchor uses: the id it dedupes by and the timestamp it
+    takes its boundary and its retention cutoff from. Holding these instead of whole
+    events keeps a long tail off the message text it has already handed out."""
 
     id: str
     timestamp: int
@@ -385,14 +385,16 @@ class CentMLClient:
         get_deployment_pods().
 
         chunk_size is the number of lines requested from the server per round
-        trip (1 to MAX_LOG_PAGE_LINES), and each server page becomes one yielded
-        chunk, so a bulk read of history wants a large chunk_size — the log read
-        path is rate-limited upstream, and a small chunk_size over a large window
-        multiplies requests. A chunk usually holds up to chunk_size lines but can
-        be smaller (lines below start_time or already delivered are filtered out
-        of the page) or larger (the server never splits one millisecond across
-        pages, so a millisecond holding more than chunk_size lines arrives
-        whole).
+        trip (1 to MAX_LOG_PAGE_LINES), and each server page that carries window
+        lines becomes one yielded chunk, so a bulk read of history wants a large
+        chunk_size — the log read path is rate-limited upstream, and a small
+        chunk_size over a large window multiplies requests. A chunk usually holds
+        up to chunk_size lines but can be smaller (lines below start_time or
+        already delivered are filtered out of the page) or larger (the server
+        never splits one millisecond across pages, so a millisecond holding more
+        than chunk_size lines arrives whole). A page filtered away entirely
+        yields nothing at all rather than an empty chunk, which means only that
+        the stream is caught up.
 
         start_time defaults to the current time, resolved once when fetch_logs is
         called (not at the first next()), so lines logged while the generator sits
