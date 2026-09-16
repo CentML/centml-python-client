@@ -1060,8 +1060,11 @@ def test_fetch_logs_backs_off_further_on_each_busy_answer():
     waited = [call.args[0] for call in sleep.call_args_list]
     assert len(waited) == LOG_RETRY_ATTEMPTS - 1
     # Each wait is longer than the one before it, so a store that stays busy is asked
-    # less and less often rather than hammered at a fixed interval.
+    # less and less often rather than hammered at a fixed interval. The last wait also
+    # dwarfs the first: a fixed interval, however jittered, could not span that, while
+    # doubling across these attempts clears it with room to spare.
     assert all(earlier < later for earlier, later in zip(waited, waited[1:]))
+    assert waited[-1] > waited[0] * 4
 
 
 def test_fetch_logs_does_not_retry_a_request_the_store_rejects():
