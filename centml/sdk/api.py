@@ -1,3 +1,4 @@
+import random
 import time
 from bisect import insort
 from contextlib import contextmanager
@@ -31,6 +32,35 @@ MAX_LOG_PAGE_LINES = 5000  # server-side ceiling for max_lines
 # The server re-delivers a ~15s look-behind window on fetch-newer requests; only the
 # caller's events within this generous margin of the boundary can be re-delivered.
 LOG_DEDUP_RETENTION_MS = 300_000
+# The log read path is rate limited upstream on a bucket shared by every caller, and the
+# API reports a saturated bucket the same way it reports a sick store: HTTP 503. The
+# budget spans a few seconds, long enough to outlast a bucket refill without looking hung.
+LOG_BUSY_STATUS = 503
+LOG_RETRY_ATTEMPTS = 5
+LOG_RETRY_BASE_SECONDS = 0.5
+LOG_RETRY_MAX_SECONDS = 8.0
+
+
+def _with_busy_retry(fetch_page):
+    """Call fetch_page, retrying while the store reports itself busy. There is no
+    server-issued cursor, so a page request is a pure function of its anchor and
+    re-issuing it can neither duplicate nor skip lines."""
+    for attempt in range(LOG_RETRY_ATTEMPTS - 1):
+        try:
+            return fetch_page()
+        except ApiException as exc:
+            if exc.status != LOG_BUSY_STATUS:
+                raise
+            retry_after = exc.headers.get("Retry-After") if exc.headers else None
+            if retry_after is not None and retry_after.isdigit():
+                delay = min(float(retry_after), LOG_RETRY_MAX_SECONDS)
+            else:
+                # jitter: the bucket is shared, so unjittered clients re-collide on it
+                backoff = min(LOG_RETRY_BASE_SECONDS * 2**attempt, LOG_RETRY_MAX_SECONDS)
+                delay = backoff * (0.75 + random.random() * 0.5)
+            time.sleep(delay)
+    # the last attempt propagates whatever it raises
+    return fetch_page()
 
 
 def _recent_anchor(events: list) -> list:
@@ -426,9 +456,15 @@ class CentMLClient:
         delivered is never returned at all. Lines inside each chunk are always
         in ascending (timestamp, id) order.
 
-        If a page request fails the iterator raises and, like any generator,
-        cannot be resumed — but every chunk already yielded is complete and none
-        is left half-built. Resume with a new fetch_logs whose start_time is the
+        A page request the store answers as busy (HTTP 503) is retried with
+        exponential backoff and jitter, honouring Retry-After when the server
+        sends one; the anchor survives the retry, so an upstream rate limit costs
+        a pause rather than the stream.
+
+        If a page request fails for any other reason, or the retries run out, the
+        iterator raises and, like any generator, cannot be resumed — but every
+        chunk already yielded is complete and none is left half-built. Resume
+        with a new fetch_logs whose start_time is the
         last delivered event's timestamp: bounds are inclusive, so the only lines
         delivered again are the ones sharing that millisecond, which the caller
         already holds.
@@ -451,7 +487,11 @@ class CentMLClient:
             initial_boundary = max(start_ms - 1, 0)
             while True:
                 anchor: Union[list, int] = _recent_anchor(held) if held else initial_boundary
-                page = self._fetch_log_page(deployment_id, revision_number, pod, after=anchor, max_lines=chunk_size)
+                page = _with_busy_retry(
+                    lambda anchor=anchor: self._fetch_log_page(
+                        deployment_id, revision_number, pod, after=anchor, max_lines=chunk_size
+                    )
+                )
                 past_end = False
                 chunk: List[DeploymentLogEvent] = []
                 for raw in page:
