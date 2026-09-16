@@ -25,6 +25,8 @@ def main():
             return
 
         pod = pods[0]
+        # One call reads one pod, so here is the rest of the revision's roster.
+        print(f"Pods with logs: {', '.join(pods)}\n")
 
         # A window read: start_time/end_time are epoch ms, inclusive. With end_time
         # set the iterator terminates once the window is delivered or the store has
@@ -52,6 +54,11 @@ def main():
         # defaults to the moment of the call, and once caught up the generator
         # yields an empty chunk each time nothing new is stored yet — the caller
         # decides when to sleep or break. No line is ever delivered twice.
+        #
+        # Passing an earlier start_time here rather than omitting it delivers the
+        # backlog first and then follows, in one pass. That is the shape to reach
+        # for when both are wanted: a tail started after a separate window read
+        # begins at its own "now", losing whatever was logged in between.
         print(f"\nTailing pod {pod}; stopping after {TAIL_LINES} new lines...")
         printed = 0
         for chunk in cclient.fetch_logs(DEPLOYMENT_ID, REVISION_NUMBER, pod):
