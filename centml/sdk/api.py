@@ -408,6 +408,13 @@ class CentMLClient:
         A line the log store received late lands in a later chunk than its
         timestamp position, never duplicated; lines inside each chunk are always
         in ascending (timestamp, id) order.
+
+        If a page request fails the iterator raises and, like any generator,
+        cannot be resumed — but every chunk already yielded is complete and none
+        is left half-built. Resume with a new fetch_logs whose start_time is the
+        last delivered event's timestamp: bounds are inclusive, so the only lines
+        delivered again are the ones sharing that millisecond, which the caller
+        already holds.
         """
         if not 1 <= chunk_size <= MAX_LOG_PAGE_LINES:
             raise ValueError(
