@@ -1,8 +1,9 @@
+import time
 import warnings
 from bisect import insort
 from contextlib import contextmanager
-from dataclasses import dataclass, field
-from typing import Dict, Iterator, List, Optional, Union
+from dataclasses import dataclass
+from typing import Iterator, List, Optional, Union
 
 import platform_api_python_client
 from platform_api_python_client import (
@@ -31,12 +32,6 @@ MAX_LOG_PAGE_LINES = 5000  # server-side ceiling for max_lines
 # The server re-delivers a ~15s look-behind window on fetch-newer requests; only the
 # caller's events within this generous margin of the boundary can be re-delivered.
 LOG_DEDUP_RETENTION_MS = 300_000
-# Merge backpressure: a pod with this many pages buffered ahead of the merge watermark
-# is not fetched further until the watermark catches up. Two pages keep the merge fed
-# (one page draining while the next waits) yet cap the lookahead, so a pod far ahead
-# in time — typically a live pod merged with a terminated predecessor — buffers a
-# couple of pages instead of its whole history.
-LOG_MERGE_BUFFER_PAGES = 2
 
 
 def _recent_anchor(events: list) -> list:
@@ -53,25 +48,12 @@ def _recent_anchor(events: list) -> list:
 @dataclass(frozen=True)
 class DeploymentLogEvent:
     """One log line with its pod attached — logs_v4 events carry no pod name, so
-    merged multi-pod views need the SDK to attribute each line itself."""
+    the SDK attributes each line to the pod it was fetched from."""
 
     id: str
     timestamp: int
     message: str
     pod: str
-
-
-@dataclass
-class _PodLogStream:
-    """Per-pod merge state for fetch_logs: the pod's page iterator, its fetched-but-
-    unreleased events awaiting the merge watermark, its watermark contribution (the
-    newest buffered timestamp reading forward, the oldest reading backward), and
-    whether the iterator has finished its window."""
-
-    pages: Iterator[List[DeploymentLogEvent]]
-    buffer: List[DeploymentLogEvent] = field(default_factory=list)
-    frontier: int = -1
-    exhausted: bool = False
 
 
 class CentMLClient:
@@ -380,120 +362,43 @@ class CentMLClient:
         merged.sort(key=lambda event: event.id)
         return merged
 
-    def _iter_pod_log_pages(
-        self, deployment_id: int, revision_number: int, pod: str, start_ms: int, end_time: Optional[int]
-    ) -> Iterator[List[DeploymentLogEvent]]:
-        """Page one pod's logs within [start_ms, end_time] oldest first, yielding each
-        non-empty in-window page once. The held dedup anchor is trimmed to the server's
-        re-delivery span, so state never grows with the stream."""
-        held: list = []
-        # after is exclusive, so start_ms - 1 admits lines at start_ms itself;
-        # start_ms 0 means the whole log window — scan from the head.
-        initial_boundary = max(start_ms - 1, 0)
-        while True:
-            anchor: Union[list, int] = _recent_anchor(held) if held else initial_boundary
-            page = self._fetch_log_page(deployment_id, revision_number, pod, after=anchor, max_lines=MAX_LOG_PAGE_LINES)
-            if not page:
-                return
-            emitted: List[DeploymentLogEvent] = []
-            past_end = False
-            for raw in page:
-                if held and raw.id <= held[-1].id:
-                    # Late arrival inside the look-behind span: keep the held window
-                    # id-ordered (id order == time order) so trimming stays correct.
-                    insort(held, raw, key=lambda held_event: held_event.id)
-                else:
-                    held.append(raw)
-                # Anchoring at start_ms - 1 re-delivers the look-behind span below
-                # start_ms; those ids must be held for dedup but never emitted.
-                if raw.timestamp < start_ms:
-                    continue
-                if end_time is not None and raw.timestamp > end_time:
-                    past_end = True
-                    continue
-                emitted.append(DeploymentLogEvent(id=raw.id, timestamp=raw.timestamp, message=raw.message, pod=pod))
-            held = _recent_anchor(held)
-            if emitted:
-                yield emitted
-            if past_end:
-                return
-
-    def _iter_pod_log_pages_backward(
-        self, deployment_id: int, revision_number: int, pod: str, start_time: Optional[int], end_time: Optional[int]
-    ) -> Iterator[List[DeploymentLogEvent]]:
-        """Page one pod's logs within [start_time, end_time] newest page first, each
-        page internally oldest-first. A backward walk visits each time region once
-        and before pages carry no re-delivery span, so no dedup state is needed."""
-        # before is exclusive, so end_time + 1 admits lines at end_time itself; no
-        # end_time means no boundary — the server answers with the tail page.
-        boundary: Optional[int] = None if end_time is None else end_time + 1
-        while True:
-            page = self._fetch_log_page(
-                deployment_id, revision_number, pod, before=boundary, max_lines=MAX_LOG_PAGE_LINES
-            )
-            if not page:
-                return
-            emitted = [
-                DeploymentLogEvent(id=raw.id, timestamp=raw.timestamp, message=raw.message, pod=pod)
-                for raw in page
-                if start_time is None or raw.timestamp >= start_time
-            ]
-            if emitted:
-                yield emitted
-            if start_time is not None and page[0].timestamp < start_time:
-                return
-            # Pages never split a millisecond, so an exclusive boundary at the oldest
-            # delivered timestamp neither re-delivers nor skips.
-            boundary = page[0].timestamp
-
     # pylint: disable=R0917
     def fetch_logs(
         self,
         deployment_id: int,
         revision_number: int,
-        pod: Optional[str] = None,
+        pod: str,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
-        newest_first: bool = False,
-        chunk_size: int = DEFAULT_LOG_PAGE_LINES,
+        chunk_size: int = 10,
     ) -> Iterator[List[DeploymentLogEvent]]:
-        """Fetch a revision's stored log lines within [start_time, end_time] (epoch
-        ms, inclusive; omit either bound to leave that side unbounded), yielded
-        lazily as chunks of 1..chunk_size DeploymentLogEvent — every chunk except
-        possibly the last holds exactly chunk_size — each stored line at most once,
-        each event carrying its pod name.
+        """Fetch one pod's stored log lines within [start_time, end_time] (epoch ms,
+        inclusive), yielded lazily oldest first as chunks of at most chunk_size
+        DeploymentLogEvent, each stored line at most once. Discover pod names with
+        get_deployment_pods().
 
-        newest_first selects only the order chunks arrive: False (the default)
-        walks the window oldest chunk first, True newest chunk first. Lines inside
-        every chunk are always in ascending (timestamp, id) order regardless of
-        direction. The defaults read the full retained history to the present;
-        newest_first=True with no bounds tails backward from the newest stored
-        line; start_time alone catches up from a known point to the present.
+        start_time defaults to the current time, resolved once when fetch_logs is
+        called (not at the first next()), so lines logged while the generator sits
+        unstarted are not skipped; pass an earlier start_time to read history.
 
-        Exhaustion is the only termination signal: the iterator ends once the
-        window is delivered, and one that yields nothing means the window holds no
-        stored lines (aged out of retention, before the deployment existed, an
-        unknown or not-yet-logging pod, or genuinely empty). There is no follow
-        mode; tailing is a caller loop of forward fetch_logs calls with
-        overlapping windows, deduplicated by event.id across calls (the README
-        documents a memory-bounded recipe — cross-call dedup is the caller's job).
+        With end_time set the iterator terminates once the window is delivered:
+        every chunk except possibly the last holds exactly chunk_size lines.
+        Without end_time it never terminates — once caught up it flushes any
+        partial chunk, then yields an empty chunk each time nothing new is stored
+        yet, and the caller decides when to sleep or break:
 
-        pod=None merges every pod of the revision into one stream; pass a name
-        from get_deployment_pods() to read a single pod. Nothing is fetched before
-        the first next(), and memory stays bounded however large the window: per
-        pod, at most LOG_MERGE_BUFFER_PAGES fetched pages wait in the merge and
-        the forward dedup anchor is trimmed to the server's re-delivery span.
+            for chunk in cclient.fetch_logs(dep, rev, pod):
+                if not chunk:
+                    time.sleep(2)
+                    continue
+                ...
 
-        Ordering caveats. Forward: a line the log store received late (within its
-        ~15s re-delivery span) lands in a later chunk than its timestamp position —
-        never duplicated, but out of order across chunks; sort by event.id where
-        strict order matters. Backward: each time region is visited once, so a
-        line arriving late for a region already passed is absent from that call —
-        everything older than roughly the read's start minus the ingest lag is
-        complete; when completeness of the newest lines matters, read forward.
-        A single millisecond holding more than 5000 lines cannot be delivered
-        whole: a page carries the 5000 nearest its paging direction, so a forward
-        read retrieves at most 10000 of it and the middle is unreachable.
+        Nothing is fetched before the first next(), and memory stays bounded
+        however long the stream: the dedup anchor is trimmed to the server's ~15s
+        re-delivery span, so no line is delivered twice — across empty chunks too.
+        A line the log store received late lands in a later chunk than its
+        timestamp position, never duplicated; lines inside each chunk are always
+        in ascending (timestamp, id) order.
         """
         if chunk_size < 1:
             raise ValueError("chunk_size must be a positive number of lines")
@@ -501,116 +406,60 @@ class CentMLClient:
             raise ValueError("start_time and end_time are epoch milliseconds and must not be negative")
         if start_time is not None and end_time is not None and start_time > end_time:
             raise ValueError("start_time must not exceed end_time")
-        return self._iter_log_chunks(
-            deployment_id, revision_number, pod, start_time, end_time, newest_first, chunk_size
-        )
+        start_ms = int(time.time() * 1000) if start_time is None else start_time
 
-    # pylint: disable=R0917
-    def _iter_log_chunks(
-        self,
-        deployment_id: int,
-        revision_number: int,
-        pod: Optional[str],
-        start_time: Optional[int],
-        end_time: Optional[int],
-        newest_first: bool,
-        chunk_size: int,
-    ) -> Iterator[List[DeploymentLogEvent]]:
-        """The generator behind fetch_logs, split out so fetch_logs raises its
-        ValueErrors at the call site rather than at the first next()."""
-
-        def pod_pages(name: str) -> Iterator[List[DeploymentLogEvent]]:
-            if newest_first:
-                return self._iter_pod_log_pages_backward(deployment_id, revision_number, name, start_time, end_time)
-            return self._iter_pod_log_pages(
-                deployment_id, revision_number, name, start_time if start_time is not None else 0, end_time
-            )
-
-        if pod is not None:
-            batches: Iterator[List[DeploymentLogEvent]] = pod_pages(pod)
-        else:
-            pods = self.get_deployment_pods(deployment_id, revision_number)
-            streams = {name: _PodLogStream(pages=pod_pages(name)) for name in pods}
-            batches = self._merge_pod_streams(streams, newest_first)
-
-        pending: List[DeploymentLogEvent] = []
-        for batch in batches:
-            if newest_first:
-                # Each batch is entirely older than everything pending, so prepending
-                # keeps pending ascending while chunks are cut from its newest end.
-                pending[:0] = batch
-                while len(pending) >= chunk_size:
-                    yield pending[-chunk_size:]
-                    del pending[-chunk_size:]
-            else:
-                for event in batch:
+        def chunks() -> Iterator[List[DeploymentLogEvent]]:
+            held: list = []
+            pending: List[DeploymentLogEvent] = []
+            # after is exclusive, so start_ms - 1 admits lines at start_ms itself.
+            initial_boundary = max(start_ms - 1, 0)
+            while True:
+                anchor: Union[list, int] = _recent_anchor(held) if held else initial_boundary
+                page = self._fetch_log_page(
+                    deployment_id, revision_number, pod, after=anchor, max_lines=MAX_LOG_PAGE_LINES
+                )
+                past_end = False
+                for raw in page:
+                    if held and raw.id <= held[-1].id:
+                        # Late arrival inside the look-behind span: keep the held window
+                        # id-ordered (id order == time order) so trimming stays correct.
+                        insort(held, raw, key=lambda held_event: held_event.id)
+                    else:
+                        held.append(raw)
+                    # Anchoring at start_ms - 1 re-delivers the look-behind span below
+                    # start_ms; those ids must be held for dedup but never emitted.
+                    if raw.timestamp < start_ms:
+                        continue
+                    if end_time is not None and raw.timestamp > end_time:
+                        past_end = True
+                        continue
+                    event = DeploymentLogEvent(id=raw.id, timestamp=raw.timestamp, message=raw.message, pod=pod)
                     # A late arrival re-delivered inside the look-behind span can sort
                     # below lines already pending; insort keeps every chunk ascending.
                     if pending and (event.timestamp, event.id) < (pending[-1].timestamp, pending[-1].id):
                         insort(pending, event, key=lambda pending_event: (pending_event.timestamp, pending_event.id))
                     else:
                         pending.append(event)
+                if held:
+                    held = _recent_anchor(held)
                 while len(pending) >= chunk_size:
                     yield pending[:chunk_size]
                     del pending[:chunk_size]
-        if pending:
-            yield pending
+                if past_end or (not page and end_time is not None):
+                    break
+                if not page:
+                    # Caught up with no end bound: flush the partial chunk, then
+                    # signal "nothing new yet" until new lines are stored.
+                    if pending:
+                        yield pending[:]
+                        pending.clear()
+                    yield []
+            if pending:
+                yield pending
 
-    def _merge_pod_streams(
-        self, streams: Dict[str, _PodLogStream], newest_first: bool
-    ) -> Iterator[List[DeploymentLogEvent]]:
-        """Merge per-pod page iterators into (timestamp, id)-ascending batches that
-        arrive oldest-first (or newest-first) across batches.
-
-        Strict cross-pod order while any pod is still fetching: reading forward,
-        release only lines at or below the least-advanced pod's frontier (its newest
-        buffered timestamp); a lagging pod's buffered lines are all at or below its
-        own frontier, so the minimum-frontier pod drains fully every round and the
-        merge cannot deadlock. Reading backward the roles mirror: a pod's frontier
-        is its oldest buffered timestamp, the watermark is the maximum frontier, and
-        lines at or above it are released — the maximum-frontier pod drains fully."""
-        buffer_limit = LOG_MERGE_BUFFER_PAGES * MAX_LOG_PAGE_LINES
-        while True:
-            for stream in streams.values():
-                if stream.exhausted or len(stream.buffer) >= buffer_limit:
-                    continue  # backpressure: let the merge watermark catch up before fetching more
-                page = next(stream.pages, None)
-                if page is None:
-                    stream.exhausted = True
-                    continue
-                if newest_first:
-                    # Backward pages are entirely older than everything buffered.
-                    stream.buffer[:0] = page
-                    stream.frontier = stream.buffer[0].timestamp
-                else:
-                    for event in page:
-                        if stream.buffer and event.id <= stream.buffer[-1].id:
-                            insort(stream.buffer, event, key=lambda buffered_event: buffered_event.id)
-                        else:
-                            stream.buffer.append(event)
-                    stream.frontier = stream.buffer[-1].timestamp
-
-            active = [stream.frontier for stream in streams.values() if not stream.exhausted]
-            watermark = (max(active) if newest_first else min(active)) if active else None
-            ready: List[DeploymentLogEvent] = []
-            for stream in streams.values():
-                if newest_first:
-                    cut = len(stream.buffer)
-                    while cut > 0 and (watermark is None or stream.buffer[cut - 1].timestamp >= watermark):
-                        cut -= 1
-                    ready += stream.buffer[cut:]
-                    del stream.buffer[cut:]
-                else:
-                    cut = 0
-                    while cut < len(stream.buffer) and (watermark is None or stream.buffer[cut].timestamp <= watermark):
-                        cut += 1
-                    ready += stream.buffer[:cut]
-                    del stream.buffer[:cut]
-            ready.sort(key=lambda event: (event.timestamp, event.id))
-            if ready:
-                yield ready
-            if watermark is None:
-                return
+        # The nested generator closes over the validated arguments, so the
+        # ValueErrors above raise at the call rather than at the first next().
+        return chunks()
 
     @deprecated("deployment_log_session() is deprecated; use fetch_logs() instead")
     def deployment_log_session(
