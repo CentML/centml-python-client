@@ -17,6 +17,8 @@ from centml.sdk import ApiException
 from centml.sdk.api import (
     LOG_DEDUP_RETENTION_MS,
     LOG_RETRY_ATTEMPTS,
+    LOG_RETRY_BASE_SECONDS,
+    LOG_RETRY_JITTER,
     MAX_LOG_PAGE_LINES,
     CentMLClient,
     DeploymentLogSession,
@@ -1031,15 +1033,37 @@ def test_fetch_logs_survives_a_busy_store_without_losing_its_anchor():
 
 def test_fetch_logs_gives_up_on_a_busy_store_after_the_retry_budget():
     api = MagicMock()
-    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = ApiException(status=503)
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = [
+        _log_page(_log_event("1-a", 1000))
+    ] + [ApiException(status=503)] * LOG_RETRY_ATTEMPTS
     client = CentMLClient(api)
+
+    stream = client.fetch_logs(123, 2, pod="pod-a", start_time=1, end_time=10_000, chunk_size=1)
+    assert [e.id for e in next(stream)] == ["1-a"]
 
     with patch("centml.sdk.api.time.sleep") as sleep:
         with pytest.raises(ApiException):
-            next(client.fetch_logs(123, 2, pod="pod-a", start_time=1, end_time=10_000))
+            next(stream)
 
-    assert api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.call_count == LOG_RETRY_ATTEMPTS
+    # The whole budget goes on the one page, and the chunk already delivered stands.
     assert sleep.call_count == LOG_RETRY_ATTEMPTS - 1
+
+
+def test_fetch_logs_backs_off_further_on_each_busy_answer():
+    api = MagicMock()
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = [ApiException(status=503)] * (
+        LOG_RETRY_ATTEMPTS - 1
+    ) + [_log_page()]
+    client = CentMLClient(api)
+
+    with patch("centml.sdk.api.time.sleep") as sleep:
+        assert _flatten(client.fetch_logs(123, 2, pod="pod-a", start_time=1, end_time=10_000)) == []
+
+    waited = [call.args[0] for call in sleep.call_args_list]
+    assert len(waited) == LOG_RETRY_ATTEMPTS - 1
+    for attempt, seconds in enumerate(waited):
+        nominal = LOG_RETRY_BASE_SECONDS * 2**attempt
+        assert nominal * (1 - LOG_RETRY_JITTER) <= seconds <= nominal * (1 + LOG_RETRY_JITTER)
 
 
 def test_fetch_logs_does_not_retry_a_request_the_store_rejects():
@@ -1053,20 +1077,6 @@ def test_fetch_logs_does_not_retry_a_request_the_store_rejects():
 
     api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.assert_called_once()
     sleep.assert_not_called()
-
-
-def test_fetch_logs_waits_the_retry_after_the_store_asks_for():
-    busy = ApiException(status=503)
-    busy.headers = {"Retry-After": "2"}
-    api = MagicMock()
-    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = [busy, _log_page()]
-    client = CentMLClient(api)
-
-    with patch("centml.sdk.api.time.sleep") as sleep:
-        assert _flatten(client.fetch_logs(123, 2, pod="pod-a", start_time=1, end_time=10_000)) == []
-
-    # Honoured verbatim, not jittered: the server named the delay.
-    sleep.assert_called_once_with(2.0)
 
 
 def test_fetch_logs_is_lazy_until_the_first_next():
