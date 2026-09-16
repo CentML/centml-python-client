@@ -55,48 +55,88 @@ delete the deployment automatically.
 
 ### Deployment logs SDK example
 
-`iter_deployment_logs()` streams a revision's logs lazily, oldest first, each line
-exactly once, with bounded memory however long the log is — by default merging every
-pod chronologically (each event carries its pod name). `follow=False` returns once
-caught up; `follow=True` keeps tailing and picks up new pods of the revision as they
-first log. `start_time` (epoch ms) bounds the beginning and `pod=` restricts to one
-pod — discover names with `get_deployment_pods()` (terminated pods still within log
-retention are included). Lines are yielded in timestamp order: cross-pod ordering is
-strict while catching up on history; at the tip, concurrent pods interleave within
-one `poll_interval`, a single-pod tail is released immediately, and a line reaching
-the log store after its timestamp has passed that release point is appended rather
-than inserted — so a single-pod follow appends any late line and a multi-pod follow
-keeps order for lines under one `poll_interval` late. Such lines are still delivered
-exactly once, within the server's ~15s re-delivery window; the previous
-CloudWatch-based read path dropped them entirely.
+`fetch_logs()` is the one way to read deployment logs: it fetches a revision's
+stored log lines within a time window (`start_time`/`end_time`, epoch ms,
+inclusive; omit either bound to leave that side unbounded) and yields them lazily
+as chunks of up to `chunk_size` `DeploymentLogEvent` — each line at most once,
+each event carrying its pod name, with bounded memory however large the window.
+`newest_first` selects only the order chunks arrive: `False` (the default) walks
+the window oldest chunk first, `True` newest chunk first; lines inside every chunk
+are always in ascending `(timestamp, id)` order. So the bare call reads the full
+retained history chronologically, `newest_first=True` starts from the newest
+stored line and walks backward, and `start_time` alone catches up from a known
+point to the present. By default every pod of the revision is merged into one
+stream; pass `pod=` to read a single pod — discover names with
+`get_deployment_pods()` (terminated pods still within log retention are included):
 
-For non-streaming access: `get_deployment_logs_range()` fetches a specific time
-window as a list (epoch-millisecond bounds, both optional; `pod=None` merges every
-pod). A `deployment_log_session()` pages one pod statefully — `fetch_older()` toward
-the beginning of history, `fetch_newer()` for only-new lines — keeping the merged,
-ordered log in `.events`. The same paging is available statelessly through
-`get_deployment_logs(before=..., after=...)`, anchored on events you already hold
-or on a bare epoch-millisecond boundary:
-
-```bash
-python examples/sdk/get_deployment_logs.py
+```python
+for chunk in cclient.fetch_logs(DEPLOYMENT_ID, REVISION, start_time=t1_ms, end_time=t2_ms):
+    for event in chunk:
+        print(event.pod, event.message)
 ```
+
+The iterator always terminates, and its exhaustion is the only termination signal:
+one that yields nothing means the window holds no stored lines (aged out of
+retention, before the deployment existed, an unknown pod, or genuinely empty).
+Reading backward, note that a line the log store receives late for a time region
+the walk has already passed is absent from that call: everything older than
+roughly the read's start minus the ingest lag (~15s) is complete, and when
+completeness of the newest lines matters, read forward. There is no follow mode:
+tailing is a caller loop that re-calls a forward `fetch_logs` with a later
+`start_time` and deduplicates by `event.id`:
+
+```python
+import time
+
+OVERLAP_MS = 30_000  # covers the server's ~15s late-arrival re-delivery span
+POLL_SECONDS = 2.0
+
+seen = {}  # event id -> timestamp, trimmed to the overlap window each round
+boundary = int(time.time() * 1000)  # newest timestamp seen so far
+while True:
+    for chunk in cclient.fetch_logs(
+        DEPLOYMENT_ID, REVISION, start_time=max(boundary - OVERLAP_MS, 0), newest_first=False
+    ):
+        for event in chunk:
+            if event.id in seen:
+                continue
+            seen[event.id] = event.timestamp
+            boundary = max(boundary, event.timestamp)
+            print(event.pod, event.message)
+    cutoff = boundary - OVERLAP_MS
+    seen = {event_id: ts for event_id, ts in seen.items() if ts >= cutoff}
+    time.sleep(POLL_SECONDS)
+```
+
+Two properties of this loop matter. Consecutive windows overlap on purpose: the log
+store may deliver a line up to ~15 seconds after its timestamp, so starting each call
+`OVERLAP_MS` below the newest seen line is what keeps late arrivals from being
+skipped — do not advance `start_time` past that span to avoid the duplicates. And the
+dedup state is bounded: only ids inside the overlap window can come back again, so
+`seen` is trimmed to that window each round and never grows with the stream.
+
+`python examples/sdk/get_deployment_logs.py` runs a newest-first peek, a full
+chronological read and this tail loop. `get_deployment_logs()`, `get_deployment_logs_range()` and
+`deployment_log_session()` still work but are deprecated in favor of `fetch_logs()`
+and raise a `DeprecationWarning` on use.
 
 ### Migrating deployment log reads from 0.5.x
 
-`get_deployment_logs()` kept its name but not its signature: `start_time`, `end_time`,
-`line_count`, `start_from_head` and `stream` are gone, and logs are read per pod. A
-0.5.x call raises `TypeError` (or a validation error, if its arguments were positional)
-rather than returning something wrong, so no call site fails silently.
+`get_deployment_logs()` kept its name but not its signature, and is now deprecated:
+`start_time`, `end_time`, `line_count`, `start_from_head` and `stream` are gone, and
+`fetch_logs()` is the replacement for every read. A 0.5.x call raises `TypeError`
+(or a validation error, if its arguments were positional) rather than returning
+something wrong, so no call site fails silently.
 
-| To | 0.5.x | 0.6.0 |
+| To | 0.5.x | now |
 |---|---|---|
-| Read a time window | `get_deployment_logs(id, rev, start_time=, end_time=)` | `get_deployment_logs_range(id, rev, start_time=, end_time=)` |
-| Stream a window lazily | the same call with `stream=True` | `iter_deployment_logs(id, rev, start_time=)` |
-| Take the newest lines first | `start_from_head=False` | `get_deployment_logs(id, rev, pod)`, then page with `before=` |
-| Cap a page | `line_count=n` | `max_lines=n`, at most 5000 |
+| Read a time window | `get_deployment_logs(id, rev, start_time=, end_time=)` | `fetch_logs(id, rev, start_time=, end_time=)` |
+| Stream a window lazily | the same call with `stream=True` | `fetch_logs(...)` — chunks are yielded as they are fetched |
+| Take the newest lines first | `start_from_head=False` | `fetch_logs(id, rev, newest_first=True)` |
+| Read from the beginning | `start_from_head=True` | `fetch_logs(id, rev)` — oldest first is the default |
+| Cap what one iteration hands you | `line_count=n` | `chunk_size=n` |
 | Tell which pod a line came from | parse `kubernetes.pod_name` out of `message` | `event.pod` |
-| Keep tailing past the window | not supported | `iter_deployment_logs(..., follow=True)` |
+| Keep tailing past the window | not supported | re-call `fetch_logs` with overlapping windows (the tail loop above) |
 
 A whole-window read loses its envelope parsing, because `message` is now the log line
 itself rather than a JSON record wrapping it:
@@ -108,13 +148,14 @@ for event in events:
     record = json.loads(event["message"])
     print(record["kubernetes"]["pod_name"], record["log"])
 
-# 0.6.0
-for event in cclient.get_deployment_logs_range(DEPLOYMENT_ID, REVISION, start_time=t1, end_time=t2):
-    print(event.pod, event.message)
+# now
+for chunk in cclient.fetch_logs(DEPLOYMENT_ID, REVISION, start_time=t1, end_time=t2):
+    for event in chunk:
+        print(event.pod, event.message)
 ```
 
-A `stream=True` loop becomes an `iter_deployment_logs()` loop, which yields each page as
-it arrives just as the old generator did:
+A `stream=True` loop becomes a `fetch_logs()` loop, which yields each chunk as it
+arrives just as the old generator yielded pages:
 
 ```python
 # 0.5.x
@@ -123,20 +164,26 @@ for event in cclient.get_deployment_logs(
 ):
     print(json.loads(event["message"])["log"])
 
-# 0.6.0
-for event in cclient.iter_deployment_logs(DEPLOYMENT_ID, REVISION, start_time=t1):
-    print(event.message)
+# now
+for chunk in cclient.fetch_logs(DEPLOYMENT_ID, REVISION, start_time=t1, end_time=t2):
+    for event in chunk:
+        print(event.message)
 ```
 
-Two contract changes to check error handling against: a revision that does not exist now
-answers 404 where the old endpoint answered 400, and a `max_lines` above 5000 is rejected
-before the request leaves the client.
+One contract change to check error handling against: a revision that does not exist
+now answers 404 where the old endpoint answered 400.
 
-When paging by hand with `get_deployment_logs(after=...)`, anchor on the events you already
-hold rather than on a bare timestamp. Every fetch-newer call re-delivers a short look-behind
-span so late-arriving lines are not missed; an events anchor lets the SDK drop the lines you
-already have, while a bare-timestamp anchor re-delivers that span undeduplicated and, once
-the reader has caught up, stops advancing. `iter_deployment_logs()` handles this for you.
+The 0.6.0 readers — `get_deployment_logs()` page anchoring, `get_deployment_logs_range()`
+and `deployment_log_session()` — still work but are deprecated and warn on use; the
+look-behind anchoring they exposed is handled inside `fetch_logs()`:
+
+| 0.6.0 | now |
+|---|---|
+| `get_deployment_logs(id, rev, pod)` — newest page of one pod | `fetch_logs(id, rev, pod=pod, newest_first=True)` and take the first chunk |
+| `get_deployment_logs(id, rev, pod, after=events)` — page newer than held events | `fetch_logs(id, rev, pod=pod, start_time=boundary_ms)` (the tail loop above for repeated polling) |
+| `get_deployment_logs_range(id, rev, start_time=, end_time=)` | `fetch_logs(id, rev, start_time=, end_time=)` — chunked and lazy instead of one list |
+| `deployment_log_session(...).fetch_older()` loop | `fetch_logs(id, rev, pod=pod, newest_first=True)` — one iterator walks back to the start |
+| `session.fetch_newer()` polling | the tail loop above |
 
 ### Un-installation
 
