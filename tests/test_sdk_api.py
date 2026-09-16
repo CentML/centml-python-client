@@ -1051,9 +1051,12 @@ def test_deprecated_log_readers_warn_and_name_the_replacement():
         client.get_deployment_logs_range(123, 2)
     with pytest.warns(DeprecationWarning, match="fetch_logs") as caught:
         session = client.deployment_log_session(123, 2, "pod-a")
-    # Exactly one warning: the method's own, not a second from constructing the
-    # (also-deprecated) session class inside it.
-    assert len(caught) == 1
+    # Two warnings, one per deprecated surface the call crosses: the factory the
+    # caller named, and the session class it hands back for the caller to keep using.
+    assert [str(warning.message) for warning in caught] == [
+        "deployment_log_session() is deprecated; use fetch_logs() instead",
+        "DeploymentLogSession is deprecated; use CentMLClient.fetch_logs() instead",
+    ]
     with pytest.warns(DeprecationWarning, match="fetch_logs"):
         DeploymentLogSession(client, 123, 2, "pod-a")
 

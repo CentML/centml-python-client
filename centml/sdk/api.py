@@ -1,5 +1,4 @@
 import time
-import warnings
 from bisect import insort
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -502,11 +501,7 @@ class CentMLClient:
         Stateful reader for one pod's logs that tracks fetched pages and anchors
         every request itself — see DeploymentLogSession. Seed events with logs a
         previous session (or get_deployment_logs) returned for the same pod."""
-        with warnings.catch_warnings():
-            # This call already warned via its own decorator; constructing the
-            # (also-deprecated) session class must not warn a second time.
-            warnings.simplefilter("ignore", DeprecationWarning)
-            return DeploymentLogSession(self, deployment_id, revision_number, pod, events)
+        return DeploymentLogSession(self, deployment_id, revision_number, pod, events)
 
 
 @deprecated("DeploymentLogSession is deprecated; use CentMLClient.fetch_logs() instead")
