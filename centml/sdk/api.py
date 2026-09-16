@@ -373,19 +373,28 @@ class CentMLClient:
         chunk_size: int = 10,
     ) -> Iterator[List[DeploymentLogEvent]]:
         """Fetch one pod's stored log lines within [start_time, end_time] (epoch ms,
-        inclusive), yielded lazily oldest first as chunks of at most chunk_size
-        DeploymentLogEvent, each stored line at most once. Discover pod names with
+        inclusive), yielded lazily oldest first as chunks of DeploymentLogEvent,
+        each stored line at most once. Discover pod names with
         get_deployment_pods().
+
+        chunk_size is the number of lines requested from the server per round
+        trip (1 to MAX_LOG_PAGE_LINES), and each server page becomes one yielded
+        chunk, so a bulk read of history wants a large chunk_size — the log read
+        path is rate-limited upstream, and a small chunk_size over a large window
+        multiplies requests. A chunk usually holds up to chunk_size lines but can
+        be smaller (lines below start_time or already delivered are filtered out
+        of the page) or larger (the server never splits one millisecond across
+        pages, so a millisecond holding more than chunk_size lines arrives
+        whole).
 
         start_time defaults to the current time, resolved once when fetch_logs is
         called (not at the first next()), so lines logged while the generator sits
         unstarted are not skipped; pass an earlier start_time to read history.
 
-        With end_time set the iterator terminates once the window is delivered:
-        every chunk except possibly the last holds exactly chunk_size lines.
-        Without end_time it never terminates — once caught up it flushes any
-        partial chunk, then yields an empty chunk each time nothing new is stored
-        yet, and the caller decides when to sleep or break:
+        With end_time set the iterator terminates once the window is delivered.
+        Without end_time it never terminates — once caught up it yields an empty
+        chunk each time nothing new is stored yet, and the caller decides when to
+        sleep or break:
 
             for chunk in cclient.fetch_logs(dep, rev, pod):
                 if not chunk:
@@ -400,8 +409,12 @@ class CentMLClient:
         timestamp position, never duplicated; lines inside each chunk are always
         in ascending (timestamp, id) order.
         """
-        if chunk_size < 1:
-            raise ValueError("chunk_size must be a positive number of lines")
+        if not 1 <= chunk_size <= MAX_LOG_PAGE_LINES:
+            raise ValueError(
+                f"chunk_size must be between 1 and {MAX_LOG_PAGE_LINES} lines "
+                "(chunk_size is also the per-request page size, and the server "
+                f"caps max_lines at {MAX_LOG_PAGE_LINES})"
+            )
         if (start_time is not None and start_time < 0) or (end_time is not None and end_time < 0):
             raise ValueError("start_time and end_time are epoch milliseconds and must not be negative")
         if start_time is not None and end_time is not None and start_time > end_time:
@@ -410,15 +423,13 @@ class CentMLClient:
 
         def chunks() -> Iterator[List[DeploymentLogEvent]]:
             held: list = []
-            pending: List[DeploymentLogEvent] = []
             # after is exclusive, so start_ms - 1 admits lines at start_ms itself.
             initial_boundary = max(start_ms - 1, 0)
             while True:
                 anchor: Union[list, int] = _recent_anchor(held) if held else initial_boundary
-                page = self._fetch_log_page(
-                    deployment_id, revision_number, pod, after=anchor, max_lines=MAX_LOG_PAGE_LINES
-                )
+                page = self._fetch_log_page(deployment_id, revision_number, pod, after=anchor, max_lines=chunk_size)
                 past_end = False
+                chunk: List[DeploymentLogEvent] = []
                 for raw in page:
                     if held and raw.id <= held[-1].id:
                         # Late arrival inside the look-behind span: keep the held window
@@ -434,28 +445,23 @@ class CentMLClient:
                         past_end = True
                         continue
                     event = DeploymentLogEvent(id=raw.id, timestamp=raw.timestamp, message=raw.message, pod=pod)
-                    # A late arrival re-delivered inside the look-behind span can sort
-                    # below lines already pending; insort keeps every chunk ascending.
-                    if pending and (event.timestamp, event.id) < (pending[-1].timestamp, pending[-1].id):
-                        insort(pending, event, key=lambda pending_event: (pending_event.timestamp, pending_event.id))
+                    # The server orders a page by nanosecond timestamp only, never by
+                    # the id's hash suffix, so lines sharing one nanosecond can arrive
+                    # in either id order; insort keeps every chunk ascending.
+                    if chunk and (event.timestamp, event.id) < (chunk[-1].timestamp, chunk[-1].id):
+                        insort(chunk, event, key=lambda chunk_event: (chunk_event.timestamp, chunk_event.id))
                     else:
-                        pending.append(event)
+                        chunk.append(event)
                 if held:
                     held = _recent_anchor(held)
-                while len(pending) >= chunk_size:
-                    yield pending[:chunk_size]
-                    del pending[:chunk_size]
+                if chunk:
+                    yield chunk
                 if past_end or (not page and end_time is not None):
                     break
                 if not page:
-                    # Caught up with no end bound: flush the partial chunk, then
-                    # signal "nothing new yet" until new lines are stored.
-                    if pending:
-                        yield pending[:]
-                        pending.clear()
+                    # Caught up with no end bound: signal "nothing new yet" until
+                    # new lines are stored.
                     yield []
-            if pending:
-                yield pending
 
         # The nested generator closes over the validated arguments, so the
         # ValueErrors above raise at the call rather than at the first next().

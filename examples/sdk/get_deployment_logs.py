@@ -24,13 +24,19 @@ def main():
 
         # A window read: start_time/end_time are epoch ms, inclusive. With end_time
         # set the iterator terminates once the window is delivered. fetch_logs is
-        # lazy — chunks are yielded as they are fetched, with bounded memory
-        # however large the window.
+        # lazy — each server page is yielded as one chunk, with bounded memory
+        # however large the window. chunk_size is also the number of lines
+        # requested per round trip, so a bulk read wants a large value.
         now_ms = int(time.time() * 1000)
         print(f"Last {WINDOW_MINUTES} minutes of pod {pod}:\n")
         count = 0
         for chunk in cclient.fetch_logs(
-            DEPLOYMENT_ID, REVISION_NUMBER, pod, start_time=now_ms - WINDOW_MINUTES * 60_000, end_time=now_ms
+            DEPLOYMENT_ID,
+            REVISION_NUMBER,
+            pod,
+            start_time=now_ms - WINDOW_MINUTES * 60_000,
+            end_time=now_ms,
+            chunk_size=1000,
         ):
             for event in chunk:
                 print(format_event(event))

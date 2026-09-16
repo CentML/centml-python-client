@@ -57,12 +57,15 @@ delete the deployment automatically.
 
 `fetch_logs()` is the one way to read deployment logs: it fetches one pod's stored
 log lines within a time window (`start_time`/`end_time`, epoch ms, inclusive) and
-yields them lazily, oldest first, as chunks of up to `chunk_size`
-`DeploymentLogEvent` — each line at most once, with bounded memory however long
-the stream. Discover pod names with `get_deployment_pods()` (terminated pods
-still within log retention are included). `start_time` defaults to the moment of
-the call; with `end_time` set the iterator terminates once the window is
-delivered:
+yields them lazily, oldest first, as chunks of `DeploymentLogEvent` — each line at
+most once, with bounded memory however long the stream. `chunk_size` (1 to 5000)
+is the number of lines requested from the server per round trip and each server
+page becomes one chunk, so a bulk read of history wants a large `chunk_size` —
+the log read path is rate-limited upstream, and a small `chunk_size` over a large
+window multiplies requests. Discover pod names with `get_deployment_pods()`
+(terminated pods still within log retention are included). `start_time` defaults
+to the moment of the call; with `end_time` set the iterator terminates once the
+window is delivered:
 
 ```python
 for chunk in cclient.fetch_logs(DEPLOYMENT_ID, REVISION, pod, start_time=t1_ms, end_time=t2_ms):

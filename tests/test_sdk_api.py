@@ -14,7 +14,13 @@ from platform_api_python_client import (
 )
 
 from centml.sdk import ApiException
-from centml.sdk.api import LOG_DEDUP_RETENTION_MS, CentMLClient, DeploymentLogSession, get_centml_client
+from centml.sdk.api import (
+    LOG_DEDUP_RETENTION_MS,
+    MAX_LOG_PAGE_LINES,
+    CentMLClient,
+    DeploymentLogSession,
+    get_centml_client,
+)
 from centml.sdk.config import settings
 
 
@@ -695,33 +701,53 @@ def test_fetch_logs_yields_first_chunk_before_fetching_the_next_page():
     assert api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.call_count == 3
 
 
-def test_fetch_logs_chunk_size_shapes_the_yields():
+def test_fetch_logs_requests_the_callers_chunk_size_as_max_lines():
     api = MagicMock()
     api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = [
-        _log_page(*(_log_event(f"{1000 + i}-x", 1000 + i) for i in range(7))),
+        _log_page(_log_event("1-a", 1000)),
         _log_page(),
     ]
     client = CentMLClient(api)
 
-    chunks = list(client.fetch_logs(123, 2, pod="pod-a", start_time=1, end_time=10_000, chunk_size=3))
+    list(client.fetch_logs(123, 2, pod="pod-a", start_time=1, end_time=10_000, chunk_size=7))
 
-    assert [len(chunk) for chunk in chunks] == [3, 3, 1]
-    assert [e.id for e in _flatten(chunks)] == [f"{1000 + i}-x" for i in range(7)]
+    # chunk_size is the server page size: every request carries it as max_lines.
+    calls = api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.call_args_list
+    assert [call.kwargs["max_lines"] for call in calls] == [7, 7]
 
 
-def test_fetch_logs_bounded_chunks_are_full_except_the_last():
-    all_events = [_log_event(f"{1000 * i:05d}-x", 1000 * i) for i in range(1, 12)]
+def test_fetch_logs_millisecond_burst_larger_than_chunk_size_arrives_whole():
+    # The server never splits one millisecond across pages, so a millisecond
+    # holding more than chunk_size lines comes back — and is yielded — whole.
+    burst = [_log_event(f"1000-{suffix}", 1000) for suffix in "abcdefg"]
     api = MagicMock()
-    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = _replaying_log_server(
-        all_events, page_cap=4
-    )
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = [_log_page(*burst), _log_page()]
     client = CentMLClient(api)
 
-    chunks = list(client.fetch_logs(123, 2, pod="pod-a", start_time=1, end_time=20_000, chunk_size=3))
+    chunks = list(client.fetch_logs(123, 2, pod="pod-a", start_time=1, end_time=10_000, chunk_size=3))
 
-    assert [len(chunk) for chunk in chunks] == [3, 3, 3, 2]
-    for chunk in chunks:
-        assert [(e.timestamp, e.id) for e in chunk] == sorted((e.timestamp, e.id) for e in chunk)
+    assert [len(chunk) for chunk in chunks] == [7]
+    assert [e.id for e in chunks[0]] == [e.id for e in burst]
+
+
+def test_fetch_logs_chunk_comes_back_short_when_the_page_is_filtered():
+    api = MagicMock()
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = [
+        # The first page re-delivers the look-behind span below start_time; those
+        # lines are held for dedup but not emitted, so the chunk is short.
+        _log_page(
+            _log_event("04990-w", 4990),
+            _log_event("04995-x", 4995),
+            _log_event("05000-y", 5000),
+            _log_event("06000-z", 6000),
+        ),
+        _log_page(),
+    ]
+    client = CentMLClient(api)
+
+    chunks = list(client.fetch_logs(123, 2, pod="pod-a", start_time=5000, end_time=10_000, chunk_size=4))
+
+    assert [[e.id for e in chunk] for chunk in chunks] == [["05000-y", "06000-z"]]
 
 
 def test_fetch_logs_start_time_defaults_to_now_resolved_at_the_call():
@@ -774,7 +800,7 @@ def test_fetch_logs_open_ended_yields_empty_chunks_and_resumes_without_duplicate
     api = MagicMock()
     api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = [
         _log_page(_log_event("1-a", 1000), _log_event("2-b", 2000)),
-        _log_page(),  # caught up: flush the partial chunk, then "nothing new yet"
+        _log_page(),  # caught up: "nothing new yet"
         _log_page(),  # still nothing
         _log_page(_log_event("2-b", 2000), _log_event("3-c", 3000)),  # look-behind re-delivers 2-b
         _log_page(),
@@ -873,16 +899,32 @@ def test_fetch_logs_late_arrival_lands_in_a_later_chunk_still_ascending():
     api = MagicMock()
     api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = [
         _log_page(_log_event("01000-a", 1000), _log_event("02000-b", 2000), _log_event("03000-c", 3000)),
-        # A late arrival re-delivered inside the look-behind span sorts below the
-        # pending line 03000-c; every chunk must still be internally ascending.
+        # A late arrival re-delivered inside the look-behind span lands in the
+        # chunk of the page that carried it, below that page's fresh lines.
         _log_page(_log_event("02500-l", 2500), _log_event("04000-d", 4000)),
         _log_page(),
     ]
     client = CentMLClient(api)
 
-    chunks = list(client.fetch_logs(123, 2, pod="pod-a", start_time=1, end_time=10_000, chunk_size=2))
+    chunks = list(client.fetch_logs(123, 2, pod="pod-a", start_time=1, end_time=10_000, chunk_size=3))
 
-    assert [[e.id for e in chunk] for chunk in chunks] == [["01000-a", "02000-b"], ["02500-l", "03000-c"], ["04000-d"]]
+    assert [[e.id for e in chunk] for chunk in chunks] == [["01000-a", "02000-b", "03000-c"], ["02500-l", "04000-d"]]
+
+
+def test_fetch_logs_chunk_stays_ascending_when_the_server_ties_on_timestamp():
+    # The server sorts a page by nanosecond timestamp only, so two lines sharing
+    # one nanosecond can arrive in either id order; the chunk must still come out
+    # ascending in (timestamp, id).
+    api = MagicMock()
+    api.get_deployment_logs_v4_logs_deployment_id_revision_number_get.side_effect = [
+        _log_page(_log_event("1000-b", 1000), _log_event("1000-a", 1000), _log_event("2000-c", 2000)),
+        _log_page(),
+    ]
+    client = CentMLClient(api)
+
+    chunks = list(client.fetch_logs(123, 2, pod="pod-a", start_time=1, end_time=10_000, chunk_size=5))
+
+    assert [[e.id for e in chunk] for chunk in chunks] == [["1000-a", "1000-b", "2000-c"]]
 
 
 def test_fetch_logs_validates_eagerly_at_the_call_not_the_first_next():
@@ -891,7 +933,15 @@ def test_fetch_logs_validates_eagerly_at_the_call_not_the_first_next():
 
     # Each ValueError is raised by the call itself — never deferred to next() —
     # so a stored or passed-around iterator cannot surface it far from the bad call.
-    for kwargs in ({"start_time": 2000, "end_time": 1000}, {"start_time": -1}, {"end_time": -1}, {"chunk_size": 0}):
+    for kwargs in (
+        {"start_time": 2000, "end_time": 1000},
+        {"start_time": -1},
+        {"end_time": -1},
+        {"chunk_size": 0},
+        # chunk_size is the on-the-wire page size, so it inherits the server's
+        # ceiling — rejected here, not by a generated-model pydantic error.
+        {"chunk_size": MAX_LOG_PAGE_LINES + 1},
+    ):
         with pytest.raises(ValueError):
             client.fetch_logs(123, 2, pod="pod-a", **kwargs)
 
