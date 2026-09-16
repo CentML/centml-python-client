@@ -72,7 +72,7 @@ first:
 ```python
 for chunk in cclient.fetch_logs(DEPLOYMENT_ID, REVISION, pod, start_time=t1_ms, end_time=t2_ms):
     for event in chunk:
-        print(event.pod, event.message)
+        print(event.message)
 ```
 
 Without `end_time` the same generator tails: it never terminates, and once caught
@@ -87,7 +87,7 @@ for chunk in cclient.fetch_logs(DEPLOYMENT_ID, REVISION, pod):
         time.sleep(2)
         continue
     for event in chunk:
-        print(event.pod, event.message)
+        print(event.message)
 ```
 
 `python examples/sdk/get_deployment_logs.py` runs both. `get_deployment_logs()`,

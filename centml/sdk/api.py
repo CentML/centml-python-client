@@ -3,7 +3,8 @@ import time
 from bisect import insort
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Iterator, List, Optional, Union
+from functools import partial
+from typing import Callable, Iterator, List, Optional, Union
 
 import platform_api_python_client
 from platform_api_python_client import (
@@ -29,14 +30,18 @@ STATUS_V3_DEPLOYMENT_TYPES = {DeploymentType.INFERENCE_V3, DeploymentType.CSERVE
 
 DEFAULT_LOG_PAGE_LINES = 100  # server-side default for max_lines
 MAX_LOG_PAGE_LINES = 5000  # server-side ceiling for max_lines
+# fetch_logs asks for less than the server's own default because the common call tails a
+# running deployment, where the store has only a handful of new lines to hand over per poll
+# whatever the page size is. Reading a backlog wants a far larger chunk_size.
+DEFAULT_LOG_CHUNK_LINES = 10
 # The server re-delivers a ~15s look-behind window on fetch-newer requests; only the
 # caller's events within this generous margin of the boundary can be re-delivered.
 LOG_DEDUP_RETENTION_MS = 300_000
 # The log read path is rate limited upstream on a bucket shared by every caller, and the
-# API reports a saturated bucket the same way it reports a sick store: HTTP 503. Doubling
-# from half a second spends about seven seconds over the budget below — long enough to
-# outlast a bucket refill without looking hung.
+# API reports a saturated bucket the same way it reports a sick store: HTTP 503.
 LOG_BUSY_STATUS = 503
+# Doubling from half a second spends about seven seconds over these attempts — long enough
+# to outlast a bucket refill without looking hung.
 LOG_RETRY_ATTEMPTS = 5
 LOG_RETRY_BASE_SECONDS = 0.5
 # Fraction of each backoff to vary it by: the bucket is shared, so clients backing off in
@@ -44,7 +49,7 @@ LOG_RETRY_BASE_SECONDS = 0.5
 LOG_RETRY_JITTER = 0.25
 
 
-def _with_busy_retry(fetch_page):
+def _with_busy_retry(fetch_page: Callable[[], list]) -> list:
     """Call fetch_page, retrying while the store reports itself busy. There is no
     server-issued cursor, so a page request is a pure function of its anchor and
     re-issuing it can neither duplicate nor skip lines."""
@@ -56,7 +61,7 @@ def _with_busy_retry(fetch_page):
                 raise
             backoff = LOG_RETRY_BASE_SECONDS * 2**attempt
             time.sleep(backoff * (1 + random.uniform(-LOG_RETRY_JITTER, LOG_RETRY_JITTER)))
-    # the last attempt propagates whatever it raises
+    # The last attempt propagates whatever it raises.
     return fetch_page()
 
 
@@ -403,7 +408,7 @@ class CentMLClient:
         pod: str,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
-        chunk_size: int = 10,
+        chunk_size: int = DEFAULT_LOG_CHUNK_LINES,
     ) -> Iterator[List[DeploymentLogEvent]]:
         """Fetch one pod's stored log lines within [start_time, end_time] (epoch ms,
         inclusive), yielded lazily oldest first as chunks of DeploymentLogEvent,
@@ -484,8 +489,8 @@ class CentMLClient:
             while True:
                 anchor: Union[list, int] = _recent_anchor(held) if held else initial_boundary
                 page = _with_busy_retry(
-                    lambda anchor=anchor: self._fetch_log_page(
-                        deployment_id, revision_number, pod, after=anchor, max_lines=chunk_size
+                    partial(
+                        self._fetch_log_page, deployment_id, revision_number, pod, after=anchor, max_lines=chunk_size
                     )
                 )
                 past_end = False

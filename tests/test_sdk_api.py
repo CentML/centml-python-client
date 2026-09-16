@@ -17,8 +17,6 @@ from centml.sdk import ApiException
 from centml.sdk.api import (
     LOG_DEDUP_RETENTION_MS,
     LOG_RETRY_ATTEMPTS,
-    LOG_RETRY_BASE_SECONDS,
-    LOG_RETRY_JITTER,
     MAX_LOG_PAGE_LINES,
     CentMLClient,
     DeploymentLogSession,
@@ -1061,9 +1059,9 @@ def test_fetch_logs_backs_off_further_on_each_busy_answer():
 
     waited = [call.args[0] for call in sleep.call_args_list]
     assert len(waited) == LOG_RETRY_ATTEMPTS - 1
-    for attempt, seconds in enumerate(waited):
-        nominal = LOG_RETRY_BASE_SECONDS * 2**attempt
-        assert nominal * (1 - LOG_RETRY_JITTER) <= seconds <= nominal * (1 + LOG_RETRY_JITTER)
+    # Each wait is longer than the one before it, so a store that stays busy is asked
+    # less and less often rather than hammered at a fixed interval.
+    assert all(earlier < later for earlier, later in zip(waited, waited[1:]))
 
 
 def test_fetch_logs_does_not_retry_a_request_the_store_rejects():

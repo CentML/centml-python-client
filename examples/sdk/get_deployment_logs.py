@@ -13,7 +13,7 @@ POLL_SECONDS = 2.0
 
 def format_event(event) -> str:
     ts = datetime.fromtimestamp(event.timestamp / 1000, tz=timezone.utc).isoformat()
-    return f"[{ts}] {event.pod} {event.message}"
+    return f"[{ts}] {event.message}"
 
 
 def main():
@@ -28,10 +28,10 @@ def main():
 
         # A window read: start_time/end_time are epoch ms, inclusive. With end_time
         # set the iterator terminates once the window is delivered or the store has
-        # no more lines to give. fetch_logs is lazy — each server page is yielded as
-        # one chunk, and only a short dedup window is held however large the read.
-        # chunk_size is also the number of lines requested per round trip, so a bulk
-        # read wants a large value.
+        # no more lines to give. fetch_logs is lazy — each server page that carries
+        # window lines is yielded as one chunk, and only a short dedup window is held
+        # however large the read. chunk_size is also the number of lines requested per
+        # round trip, so a bulk read wants a large value.
         now_ms = int(time.time() * 1000)
         print(f"Last {WINDOW_MINUTES} minutes of pod {pod}:\n")
         count = 0
