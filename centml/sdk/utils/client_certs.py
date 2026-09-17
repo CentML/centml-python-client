@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import click
 from cryptography import x509
@@ -31,9 +31,9 @@ def generate_ca_client_triplet(service_name: str) -> CAClientCertTriplet:
         .issuer_name(ca_subject)
         .public_key(ca_private_key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.utcnow())
+        .not_valid_before(datetime.now(timezone.utc))
         # Certificate valid for 5 years (give or take leap years)
-        .not_valid_after(datetime.utcnow() + timedelta(days=365 * 5))
+        .not_valid_after(datetime.now(timezone.utc) + timedelta(days=365 * 5))
         .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
         # We are using SHA384 as it's often paired with secpr384r1, ie
         # the weak link isn't the hash algorithm.
@@ -53,9 +53,9 @@ def generate_ca_client_triplet(service_name: str) -> CAClientCertTriplet:
         .issuer_name(ca_certificate.subject)
         .public_key(client_private_key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.utcnow())
+        .not_valid_before(datetime.now(timezone.utc))
         # Certificate valid for 5 years (give or take leap years)
-        .not_valid_after(datetime.utcnow() + timedelta(days=365 * 5))
+        .not_valid_after(datetime.now(timezone.utc) + timedelta(days=365 * 5))
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
         # We are using SHA384 as it's often paired with secpr384r1, ie
         # the weak link isn't the hash algorithm.
