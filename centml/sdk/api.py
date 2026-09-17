@@ -1,7 +1,10 @@
+import random
+import time
 from bisect import insort
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import List, Optional, Union
+from functools import partial
+from typing import Callable, Iterator, List, Optional, Union
 
 import platform_api_python_client
 from platform_api_python_client import (
@@ -18,6 +21,7 @@ from platform_api_python_client import (
     InviteUserRequest,
     Metric,
 )
+from typing_extensions import deprecated
 
 from centml.sdk import auth
 from centml.sdk.config import settings
@@ -26,9 +30,39 @@ STATUS_V3_DEPLOYMENT_TYPES = {DeploymentType.INFERENCE_V3, DeploymentType.CSERVE
 
 DEFAULT_LOG_PAGE_LINES = 100  # server-side default for max_lines
 MAX_LOG_PAGE_LINES = 5000  # server-side ceiling for max_lines
+# fetch_logs asks for less than the server's own default because the common call tails a
+# running deployment, where the store has only a handful of new lines to hand over per poll
+# whatever the page size is. Reading a backlog wants a far larger chunk_size.
+DEFAULT_LOG_CHUNK_LINES = 10
 # The server re-delivers a ~15s look-behind window on fetch-newer requests; only the
 # caller's events within this generous margin of the boundary can be re-delivered.
 LOG_DEDUP_RETENTION_MS = 300_000
+# The log read path is rate limited upstream on a bucket shared by every caller, and the
+# API reports a saturated bucket the same way it reports a sick store: HTTP 503.
+LOG_BUSY_STATUS = 503
+# Doubling from half a second spends about seven seconds over these attempts — long enough
+# to outlast a bucket refill without looking hung.
+LOG_RETRY_ATTEMPTS = 5
+LOG_RETRY_BASE_SECONDS = 0.5
+# Fraction of each backoff to vary it by: the bucket is shared, so clients backing off in
+# lockstep would re-collide on it every round.
+LOG_RETRY_JITTER = 0.25
+
+
+def _with_busy_retry(fetch_page: Callable[[], list]) -> list:
+    """Call fetch_page, retrying while the store reports itself busy. There is no
+    server-issued cursor, so a page request is a pure function of its anchor and
+    re-issuing it can neither duplicate nor skip lines."""
+    for attempt in range(LOG_RETRY_ATTEMPTS - 1):
+        try:
+            return fetch_page()
+        except ApiException as exc:
+            if exc.status != LOG_BUSY_STATUS:
+                raise
+            backoff = LOG_RETRY_BASE_SECONDS * 2**attempt
+            time.sleep(backoff * (1 + random.uniform(-LOG_RETRY_JITTER, LOG_RETRY_JITTER)))
+    # The last attempt propagates whatever it raises.
+    return fetch_page()
 
 
 def _recent_anchor(events: list) -> list:
@@ -40,6 +74,16 @@ def _recent_anchor(events: list) -> list:
     while first_recent > 0 and events[first_recent - 1].timestamp >= cutoff:
         first_recent -= 1
     return events[first_recent:]
+
+
+@dataclass(frozen=True)
+class _LogAnchor:
+    """The two fields an after anchor uses: the id it dedupes by and the timestamp it
+    takes its boundary and its retention cutoff from. Holding these instead of whole
+    events keeps a long tail off the message text it has already handed out."""
+
+    id: str
+    timestamp: int
 
 
 @dataclass(frozen=True)
@@ -230,6 +274,7 @@ class CentMLClient:
         ).pods
 
     # pylint: disable=R0917
+    @deprecated("get_deployment_logs() is deprecated; use fetch_logs() instead")
     def get_deployment_logs(
         self,
         deployment_id: int,
@@ -239,7 +284,9 @@ class CentMLClient:
         after: Optional[Union[list, int]] = None,
         max_lines: int = DEFAULT_LOG_PAGE_LINES,
     ) -> list:
-        """Fetch one page of a pod's logs, oldest-first. Use get_deployment_pods() to
+        """Deprecated: use fetch_logs() instead.
+
+        Fetch one page of a pod's logs, oldest-first. Use get_deployment_pods() to
         discover pod names and get_deployment_revisions() for the revision number.
 
         before and after anchor the page to events a previous call returned for the
@@ -257,6 +304,22 @@ class CentMLClient:
         through undeduplicated. An empty anchor list raises ValueError. Pages never
         split a millisecond, so a delivered boundary millisecond is always complete.
         """
+        return self._fetch_log_page(
+            deployment_id, revision_number, pod, before=before, after=after, max_lines=max_lines
+        )
+
+    # pylint: disable=R0917
+    def _fetch_log_page(
+        self,
+        deployment_id: int,
+        revision_number: int,
+        pod: str,
+        before: Optional[Union[list, int]] = None,
+        after: Optional[Union[list, int]] = None,
+        max_lines: int = DEFAULT_LOG_PAGE_LINES,
+    ) -> list:
+        """The page primitive behind fetch_logs and the deprecated readers — the
+        contract get_deployment_logs() documents, without the deprecation warning."""
         if before is not None and after is not None:
             raise ValueError("before and after are mutually exclusive")
 
@@ -294,6 +357,7 @@ class CentMLClient:
         return [event for event in response.events if event.id not in held_event_ids]
 
     # pylint: disable=R0917
+    @deprecated("get_deployment_logs_range() is deprecated; use fetch_logs() instead")
     def get_deployment_logs_range(
         self,
         deployment_id: int,
@@ -302,7 +366,9 @@ class CentMLClient:
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
     ) -> List[DeploymentLogEvent]:
-        """Fetch every log line in [start_time, end_time] (epoch ms, inclusive; both
+        """Deprecated: use fetch_logs() instead.
+
+        Fetch every log line in [start_time, end_time] (epoch ms, inclusive; both
         optional — an open end reads to the beginning or the present), oldest first.
         pod=None reads all pods of the revision and merges the streams
         chronologically; each returned event carries its pod name."""
@@ -317,7 +383,7 @@ class CentMLClient:
                 # after is exclusive, so start_time - 1 admits lines at start_time itself;
                 # start_time 0 (or None) means the whole window — scan from the head.
                 anchor: Union[list, int] = _recent_anchor(events) if events else (start_time - 1 if start_time else 0)
-                page = self.get_deployment_logs(
+                page = self._fetch_log_page(
                     deployment_id, revision_number, pod_name, after=anchor, max_lines=MAX_LOG_PAGE_LINES
                 )
                 if not page:
@@ -334,18 +400,156 @@ class CentMLClient:
         merged.sort(key=lambda event: event.id)
         return merged
 
+    # pylint: disable=R0917
+    def fetch_logs(
+        self,
+        deployment_id: int,
+        revision_number: int,
+        pod: str,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        chunk_size: int = DEFAULT_LOG_CHUNK_LINES,
+    ) -> Iterator[List[DeploymentLogEvent]]:
+        """Fetch one pod's stored log lines within [start_time, end_time] (epoch ms,
+        inclusive), yielded lazily oldest first as chunks of DeploymentLogEvent,
+        each stored line at most once. Discover pod names with
+        get_deployment_pods().
+
+        chunk_size is the number of lines requested from the server per round
+        trip (1 to MAX_LOG_PAGE_LINES), and each server page that carries window
+        lines becomes one yielded chunk, so a bulk read of history wants a large
+        chunk_size — the log read path is rate-limited upstream, and a small
+        chunk_size over a large window multiplies requests. A chunk usually holds
+        up to chunk_size lines but can be smaller (lines below start_time or
+        already delivered are filtered out of the page) or larger (the server
+        never splits one millisecond across pages, so a millisecond holding more
+        than chunk_size lines arrives whole). A page filtered away entirely
+        yields nothing at all rather than an empty chunk, which means only that
+        the stream is caught up.
+
+        start_time defaults to the current time, resolved once when fetch_logs is
+        called (not at the first next()), so lines logged while the generator sits
+        unstarted are not skipped; pass an earlier start_time to read history.
+
+        With end_time set the iterator terminates once the window is delivered or
+        the store has no more lines to give, whichever comes first — an end_time
+        in the future does not keep it polling until then.
+        Without end_time it never terminates — once caught up it yields an empty
+        chunk each time nothing new is stored yet, and the caller decides when to
+        sleep or break:
+
+            for chunk in cclient.fetch_logs(dep, rev, pod):
+                if not chunk:
+                    time.sleep(2)
+                    continue
+                ...
+
+        Nothing is fetched before the first next(), and memory is bounded by the
+        dedup window rather than by the length of the stream: the anchor holds
+        only the ids and timestamps of the last LOG_DEDUP_RETENTION_MS, a
+        generous margin over the server's re-delivery span, so no line is
+        delivered twice — across empty chunks too.
+
+        A line the log store received late lands in a later chunk than its
+        timestamp position, never duplicated, as long as it lands inside that
+        re-delivery span (~15s). This reader only ever pages forward, and the
+        server re-delivers the span behind the boundary only; a line whose
+        timestamp falls further than the span behind the newest line already
+        delivered is never returned at all. Lines inside each chunk are always
+        in ascending (timestamp, id) order.
+
+        A page request the store answers as busy (HTTP 503) is retried with
+        exponential backoff and jitter; the anchor survives the retry, so an
+        upstream rate limit costs a pause rather than the stream.
+
+        If a page request fails for any other reason, or the retries run out,
+        the iterator raises and, like any generator, cannot be resumed — but
+        every chunk already yielded is complete and none is left half-built.
+        Resume with a new fetch_logs whose start_time is the last delivered
+        event's timestamp: bounds are inclusive, so the only lines delivered
+        again are the ones sharing that millisecond, which the caller already
+        holds.
+        """
+        if not 1 <= chunk_size <= MAX_LOG_PAGE_LINES:
+            raise ValueError(
+                f"chunk_size must be between 1 and {MAX_LOG_PAGE_LINES} lines "
+                "(chunk_size is also the per-request page size, and the server "
+                f"caps max_lines at {MAX_LOG_PAGE_LINES})"
+            )
+        if (start_time is not None and start_time < 0) or (end_time is not None and end_time < 0):
+            raise ValueError("start_time and end_time are epoch milliseconds and must not be negative")
+        if start_time is not None and end_time is not None and start_time > end_time:
+            raise ValueError("start_time must not exceed end_time")
+        start_ms = int(time.time() * 1000) if start_time is None else start_time
+
+        def chunks() -> Iterator[List[DeploymentLogEvent]]:
+            held: list = []
+            # after is exclusive, so start_ms - 1 admits lines at start_ms itself.
+            initial_boundary = max(start_ms - 1, 0)
+            while True:
+                anchor: Union[list, int] = _recent_anchor(held) if held else initial_boundary
+                page = _with_busy_retry(
+                    partial(
+                        self._fetch_log_page, deployment_id, revision_number, pod, after=anchor, max_lines=chunk_size
+                    )
+                )
+                past_end = False
+                chunk: List[DeploymentLogEvent] = []
+                for raw in page:
+                    anchor_event = _LogAnchor(id=raw.id, timestamp=raw.timestamp)
+                    if held and raw.id <= held[-1].id:
+                        # Late arrival inside the look-behind span: keep the held window
+                        # id-ordered (id order == time order) so trimming stays correct.
+                        insort(held, anchor_event, key=lambda held_event: held_event.id)
+                    else:
+                        held.append(anchor_event)
+                    # Anchoring at start_ms - 1 re-delivers the look-behind span below
+                    # start_ms; those ids must be held for dedup but never emitted.
+                    if raw.timestamp < start_ms:
+                        continue
+                    if end_time is not None and raw.timestamp > end_time:
+                        past_end = True
+                        break
+                    event = DeploymentLogEvent(id=raw.id, timestamp=raw.timestamp, message=raw.message, pod=pod)
+                    # The server orders a page by nanosecond timestamp only, never by
+                    # the id's hash suffix, so lines sharing one nanosecond can arrive
+                    # in either id order; insort keeps every chunk ascending.
+                    if chunk and (event.timestamp, event.id) < (chunk[-1].timestamp, chunk[-1].id):
+                        insort(chunk, event, key=lambda chunk_event: (chunk_event.timestamp, chunk_event.id))
+                    else:
+                        chunk.append(event)
+                if page:
+                    held = _recent_anchor(held)
+                if chunk:
+                    yield chunk
+                if past_end or (not page and end_time is not None):
+                    break
+                if not page:
+                    # Caught up with no end bound: signal "nothing new yet" until
+                    # new lines are stored.
+                    yield []
+
+        # The nested generator closes over the validated arguments, so the
+        # ValueErrors above raise at the call rather than at the first next().
+        return chunks()
+
+    @deprecated("deployment_log_session() is deprecated; use fetch_logs() instead")
     def deployment_log_session(
         self, deployment_id: int, revision_number: int, pod: str, events: Optional[list] = None
     ) -> "DeploymentLogSession":
-        """Stateful reader for one pod's logs that tracks fetched pages and anchors
+        """Deprecated: use fetch_logs() instead.
+
+        Stateful reader for one pod's logs that tracks fetched pages and anchors
         every request itself — see DeploymentLogSession. Seed events with logs a
         previous session (or get_deployment_logs) returned for the same pod."""
         return DeploymentLogSession(self, deployment_id, revision_number, pod, events)
 
 
+@deprecated("DeploymentLogSession is deprecated; use CentMLClient.fetch_logs() instead")
 class DeploymentLogSession:
-    """Maintains a contiguous, ordered window of one pod's logs across fetches.
+    """Deprecated: use CentMLClient.fetch_logs() instead.
 
+    Maintains a contiguous, ordered window of one pod's logs across fetches.
     Every fetch is anchored on the window itself, so pages can never overlap or
     leave gaps inside it (within log retention; an undetectable gap forms if the
     session idles past retention before fetching newer lines).
@@ -372,7 +576,7 @@ class DeploymentLogSession:
         """Fetch the page older than the window and prepend it; on an empty session
         fetches the newest page (tail). Returns the page; empty list = no older
         lines exist (yet)."""
-        page = self._client.get_deployment_logs(
+        page = self._client._fetch_log_page(
             self._deployment_id,
             self._revision_number,
             self._pod,
@@ -390,7 +594,7 @@ class DeploymentLogSession:
         tailing. Rare late arrivals sort into the window below its newest lines."""
         if not self._events:
             return self.fetch_older(max_lines=max_lines)
-        delta = self._client.get_deployment_logs(
+        delta = self._client._fetch_log_page(
             self._deployment_id,
             self._revision_number,
             self._pod,

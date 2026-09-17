@@ -6,8 +6,9 @@ from centml.sdk.api import get_centml_client
 # --- Configuration ---
 DEPLOYMENT_ID = 1234  # Replace with your deployment ID
 REVISION_NUMBER = 10
-TAIL_SECONDS = 30  # How long to keep polling for new lines after reading history
-TAIL_LINES = 20  # How much history to print before tailing
+WINDOW_MINUTES = 10  # How far back the window read looks
+TAIL_LINES = 20  # How many tailed lines to print before stopping the tail loop
+POLL_SECONDS = 2.0
 
 
 def format_event(event) -> str:
@@ -17,44 +18,58 @@ def format_event(event) -> str:
 
 def main():
     with get_centml_client() as cclient:
-        # Logs are read per pod: discover the pods that have logged for this revision
-        # (terminated pods within log retention are included).
+        # Discover pod names; terminated pods still within log retention are included.
         pods = cclient.get_deployment_pods(DEPLOYMENT_ID, REVISION_NUMBER)
         if not pods:
             print("No pods have logged for this revision yet.")
             return
 
         pod = pods[0]
-        print(f"Reading logs for deployment {DEPLOYMENT_ID} revision {REVISION_NUMBER}, pod {pod}\n")
+        # One call reads one pod, so here is the rest of the revision's roster.
+        print(f"Pods with logs: {', '.join(pods)}\n")
 
-        # The session tracks what it has fetched and anchors every request itself.
-        session = cclient.deployment_log_session(DEPLOYMENT_ID, REVISION_NUMBER, pod)
-
-        # Read the full history: newest page first, then page back to the beginning.
-        while session.fetch_older():
-            pass
-        events = session.events
-        print(f"Found {len(events)} log entries; showing the last {TAIL_LINES}:\n")
-        for event in events[-TAIL_LINES:]:
-            print(format_event(event))
-
-        # Keep tailing: each call returns only the lines the session does not hold yet.
-        print(f"\nPolling for new lines for {TAIL_SECONDS}s...")
-        deadline = time.monotonic() + TAIL_SECONDS
-        while time.monotonic() < deadline:
-            for event in session.fetch_newer():
+        # A window read: start_time/end_time are epoch ms, inclusive. With end_time
+        # set the iterator terminates once the window is delivered or the store has
+        # no more lines to give. fetch_logs is lazy — each server page that carries
+        # window lines is yielded as one chunk, and only a short dedup window is held
+        # however large the read. chunk_size is also the number of lines requested per
+        # round trip, so a bulk read wants a large value.
+        now_ms = int(time.time() * 1000)
+        print(f"Last {WINDOW_MINUTES} minutes of pod {pod}:\n")
+        count = 0
+        for chunk in cclient.fetch_logs(
+            DEPLOYMENT_ID,
+            REVISION_NUMBER,
+            pod,
+            start_time=now_ms - WINDOW_MINUTES * 60_000,
+            end_time=now_ms,
+            chunk_size=1000,
+        ):
+            for event in chunk:
                 print(format_event(event))
-            time.sleep(2)
+            count += len(chunk)
+        print(f"\nThe window holds {count} lines.")
 
-        # The same paging is available statelessly via get_deployment_logs, anchored
-        # on events you already hold — useful when you manage storage yourself:
-        #   page  = cclient.get_deployment_logs(DEPLOYMENT_ID, REVISION_NUMBER, pod=pod)  # tail
-        #   older = cclient.get_deployment_logs(..., pod=pod, before=page)  # empty return = beginning
-        #   newer = cclient.get_deployment_logs(..., pod=pod, after=page)   # empty return = nothing new
-        # A specific time window (all pods merged, oldest first, pod on each event):
-        #   window = cclient.get_deployment_logs_range(
-        #       DEPLOYMENT_ID, REVISION_NUMBER, start_time=t1_ms, end_time=t2_ms
-        #   )
+        # A tail: without end_time the same generator never terminates. start_time
+        # defaults to the moment of the call, and once caught up the generator
+        # yields an empty chunk each time nothing new is stored yet — the caller
+        # decides when to sleep or break. No line is ever delivered twice.
+        #
+        # Passing an earlier start_time here rather than omitting it delivers the
+        # backlog first and then follows, in one pass. That is the shape to reach
+        # for when both are wanted: a tail started after a separate window read
+        # begins at its own "now", losing whatever was logged in between.
+        print(f"\nTailing pod {pod}; stopping after {TAIL_LINES} new lines...")
+        printed = 0
+        for chunk in cclient.fetch_logs(DEPLOYMENT_ID, REVISION_NUMBER, pod):
+            if not chunk:
+                time.sleep(POLL_SECONDS)
+                continue
+            for event in chunk:
+                print(format_event(event))
+            printed += len(chunk)
+            if printed >= TAIL_LINES:
+                break
 
 
 if __name__ == "__main__":
