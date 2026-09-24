@@ -237,7 +237,6 @@ def get(type, id):
             ("Status", ready_status),
             ("Created at", deployment.created_at.strftime("%Y-%m-%d %H:%M:%S")),
             ("Hardware", f"{hw.name} ({hw.num_gpu}x {hw.gpu_type})"),
-            ("Cost", f"{hw.cost_per_hr / 100} credits/hr"),
         ]
         if depl_type != DeploymentType.JOB:
             detail_rows.insert(2, ("Endpoint", deployment.endpoint_url))

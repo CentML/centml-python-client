@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 
 from centml.cli.cluster import _get_ready_status, _get_service_status, _get_status_error_messages
-from centml.sdk import DeploymentStatus, DeploymentType, RolloutStatus, ServiceStatus
+from centml.sdk import DeploymentStatus, DeploymentType, HardwareInstanceResponse, RolloutStatus, ServiceStatus
 
 
 def test_service_status_uses_legacy_service_status_when_present():
@@ -157,7 +157,9 @@ def test_get_job_routes_to_job_api_and_displays_job_config():
     from centml.cli.cluster import get
 
     deployment = _deployment(status=DeploymentStatus.ACTIVE)
-    hardware = SimpleNamespace(id=2, name="h100", num_gpu=8, gpu_type="H100", cost_per_hr=1200)
+    hardware = HardwareInstanceResponse(
+        id=2, name="h100", gpu_type="H100", num_gpu=8, cpu=96, memory=1024, cluster_id=1
+    )
     runner = CliRunner()
 
     with _patch_cluster_client() as client:
@@ -177,3 +179,5 @@ def test_get_job_routes_to_job_api_and_displays_job_config():
     assert "registry.example.com/job:latest" in result.output
     assert "Completions" in result.output
     assert "Parallelism" in result.output
+    assert "h100 (8x H100)" in result.output
+    assert "credits/hr" not in result.output
