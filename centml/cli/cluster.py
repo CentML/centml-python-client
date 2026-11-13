@@ -21,17 +21,12 @@ depl_type_to_name_map = {
     DeploymentType.INFERENCE_V2: "inference",
     DeploymentType.INFERENCE_V3: "inference",
     DeploymentType.COMPUTE_V2: "compute",
-    # For user, they are all cserve.
-    DeploymentType.CSERVE: "cserve",
-    DeploymentType.CSERVE_V2: "cserve",
-    DeploymentType.CSERVE_V3: "cserve",
     DeploymentType.RAG: "rag",
     DeploymentType.JOB: "job",
 }
 # use latest type to for user requests
 depl_name_to_type_map = {
     "inference": DeploymentType.INFERENCE_V3,
-    "cserve": DeploymentType.CSERVE_V3,
     "compute": DeploymentType.COMPUTE_V2,
     "rag": DeploymentType.RAG,
     "job": DeploymentType.JOB,
@@ -78,7 +73,6 @@ def _format_ssh_key(ssh_key):
 def _get_replica_info(deployment):
     """Extract replica information handling V2/V3 field differences"""
     # Check actual deployment object fields rather than depl_type
-    # since unified get_cserve() can return either V2 or V3 objects
     if hasattr(deployment, 'min_replicas'):
         # V3 deployment response object
         return {"min": deployment.min_replicas, "max": deployment.max_replicas}
@@ -218,8 +212,6 @@ def get(type, id):
             deployment = cclient.get_inference(id)  # handles both V2 and V3
         elif depl_type == DeploymentType.COMPUTE_V2:
             deployment = cclient.get_compute(id)
-        elif depl_type in [DeploymentType.CSERVE_V2, DeploymentType.CSERVE_V3]:
-            deployment = cclient.get_cserve(id)  # handles both V2 and V3
         elif depl_type == DeploymentType.JOB:
             deployment = cclient.get_job(id)
         else:
@@ -268,22 +260,6 @@ def get(type, id):
                     disable_numparse=True,
                 )
             )
-        elif depl_type in [DeploymentType.CSERVE_V2, DeploymentType.CSERVE_V3]:
-            replica_info = _get_replica_info(deployment)
-            display_rows = [
-                ("Hugging face model", deployment.recipe.model),
-                (
-                    "Parallelism",
-                    {
-                        "tensor": deployment.recipe.additional_properties.get("tensor_parallel_size", "N/A"),
-                        "pipeline": deployment.recipe.additional_properties.get("pipeline_parallel_size", "N/A"),
-                    },
-                ),
-                ("Replicas", replica_info),
-                ("Max concurrency", deployment.concurrency or "None"),
-            ]
-
-            click.echo(tabulate(display_rows, tablefmt="rounded_outline", disable_numparse=True))
         elif depl_type == DeploymentType.JOB:
             display_rows = [
                 ("Image", deployment.image_url),
