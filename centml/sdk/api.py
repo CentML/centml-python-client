@@ -12,7 +12,6 @@ from platform_api_python_client import (
     DeploymentStatus,
     CreateInferenceV3DeploymentRequest,
     CreateComputeDeploymentRequest,
-    CreateCServeV3DeploymentRequest,
     CreateDynamoDeploymentRequest,
     CreateJobDeploymentRequest,
     CreateHardwareInstanceRequest,
@@ -169,9 +168,6 @@ class CentMLClient:
     def create_job(self, request: CreateJobDeploymentRequest):
         return self._api.create_job_deployment_deployments_job_post(request)
 
-    def create_cserve(self, request: CreateCServeV3DeploymentRequest):
-        return self._api.create_cserve_v3_deployment_deployments_cserve_v3_post(request)
-
     def create_dynamo(self, request: CreateDynamoDeploymentRequest):
         return self._api.create_dynamo_deployment_deployments_dynamo_post(request)
 
@@ -180,9 +176,6 @@ class CentMLClient:
 
     def update_compute(self, deployment_id: int, request: CreateComputeDeploymentRequest):
         return self._api.update_compute_deployment_deployments_compute_put(deployment_id, request)
-
-    def update_cserve(self, deployment_id: int, request: CreateCServeV3DeploymentRequest):
-        return self._api.update_cserve_v3_deployment_deployments_cserve_v3_put(deployment_id, request)
 
     def update_dynamo(self, deployment_id: int, request: CreateDynamoDeploymentRequest):
         return self._api.update_dynamo_deployment_deployments_dynamo_put(deployment_id, request)
@@ -219,9 +212,6 @@ class CentMLClient:
 
     def get_prebuilt_images(self, depl_type: DeploymentType):
         return self._api.get_prebuilt_images_prebuilt_images_get(type=depl_type)
-
-    def get_cserve_recipe(self, model=None, hf_token=None):
-        return self._api.get_cserve_recipe_deployments_cserve_recipes_get(model=model, hf_token=hf_token).results
 
     def get_cluster_id(self, hardware_instance_id):
         filtered_hw = list(filter(lambda h: h.id == hardware_instance_id, self.get_hardware_instances()))
