@@ -25,8 +25,6 @@ from typing_extensions import deprecated
 from centml.sdk import auth
 from centml.sdk.config import settings
 
-STATUS_V3_DEPLOYMENT_TYPES = {DeploymentType.INFERENCE_V3, DeploymentType.CSERVE_V3}
-
 DEFAULT_LOG_PAGE_LINES = 100  # server-side default for max_lines
 MAX_LOG_PAGE_LINES = 5000  # server-side ceiling for max_lines
 # fetch_logs asks for less than the server's own default because the common call tails a
@@ -138,23 +136,6 @@ class CentMLClient:
 
     def get_job(self, id):
         return self._api.get_job_deployment_deployments_job_deployment_id_get(id)
-
-    def get_cserve(self, id):
-        """Get CServe deployment details - automatically handles both V2 and V3 deployments"""
-        # Try V3 first (recommended), fallback to V2 if deployment is V2
-        try:
-            return self._api.get_cserve_v3_deployment_deployments_cserve_v3_deployment_id_get(id)
-        except ApiException as e:
-            # If V3 fails with 404 or similar, try V2
-            if e.status in [404, 400]:  # Deployment might be V2 or endpoint not found
-                try:
-                    return self._api.get_cserve_v2_deployment_deployments_cserve_v2_deployment_id_get(id)
-                except ApiException as v2_error:
-                    # If both fail, raise the original V3 error as it's more likely to be the real issue
-                    raise e from v2_error
-            else:
-                # For other errors (auth, network, etc.), raise immediately
-                raise
 
     def get_dynamo(self, id):
         return self._api.get_dynamo_deployment_deployments_dynamo_deployment_id_get(id)
