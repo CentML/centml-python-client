@@ -158,7 +158,7 @@ def test_get_job_routes_to_job_api_and_displays_job_config():
 
     deployment = _deployment(status=DeploymentStatus.ACTIVE)
     hardware = HardwareInstanceResponse(
-        id=2, name="h100", gpu_type="H100", num_gpu=8, cpu=96, memory=1024, cluster_id=1
+        id=2, name="h100", gpu_type="H100", num_gpu=8, cpu=96, memory=1024, cost_per_hr=0, cluster_id=1
     )
     runner = CliRunner()
 
