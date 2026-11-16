@@ -1,4 +1,4 @@
-# centml-python-client
+# CCluster Python Client
 ![](https://github.com/CentML/centml-python-client/actions/workflows/unit_tests.yml/badge.svg)
 
 ### Installation
