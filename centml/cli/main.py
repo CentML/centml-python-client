@@ -5,24 +5,32 @@ from centml.cli.cluster import ls, get, delete, pause, resume, capacity
 from centml.cli.shell import shell, exec_cmd
 
 
-@click.group()
-# this is the version and prog name set in setup.py
-@click.version_option(
-    prog_name="CentML CLI",
-    message="""
-     ______              __   __  ___ __
-    / ____/___   ____   / /_ /  |/  // /
-   / /    / _ \\ / __ \\ / __// /|_/ // /
-  / /___ /  __// / / // /_ / /  / // /___
-  \\____/ \\___//_/ /_/ \\__//_/  /_//_____/
+# NVIDIA green (#76B900)
+_NVIDIA_GREEN = (118, 185, 0)
 
+_BANNER = r"""
+   ______________           __           
+  / ____/ ____/ /_  _______/ /____  _____
+ / /   / /   / / / / / ___/ __/ _ \/ ___/
+/ /___/ /___/ / /_/ (__  ) /_/  __/ /    
+\____/\____/_/\__,_/____/\__/\___/_/     
+"""
+
+_VERSION_MESSAGE = (
+    click.style(_BANNER, fg=_NVIDIA_GREEN)
+    + """
     🚀 Welcome to %(prog)s v%(version)s 🚀
 
      ✨ AI Deployment Made Simple ✨
-📚 Documentation: https://docs.centml.ai/
-🛠  Need help? Reach out to support@centml.ai
-""",
+📚 Documentation: https://docs.nvidia.com/ccluster
+💬 Need help? Reach out on GitHub: https://github.com/NVIDIA/ccluster
+"""
 )
+
+
+@click.group()
+# this is the version and prog name set in setup.py
+@click.version_option(prog_name="CCluster CLI", message=_VERSION_MESSAGE)
 def cli():
     pass
 

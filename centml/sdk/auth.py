@@ -71,7 +71,7 @@ def get_centml_token():
     # Fall back to stored credentials for interactive flows
     cred = load_centml_cred()
     if not cred:
-        sys.exit("CentML credentials not found. Please login...")
+        sys.exit("CCluster credentials not found. Please login...")
     exp_time = int(jwt.decode(cred["access_token"], options={"verify_signature": False})["exp"])
 
     if time.time() >= exp_time - 100:

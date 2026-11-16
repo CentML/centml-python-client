@@ -53,7 +53,7 @@ class OAuthHandler(BaseHTTPRequestHandler):
         self.wfile.write("""
             <html>
                 <body>
-                    <h1>Succesfully logged into CentML CLI</h1>
+                    <h1>Successfully logged into CCluster CLI</h1>
                     <p>You can now close this tab and continue in the CLI.</p>
                 </body>
             </html>
@@ -84,7 +84,7 @@ def exchange_code_for_token(code, code_verifier):
     return response.json()
 
 
-@click.command(help="Login to CentML")
+@click.command(help="Login to CCluster")
 @click.argument("token_file", required=False)
 def login(token_file):
     if token_file:
@@ -95,7 +95,7 @@ def login(token_file):
         click.echo("Authenticating with stored credentials...\n")
         click.echo("✅ Login successful")
     else:
-        click.echo("Logging into CentML...")
+        click.echo("Logging into CCluster...")
 
         choice = click.confirm("Do you want to log in with your browser now?", default=True)
         if choice:
@@ -128,7 +128,7 @@ def login(token_file):
             click.echo("Login unsuccessful")
 
 
-@click.command(help="Logout from CentML")
+@click.command(help="Logout from CCluster")
 def logout():
     auth.remove_centml_cred()
     click.echo("Logout successful")
