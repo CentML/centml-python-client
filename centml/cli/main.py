@@ -4,7 +4,6 @@ from centml.cli.login import login, logout
 from centml.cli.cluster import ls, get, delete, pause, resume, capacity
 from centml.cli.shell import shell, exec_cmd
 
-
 # NVIDIA green (#76B900)
 _NVIDIA_GREEN = (118, 185, 0)
 
@@ -16,16 +15,13 @@ _BANNER = r"""
 \____/\____/_/\__,_/____/\__/\___/_/     
 """
 
-_VERSION_MESSAGE = (
-    click.style(_BANNER, fg=_NVIDIA_GREEN)
-    + """
+_VERSION_MESSAGE = click.style(_BANNER, fg=_NVIDIA_GREEN) + """
     🚀 Welcome to %(prog)s v%(version)s 🚀
 
      ✨ AI Deployment Made Simple ✨
 📚 Documentation: https://docs.nvidia.com/ccluster
 💬 Need help? Reach out on GitHub: https://github.com/NVIDIA/ccluster
 """
-)
 
 
 @click.group()
