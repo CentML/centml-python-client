@@ -23,6 +23,7 @@ depl_type_to_name_map = {
     DeploymentType.COMPUTE_V2: "compute",
     DeploymentType.RAG: "rag",
     DeploymentType.JOB: "job",
+    DeploymentType.DYNAMO: "dynamo",
 }
 # use latest type to for user requests
 depl_name_to_type_map = {
@@ -179,15 +180,16 @@ def ls(type):
         deployments = cclient.get(depl_type)
         rows = []
         for d in deployments:
-            rows.append(
-                [
-                    d.id,
-                    d.name,
-                    depl_type_to_name_map.get(d.type, d.type.value),
-                    d.status.value,
-                    d.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-                ]
-            )
+            if d.type in depl_type_to_name_map:
+                rows.append(
+                    [
+                        d.id,
+                        d.name,
+                        depl_type_to_name_map[d.type],
+                        d.status.value,
+                        d.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+                    ]
+                )
 
         click.echo(
             tabulate(

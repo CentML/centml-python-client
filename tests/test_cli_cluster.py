@@ -167,31 +167,35 @@ def test_retired_cserve_type_is_rejected(command, args):
     client.get_cserve.assert_not_called()
 
 
-def test_ls_keeps_historical_cserve_deployments_visible():
+def test_ls_displays_dynamo_deployments():
     from centml.cli.cluster import ls
 
     with _patch_cluster_client() as client:
-        client.get.return_value = [_deployment(type=DeploymentType.CSERVE_V3, name="old-cserve")]
+        client.get.return_value = [_deployment(type=DeploymentType.DYNAMO, name="test-dynamo")]
         result = CliRunner().invoke(ls)
 
     assert result.exit_code == 0
-    assert "old-cserve" in result.output
-    assert "cserve" in result.output
+    assert "test-dynamo" in result.output
+    assert "dynamo" in result.output
 
 
 @pytest.mark.parametrize(
-    "deployment_type", ["dynamo", "ccl_compute", "ccl_inference", "ccl_job", "ccl_dynamo", "future_type"]
+    "deployment_type", ["ccl_compute", "ccl_inference", "ccl_job", "ccl_dynamo", "future_type", "cserve_v3"]
 )
-def test_ls_displays_new_deployment_types(deployment_type):
+def test_ls_hides_unsupported_deployment_types(deployment_type):
     from centml.cli.cluster import ls
 
     with _patch_cluster_client() as client:
-        client.get.return_value = [_deployment(type=DeploymentType(deployment_type), name="new-deployment")]
+        client.get.return_value = [
+            _deployment(type=DeploymentType(deployment_type), name="hidden-deployment"),
+            _deployment(type=DeploymentType.DYNAMO, name="visible-dynamo"),
+        ]
         result = CliRunner().invoke(ls)
 
     assert result.exit_code == 0
-    assert "new-deployment" in result.output
-    assert deployment_type in result.output
+    assert "hidden-deployment" not in result.output
+    assert deployment_type not in result.output
+    assert "visible-dynamo" in result.output
 
 
 def test_get_job_routes_to_job_api_and_displays_job_config():
