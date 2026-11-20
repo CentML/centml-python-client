@@ -3,8 +3,10 @@
 
 ### Installation
 
-This client uses Platform API `4.37.1`. CServe deployments have been retired;
+This client uses Platform API `4.41.0`. CServe deployments have been retired;
 the CServe SDK helpers and CLI deployment option are no longer available.
+The unfiltered `ccluster ls` list displays historical deployments, Dynamo,
+CCluster, and future deployment types using their API type names.
 
 To install without cloning, run the following command:
 ```bash
