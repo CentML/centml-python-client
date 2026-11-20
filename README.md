@@ -133,6 +133,54 @@ To run all the tests, use:
 pytest
 ```
 
+### Automated Platform API client updates
+
+The `Update Platform API client` workflow opens an upgrade PR in this repository
+after a generated API client is published. It updates `requirements.txt` and the
+compatibility note above. Existing PR workflows run the SDK/CLI sanity tests,
+formatting, lint, and type checks. Merging requires review; SDK version bumps and
+releases remain separate.
+
+Configure the repository Actions secret `SDK_UPDATE_TOKEN` with a bot's fine-grained
+personal access token scoped to this repository, with **Contents: Read and write**
+and **Pull requests: Read and write**. Using a bot token lets the resulting PR run
+CI automatically; PR events created with `GITHUB_TOKEN` require workflow approval
+([GitHub token documentation](https://docs.github.com/en/actions/concepts/security/github_token)).
+
+After the generated client's PyPI publish job succeeds, add this step to its
+publishing workflow (use `needs` if it is in a separate job):
+
+```yaml
+- name: Request SDK upgrade
+  env:
+    GH_TOKEN: ${{ secrets.SDK_UPDATE_TOKEN }}
+    # Replace this expression with the publishing workflow's version output.
+    CLIENT_VERSION: ${{ steps.version.outputs.version }}
+  run: |
+    jq -n --arg version "$CLIENT_VERSION" \
+      '{event_type: "platform-api-client-published", client_payload: {version: $version}}' \
+      | gh api --method POST repos/CentML/centml-python-client/dispatches --input -
+```
+
+The publishing repository also needs the `SDK_UPDATE_TOKEN` secret. Its token
+must have **Contents: Read and write** access to this SDK repository to dispatch
+the event; the publisher's default `GITHUB_TOKEN` cannot access another repository.
+
+For a manual run or a retry after PyPI propagation, use the Actions UI or:
+
+```bash
+gh workflow run update_platform_api_client.yml \
+  --repo CentML/centml-python-client -f version=4.42.0
+```
+
+The workflow accepts stable `X.Y.Z` versions with an optional `v` prefix. It checks
+that PyPI has a distribution compatible with Python 3.10, and skips versions at or
+below the pin on the default branch. Repeated requests for the same newer version
+update the same PR. Different versions get separate branches so a delayed event
+cannot replace a newer pending upgrade. After merging a newer version, close any
+older pending upgrade PRs. Reruns regenerate the two managed files; put additional
+SDK/CLI changes in other files.
+
 ### Common Issues
 
 - **`SSL` certificate on `MacOS`**
