@@ -3,8 +3,7 @@
 
 ### Installation
 
-This client uses Platform API `4.41.0`. CServe deployments have been retired;
-the CServe SDK helpers and CLI deployment option are no longer available.
+This client uses Platform API `4.41.0`.
 
 To install without cloning, run the following command:
 ```bash
