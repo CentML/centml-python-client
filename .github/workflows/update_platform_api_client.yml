@@ -1,0 +1,143 @@
+name: Update Platform API client
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Published Platform API client version (for example, 4.42.0)"
+        required: true
+        type: string
+  repository_dispatch:
+    types: [platform-api-client-published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-platform-api-client-${{ inputs.version || github.event.client_payload.version }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+
+      - name: Update dependency and compatibility note
+        id: update
+        env:
+          REQUESTED_VERSION: ${{ inputs.version || github.event.client_payload.version }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          version = os.environ["REQUESTED_VERSION"].removeprefix("v")
+          stable_version = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+          if not re.fullmatch(stable_version, version):
+              raise SystemExit("version must be a stable X.Y.Z release, optionally prefixed with v")
+
+          requirements_path = Path("requirements.txt")
+          requirements = requirements_path.read_text()
+          pattern = r"^platform-api-python-client==([^\s]+)$"
+          matches = re.findall(pattern, requirements, flags=re.MULTILINE)
+          if len(matches) != 1 or not re.fullmatch(stable_version, matches[0]):
+              raise SystemExit("Expected exactly one stable Platform API client pin")
+          current = matches[0]
+
+          readme_path = Path("README.md")
+          readme = readme_path.read_text()
+          note = f"This client uses Platform API `{current}`."
+          if readme.count(note) != 1:
+              raise SystemExit("Expected one README compatibility note matching the current pin")
+
+          # Ignore duplicate or out-of-order publication events; never downgrade main.
+          changed = tuple(map(int, version.split("."))) > tuple(map(int, current.split(".")))
+          if changed:
+              requirements_path.write_text(re.sub(
+                  pattern, f"platform-api-python-client=={version}", requirements, flags=re.MULTILINE
+              ))
+              readme_path.write_text(readme.replace(note, f"This client uses Platform API `{version}`."))
+          else:
+              print(f"Skipping {version}: main already uses {current}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"version={version}\nprevious={current}\nchanged={str(changed).lower()}\n")
+          PY
+
+      - name: Verify the release is installable from PyPI
+        if: steps.update.outputs.changed == 'true'
+        env:
+          CLIENT_VERSION: ${{ steps.update.outputs.version }}
+        run: >-
+          python -m pip download --no-deps
+          --index-url https://pypi.org/simple
+          --dest "$RUNNER_TEMP/platform-api-client"
+          "platform-api-python-client==$CLIENT_VERSION"
+
+      - name: Check PR token configuration
+        if: steps.update.outputs.changed == 'true'
+        env:
+          UPDATE_TOKEN: ${{ secrets.SDK_UPDATE_TOKEN }}
+        run: |
+          if [ -z "$UPDATE_TOKEN" ]; then
+            echo "::error::Configure SDK_UPDATE_TOKEN with contents and pull requests write access. See README.md."
+            exit 1
+          fi
+
+      - name: Open upgrade PR without rewriting existing branches
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.SDK_UPDATE_TOKEN }}
+          CLIENT_VERSION: ${{ steps.update.outputs.version }}
+          PREVIOUS_VERSION: ${{ steps.update.outputs.previous }}
+          BASE_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          UPDATE_BRANCH="automation/platform-api-client-$CLIENT_VERSION"
+          EXISTING_PR=$(gh pr list --repo "$GITHUB_REPOSITORY" \
+            --head "$UPDATE_BRANCH" --state all --json url --jq '.[0].url // empty')
+          if [ -n "$EXISTING_PR" ]; then
+            echo "Leaving existing PR and its commits unchanged: $EXISTING_PR"
+            exit 0
+          fi
+
+          gh auth setup-git --hostname github.com
+          if git ls-remote --exit-code --heads origin "refs/heads/$UPDATE_BRANCH"; then
+            # A previous run may have pushed successfully but failed to open the PR.
+            echo "Using existing branch without changing its commits: $UPDATE_BRANCH"
+          else
+            STATUS=$?
+            if [ "$STATUS" -ne 2 ]; then
+              exit "$STATUS"
+            fi
+            git switch -c "$UPDATE_BRANCH"
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -- requirements.txt README.md
+            git commit -m "[SDK] Upgrade Platform API client to $CLIENT_VERSION"
+            # Never force-push: a concurrently created branch must also be preserved.
+            git push origin "HEAD:refs/heads/$UPDATE_BRANCH"
+          fi
+
+          BODY_FILE="$RUNNER_TEMP/platform-api-client-pr.md"
+          cat > "$BODY_FILE" <<EOF
+          Upgrade platform-api-python-client from $PREVIOUS_VERSION to $CLIENT_VERSION and update the README compatibility note.
+
+          The package was found on PyPI for Python 3.10. The existing PR workflows run the SDK/CLI sanity tests, formatting, lint, and type checks.
+
+          Review API compatibility and add any required SDK, CLI, or example changes before merging. Retries preserve this PR and its commits. This PR does not bump the SDK version or publish a release.
+          EOF
+
+          gh pr create --repo "$GITHUB_REPOSITORY" --base "$BASE_BRANCH" \
+            --head "$UPDATE_BRANCH" \
+            --title "[SDK] Upgrade Platform API client to $CLIENT_VERSION" \
+            --body-file "$BODY_FILE"
