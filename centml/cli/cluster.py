@@ -23,6 +23,7 @@ depl_type_to_name_map = {
     DeploymentType.COMPUTE_V2: "compute",
     DeploymentType.RAG: "rag",
     DeploymentType.JOB: "job",
+    DeploymentType.DYNAMO: "dynamo",
 }
 # use latest type to for user requests
 depl_name_to_type_map = {

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from centml.cli.cluster import _get_ready_status, _get_service_status, _get_status_error_messages
@@ -151,6 +152,50 @@ def test_ls_accepts_job_type_and_displays_jobs():
     client.get.assert_called_once_with(DeploymentType.JOB)
     assert "test-job" in result.output
     assert "job" in result.output
+
+
+@pytest.mark.parametrize("command,args", [("get", ["cserve", "123"]), ("ls", ["cserve"])])
+def test_retired_cserve_type_is_rejected(command, args):
+    from centml.cli import cluster
+
+    with _patch_cluster_client() as client:
+        result = CliRunner().invoke(getattr(cluster, command), args)
+
+    assert result.exit_code == 2
+    assert "Invalid value for" in result.output
+    client.get.assert_not_called()
+    client.get_cserve.assert_not_called()
+
+
+def test_ls_displays_dynamo_deployments():
+    from centml.cli.cluster import ls
+
+    with _patch_cluster_client() as client:
+        client.get.return_value = [_deployment(type=DeploymentType.DYNAMO, name="test-dynamo")]
+        result = CliRunner().invoke(ls)
+
+    assert result.exit_code == 0
+    assert "test-dynamo" in result.output
+    assert "dynamo" in result.output
+
+
+@pytest.mark.parametrize(
+    "deployment_type", ["ccl_compute", "ccl_inference", "ccl_job", "ccl_dynamo", "future_type", "cserve_v3"]
+)
+def test_ls_hides_unsupported_deployment_types(deployment_type):
+    from centml.cli.cluster import ls
+
+    with _patch_cluster_client() as client:
+        client.get.return_value = [
+            _deployment(type=DeploymentType(deployment_type), name="hidden-deployment"),
+            _deployment(type=DeploymentType.DYNAMO, name="visible-dynamo"),
+        ]
+        result = CliRunner().invoke(ls)
+
+    assert result.exit_code == 0
+    assert "hidden-deployment" not in result.output
+    assert deployment_type not in result.output
+    assert "visible-dynamo" in result.output
 
 
 def test_get_job_routes_to_job_api_and_displays_job_config():
