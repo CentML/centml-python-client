@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: update-platform-api-client
+  group: update-platform-api-client-${{ inputs.version || github.event.client_payload.version }}
   cancel-in-progress: false
 
 jobs:
@@ -94,21 +94,50 @@ jobs:
             exit 1
           fi
 
-      - name: Open or update upgrade PR
+      - name: Open upgrade PR without rewriting existing branches
         if: steps.update.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v8
-        with:
-          token: ${{ secrets.SDK_UPDATE_TOKEN }}
-          base: ${{ github.event.repository.default_branch }}
-          branch: automation/platform-api-client-${{ steps.update.outputs.version }}
-          add-paths: |
-            requirements.txt
-            README.md
-          commit-message: "[SDK] Upgrade Platform API client to ${{ steps.update.outputs.version }}"
-          title: "[SDK] Upgrade Platform API client to ${{ steps.update.outputs.version }}"
-          body: |
-            Upgrade `platform-api-python-client` from `${{ steps.update.outputs.previous }}` to `${{ steps.update.outputs.version }}` and update the README compatibility note.
+        env:
+          GH_TOKEN: ${{ secrets.SDK_UPDATE_TOKEN }}
+          CLIENT_VERSION: ${{ steps.update.outputs.version }}
+          PREVIOUS_VERSION: ${{ steps.update.outputs.previous }}
+          BASE_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          UPDATE_BRANCH="automation/platform-api-client-$CLIENT_VERSION"
+          EXISTING_PR=$(gh pr list --repo "$GITHUB_REPOSITORY" \
+            --head "$UPDATE_BRANCH" --state all --json url --jq '.[0].url // empty')
+          if [ -n "$EXISTING_PR" ]; then
+            echo "Leaving existing PR and its commits unchanged: $EXISTING_PR"
+            exit 0
+          fi
 
-            The package was found on PyPI for Python 3.10. The existing PR workflows run the SDK/CLI sanity tests, formatting, lint, and type checks.
+          gh auth setup-git --hostname github.com
+          if git ls-remote --exit-code --heads origin "refs/heads/$UPDATE_BRANCH"; then
+            # A previous run may have pushed successfully but failed to open the PR.
+            echo "Using existing branch without changing its commits: $UPDATE_BRANCH"
+          else
+            STATUS=$?
+            if [ "$STATUS" -ne 2 ]; then
+              exit "$STATUS"
+            fi
+            git switch -c "$UPDATE_BRANCH"
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -- requirements.txt README.md
+            git commit -m "[SDK] Upgrade Platform API client to $CLIENT_VERSION"
+            # Never force-push: a concurrently created branch must also be preserved.
+            git push origin "HEAD:refs/heads/$UPDATE_BRANCH"
+          fi
 
-            Review API compatibility and add any required SDK, CLI, or example changes before merging. This PR does not bump the SDK version or publish a release.
+          BODY_FILE="$RUNNER_TEMP/platform-api-client-pr.md"
+          cat > "$BODY_FILE" <<EOF
+          Upgrade platform-api-python-client from $PREVIOUS_VERSION to $CLIENT_VERSION and update the README compatibility note.
+
+          The package was found on PyPI for Python 3.10. The existing PR workflows run the SDK/CLI sanity tests, formatting, lint, and type checks.
+
+          Review API compatibility and add any required SDK, CLI, or example changes before merging. Retries preserve this PR and its commits. This PR does not bump the SDK version or publish a release.
+          EOF
+
+          gh pr create --repo "$GITHUB_REPOSITORY" --base "$BASE_BRANCH" \
+            --head "$UPDATE_BRANCH" \
+            --title "[SDK] Upgrade Platform API client to $CLIENT_VERSION" \
+            --body-file "$BODY_FILE"

@@ -176,10 +176,13 @@ gh workflow run update_platform_api_client.yml \
 The workflow accepts stable `X.Y.Z` versions with an optional `v` prefix. It checks
 that PyPI has a distribution compatible with Python 3.10, and skips versions at or
 below the pin on the default branch. Repeated requests for the same newer version
-update the same PR. Different versions get separate branches so a delayed event
-cannot replace a newer pending upgrade. After merging a newer version, close any
-older pending upgrade PRs. Reruns regenerate the two managed files; put additional
-SDK/CLI changes in other files.
+leave its existing PR unchanged, including handwritten SDK/CLI fixes. A closed PR
+is also left alone; reopen it manually if the upgrade should proceed. If a run
+pushed the branch but failed to open a PR, retrying opens a PR from that branch
+without rewriting it. Different versions get separate branches so a delayed event
+cannot replace a newer pending upgrade. Runs for different version inputs use
+separate concurrency groups so incoming events do not replace another version's
+pending run. After merging a newer version, close any older pending upgrade PRs.
 
 ### Common Issues
 
