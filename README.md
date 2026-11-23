@@ -143,22 +143,24 @@ ccluster register_cluster --name my-cluster --storage-class standard-rwo \
 ccluster list_clusters
 ```
 
-**Update** the components installed on a registered cluster. The file maps each
-component to its Helm chart values (`{}` for the defaults); `final_stack` is required,
-and components left out of the file are uninstalled:
+**Update** the components installed on a registered cluster. The file is the
+`PUT /clusters/{id}` request body, in YAML or JSON: `components` maps each component to
+its Helm chart values (`{}` for the defaults). `final_stack` is required, and components
+left out of the file are uninstalled:
 
 ```bash
 cat > components.yaml <<EOF
-kube_prometheus_stack: {}
-istio: {}
-cert_manager: {}
-ingress_nginx: {}
-keda: {}
-argo_rollouts: {}
-gpu_operator: {}
-kai_scheduler: {}
-metrics_server: {}
-final_stack: {}
+components:
+  kube_prometheus_stack: {}
+  istio: {}
+  cert_manager: {}
+  ingress_nginx: {}
+  keda: {}
+  argo_rollouts: {}
+  gpu_operator: {}
+  kai_scheduler: {}
+  metrics_server: {}
+  final_stack: {}
 EOF
 ccluster update_cluster <cluster-id> components.yaml
 ```

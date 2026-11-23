@@ -377,33 +377,40 @@ def register_cluster(display_name, storage_class, server, ca_cert, bearer_token,
     name="update_cluster",
     help="""Set the components installed on a registered cluster.
 
-COMPONENTS_FILE is a YAML or JSON mapping of component name to its Helm chart values
-({} for the defaults). final_stack is required. Components left out of the file are
-uninstalled from the cluster.""",
+REQUEST_FILE is the PUT /clusters/{id} request body, in YAML or JSON: a "components"
+mapping of component name to its Helm chart values ({} for the defaults).
+final_stack is required. Components left out of the file are uninstalled from the cluster.""",
 )
 @click.argument("cluster_id", type=int)
-@click.argument("components_file", type=click.File("r"))
+@click.argument("request_file", type=click.File("r"))
 @handle_exception
-def update_cluster(cluster_id, components_file):
+def update_cluster(cluster_id, request_file):
+    def invalid(message):
+        return click.BadParameter(message, param_hint="REQUEST_FILE")
+
     try:
-        components = yaml.safe_load(components_file)
+        # YAML is a superset of JSON, so this reads both.
+        body = yaml.safe_load(request_file)
     except yaml.YAMLError as e:
-        raise click.BadParameter(f"not valid YAML: {e}", param_hint="COMPONENTS_FILE") from e
+        raise invalid(f"not valid YAML or JSON: {e}") from e
+    # The generated models silently drop unknown keys, so a misspelled key would go
+    # unnoticed, and a misspelled component would be uninstalled.
+    if not isinstance(body, dict) or set(body) != {"components"}:
+        raise invalid('must be a mapping with a single "components" key')
+    components = body["components"]
     if not isinstance(components, dict):
-        raise click.BadParameter("must be a mapping of component name to chart values", param_hint="COMPONENTS_FILE")
-    # The generated model silently drops unknown names, which would uninstall a misspelled component.
+        raise invalid('"components" must be a mapping of component name to chart values')
     unknown = sorted(set(components) - set(ClusterBaseComponents.model_fields))
     if unknown:
-        raise click.BadParameter(
+        raise invalid(
             f"unknown component(s) {', '.join(unknown)}; expected any of "
-            f"{', '.join(ClusterBaseComponents.model_fields)}",
-            param_hint="COMPONENTS_FILE",
+            f"{', '.join(ClusterBaseComponents.model_fields)}"
         )
     # from_dict, not the constructors: they drop chart keys the typed models don't list.
     try:
-        request = UpdateClusterRequest.from_dict({"components": components})
+        request = UpdateClusterRequest.from_dict(body)
     except ValidationError as e:
-        raise click.BadParameter(str(e), param_hint="COMPONENTS_FILE") from e
+        raise invalid(str(e)) from e
     with get_centml_client() as cclient:
         cclient.update_cluster(cluster_id, request)
     click.echo(f"Updating components on cluster {cluster_id}")

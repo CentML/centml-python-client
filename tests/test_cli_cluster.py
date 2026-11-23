@@ -267,22 +267,30 @@ def test_register_sends_registration_request_and_prints_cluster_id():
     assert request.credential.bearer_token == "secret-token"
 
 
-def test_update_sends_components_from_file_keeping_untyped_chart_keys(tmp_path):
+@pytest.mark.parametrize(
+    "contents",
+    [
+        "components:\n"
+        "  final_stack: {}\n"
+        "  ingress_nginx:\n"
+        "    ingress-nginx:\n"
+        "      controller:\n"
+        "        podLabels:\n"
+        "          sidecar.istio.io/inject: 'true'\n"
+        "        untypedKey: 1\n",
+        '{"components": {"final_stack": {}, "ingress_nginx": {"ingress-nginx": {"controller": '
+        '{"podLabels": {"sidecar.istio.io/inject": "true"}, "untypedKey": 1}}}}}',
+    ],
+    ids=["yaml", "json"],
+)
+def test_update_cluster_sends_request_from_file_keeping_untyped_chart_keys(tmp_path, contents):
     from centml.cli.cluster import update_cluster
 
-    components_file = tmp_path / "components.yaml"
-    components_file.write_text(
-        "final_stack: {}\n"
-        "ingress_nginx:\n"
-        "  ingress-nginx:\n"
-        "    controller:\n"
-        "      podLabels:\n"
-        "        sidecar.istio.io/inject: 'true'\n"
-        "      untypedKey: 1\n"
-    )
+    request_file = tmp_path / "request"
+    request_file.write_text(contents)
 
     with _patch_cluster_client() as client:
-        result = CliRunner().invoke(update_cluster, ["7", str(components_file)])
+        result = CliRunner().invoke(update_cluster, ["7", str(request_file)])
 
     assert result.exit_code == 0, result.output
     cluster_id, request = client.update_cluster.call_args.args
@@ -294,32 +302,39 @@ def test_update_sends_components_from_file_keeping_untyped_chart_keys(tmp_path):
     assert controller["untypedKey"] == 1
 
 
-def test_update_rejects_unknown_component_names(tmp_path):
+@pytest.mark.parametrize(
+    "contents, error",
+    [
+        ("components:\n  final_stack: {}\n  ingress-nginx: {}\n", "unknown component(s) ingress-nginx"),
+        ("final_stack: {}\n", 'single "components" key'),
+        ("component:\n  final_stack: {}\n", 'single "components" key'),
+        ("components:\n  final_stack: {}\nextra: 1\n", 'single "components" key'),
+        ("components: []\n", '"components" must be a mapping'),
+        ("components:\n  istio: {}\n", "final_stack"),
+        ("components: [\n", "not valid YAML or JSON"),
+    ],
+    ids=[
+        "unknown-component",
+        "no-wrapper",
+        "misspelled-wrapper",
+        "extra-key",
+        "not-mapping",
+        "no-final-stack",
+        "bad-yaml",
+    ],
+)
+def test_update_cluster_rejects_invalid_request_file(tmp_path, contents, error):
     from centml.cli.cluster import update_cluster
 
-    components_file = tmp_path / "components.yaml"
-    components_file.write_text("final_stack: {}\ningress-nginx: {}\n")
+    request_file = tmp_path / "request.yaml"
+    request_file.write_text(contents)
 
     with _patch_cluster_client() as client:
-        result = CliRunner().invoke(update_cluster, ["7", str(components_file)])
-
-    assert result.exit_code != 0
-    assert "unknown component(s) ingress-nginx" in result.output
-    client.update_cluster.assert_not_called()
-
-
-@pytest.mark.parametrize("contents", ["istio: {}\n", "final_stack: [\n"])
-def test_update_reports_invalid_components_file_without_traceback(tmp_path, contents):
-    from centml.cli.cluster import update_cluster
-
-    components_file = tmp_path / "components.yaml"
-    components_file.write_text(contents)
-
-    with _patch_cluster_client() as client:
-        result = CliRunner().invoke(update_cluster, ["7", str(components_file)])
+        result = CliRunner().invoke(update_cluster, ["7", str(request_file)])
 
     assert result.exit_code == 2
-    assert "Invalid value for COMPONENTS_FILE" in result.output
+    assert "Invalid value for REQUEST_FILE" in result.output
+    assert error in result.output
     client.update_cluster.assert_not_called()
 
 
