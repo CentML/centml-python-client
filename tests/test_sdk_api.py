@@ -6,6 +6,8 @@ import pytest
 
 import platform_api_python_client
 from platform_api_python_client import (
+    ClusterCredential,
+    ClusterRegistrationRequest,
     CreateDynamoDeploymentRequest,
     CreateHardwareInstanceRequest,
     CreateJobDeploymentRequest,
@@ -191,6 +193,23 @@ def test_update_cluster_metadata_delegates_to_platform_client():
 
     assert response is expected_response
     api.update_cluster_metadata_clusters_cluster_id_metadata_put.assert_called_once_with(42, request)
+
+
+def test_register_cluster_delegates_to_platform_client():
+    api = MagicMock()
+    expected_response = MagicMock()
+    api.create_cluster_clusters_post.return_value = expected_response
+    request = ClusterRegistrationRequest(
+        display_name="my-cluster",
+        storage_class="standard",
+        credential=ClusterCredential(server="https://k8s.example.com", bearer_token="token", ca_cert="Y2E="),
+    )
+    client = CentMLClient(api)
+
+    response = client.register_cluster(request)
+
+    assert response is expected_response
+    api.create_cluster_clusters_post.assert_called_once_with(request)
 
 
 def test_get_hardware_instances_returns_results():

@@ -10,6 +10,9 @@ from centml.sdk import (
     RolloutStatus,
     ApiException,
     HardwareInstanceResponse,
+    CloudProvider,
+    ClusterCredential,
+    ClusterRegistrationRequest,
 )
 from centml.sdk.api import get_centml_client
 
@@ -326,3 +329,41 @@ def capacity(cluster_id):
                 disable_numparse=True,
             )
         )
+
+
+@click.command(help="Register your own Kubernetes cluster")
+@click.option("--name", "display_name", required=True, help="Display name for the cluster")
+@click.option("--storage-class", required=True, help="Storage class to use for deployments on the cluster")
+@click.option("--server", required=True, help="URL of the cluster's Kubernetes API server")
+@click.option(
+    "--ca-cert",
+    required=True,
+    help="Base64-encoded PEM CA certificate of the API server (a kubeconfig's certificate-authority-data)",
+)
+@click.option(
+    "--bearer-token",
+    required=True,
+    prompt=True,
+    hide_input=True,
+    help="Bearer token for the API server; prompted for when omitted",
+)
+@click.option("--region", default=None, help="Region the cluster runs in")
+@click.option(
+    "--cloud-provider",
+    type=click.Choice([p.value for p in CloudProvider if p != CloudProvider.UNKNOWN]),
+    default=None,
+    help="Cloud provider the cluster runs on",
+)
+@handle_exception
+# pylint: disable=R0917
+def register(display_name, storage_class, server, ca_cert, bearer_token, region, cloud_provider):
+    request = ClusterRegistrationRequest(
+        display_name=display_name,
+        storage_class=storage_class,
+        region=region,
+        cloud_provider=CloudProvider(cloud_provider) if cloud_provider else None,
+        credential=ClusterCredential(server=server, bearer_token=bearer_token, ca_cert=ca_cert),
+    )
+    with get_centml_client() as cclient:
+        response = cclient.register_cluster(request)
+    click.echo(f"Registered cluster {response.id}")

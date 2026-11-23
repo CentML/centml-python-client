@@ -226,3 +226,42 @@ def test_get_job_routes_to_job_api_and_displays_job_config():
     assert "Parallelism" in result.output
     assert "h100 (8x H100)" in result.output
     assert "credits/hr" not in result.output
+
+
+def test_register_sends_registration_request_and_prints_cluster_id():
+    from centml.cli.cluster import register
+    from centml.sdk import CloudProvider
+
+    with _patch_cluster_client() as client:
+        client.register_cluster.return_value = SimpleNamespace(id=7)
+
+        result = CliRunner().invoke(
+            register,
+            [
+                "--name",
+                "my-cluster",
+                "--storage-class",
+                "standard",
+                "--server",
+                "https://k8s.example.com",
+                "--ca-cert",
+                "Y2E=",
+                "--region",
+                "us-east-1",
+                "--cloud-provider",
+                "aws",
+            ],
+            input="secret-token\n",
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "Registered cluster 7" in result.output
+    assert "secret-token" not in result.output
+    request = client.register_cluster.call_args.args[0]
+    assert request.display_name == "my-cluster"
+    assert request.storage_class == "standard"
+    assert request.region == "us-east-1"
+    assert request.cloud_provider == CloudProvider.AWS
+    assert request.credential.server == "https://k8s.example.com"
+    assert request.credential.ca_cert == "Y2E="
+    assert request.credential.bearer_token == "secret-token"
