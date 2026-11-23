@@ -407,3 +407,23 @@ def update_cluster(cluster_id, components_file):
     with get_centml_client() as cclient:
         cclient.update_cluster(cluster_id, request)
     click.echo(f"Updating components on cluster {cluster_id}")
+
+
+@click.command(name="list_clusters", help="List the clusters you can deploy to")
+@handle_exception
+def list_clusters():
+    with get_centml_client() as cclient:
+        clusters = cclient.get_clusters().results
+
+    rows = [[c.id, c.display_name, c.region or ""] for c in sorted(clusters, key=lambda c: c.id)]
+    click.echo(tabulate(rows, headers=["ID", "Name", "Region"], tablefmt="rounded_outline", disable_numparse=True))
+
+
+@click.command(name="delete_cluster", help="Delete a registered cluster and uninstall its components")
+@click.argument("cluster_id", type=int)
+@click.confirmation_option(prompt="Delete this cluster and uninstall its components?")
+@handle_exception
+def delete_cluster(cluster_id):
+    with get_centml_client() as cclient:
+        cclient.delete_cluster(cluster_id)
+    click.echo(f"Deleted cluster {cluster_id}")

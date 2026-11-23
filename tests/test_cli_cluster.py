@@ -321,3 +321,52 @@ def test_update_reports_invalid_components_file_without_traceback(tmp_path, cont
     assert result.exit_code == 2
     assert "Invalid value for COMPONENTS_FILE" in result.output
     client.update_cluster.assert_not_called()
+
+
+def test_list_clusters_shows_clusters_sorted_by_id():
+    from centml.cli.cluster import list_clusters
+
+    with _patch_cluster_client() as client:
+        client.get_clusters.return_value = SimpleNamespace(
+            results=[
+                SimpleNamespace(id=9, display_name="second", region=None),
+                SimpleNamespace(id=3, display_name="first", region="us-east-1"),
+            ]
+        )
+
+        result = CliRunner().invoke(list_clusters)
+
+    assert result.exit_code == 0, result.output
+    assert "us-east-1" in result.output
+    assert result.output.index("first") < result.output.index("second")
+
+
+def test_delete_cluster_deletes_after_confirmation():
+    from centml.cli.cluster import delete_cluster
+
+    with _patch_cluster_client() as client:
+        result = CliRunner().invoke(delete_cluster, ["7"], input="y\n")
+
+    assert result.exit_code == 0, result.output
+    assert "Deleted cluster 7" in result.output
+    client.delete_cluster.assert_called_once_with(7)
+
+
+def test_delete_cluster_skips_prompt_with_yes():
+    from centml.cli.cluster import delete_cluster
+
+    with _patch_cluster_client() as client:
+        result = CliRunner().invoke(delete_cluster, ["7", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    client.delete_cluster.assert_called_once_with(7)
+
+
+def test_delete_cluster_does_nothing_when_declined():
+    from centml.cli.cluster import delete_cluster
+
+    with _patch_cluster_client() as client:
+        result = CliRunner().invoke(delete_cluster, ["7"], input="n\n")
+
+    assert result.exit_code == 1
+    client.delete_cluster.assert_not_called()

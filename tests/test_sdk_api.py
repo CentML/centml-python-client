@@ -223,6 +223,15 @@ def test_update_cluster_delegates_to_platform_client():
     api.update_cluster_clusters_cluster_id_put.assert_called_once_with(42, request)
 
 
+def test_delete_cluster_delegates_to_platform_client():
+    api = MagicMock()
+    client = CentMLClient(api)
+
+    client.delete_cluster(42)
+
+    api.delete_cluster_clusters_cluster_id_delete.assert_called_once_with(42)
+
+
 def test_get_hardware_instances_returns_results():
     api = MagicMock()
     expected_results = [SimpleNamespace(id=1), SimpleNamespace(id=2)]

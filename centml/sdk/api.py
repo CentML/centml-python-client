@@ -185,6 +185,9 @@ class CentMLClient:
     def update_cluster(self, cluster_id: int, request: UpdateClusterRequest):
         return self._api.update_cluster_clusters_cluster_id_put(cluster_id, request)
 
+    def delete_cluster(self, cluster_id: int):
+        return self._api.delete_cluster_clusters_cluster_id_delete(cluster_id)
+
     def update_cluster_metadata(self, cluster_id: int, request: UpdateClusterMetadataRequest):
         return self._api.update_cluster_metadata_clusters_cluster_id_metadata_put(cluster_id, request)
 
