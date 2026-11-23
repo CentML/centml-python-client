@@ -226,3 +226,182 @@ def test_get_job_routes_to_job_api_and_displays_job_config():
     assert "Parallelism" in result.output
     assert "h100 (8x H100)" in result.output
     assert "credits/hr" not in result.output
+
+
+def test_register_sends_registration_request_and_prints_cluster_id():
+    from centml.cli.cluster import register_cluster
+    from centml.sdk import CloudProvider
+
+    with _patch_cluster_client() as client:
+        client.register_cluster.return_value = SimpleNamespace(id=7)
+
+        result = CliRunner().invoke(
+            register_cluster,
+            [
+                "--name",
+                "my-cluster",
+                "--storage-class",
+                "standard",
+                "--server",
+                "https://k8s.example.com",
+                "--ca-cert",
+                "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUIKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=",
+                "--region",
+                "us-east-1",
+                "--cloud-provider",
+                "AWS",
+            ],
+            input="secret-token\n",
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "Registered cluster 7" in result.output
+    assert "secret-token" not in result.output
+    request = client.register_cluster.call_args.args[0]
+    assert request.display_name == "my-cluster"
+    assert request.storage_class == "standard"
+    assert request.region == "us-east-1"
+    assert request.cloud_provider == CloudProvider.AWS
+    assert request.credential.server == "https://k8s.example.com"
+    assert (
+        request.credential.ca_cert == "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUIKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo="
+    )
+    assert request.credential.bearer_token == "secret-token"
+
+
+@contextmanager
+def _patch_platform_api():
+    """Patch the generated API under a real CentMLClient, so the SDK's validation runs."""
+    from centml.sdk.api import CentMLClient
+
+    api = MagicMock()
+    context = MagicMock()
+    context.__enter__.return_value = CentMLClient(api)
+    context.__exit__.return_value = False
+
+    with patch("centml.cli.cluster.get_centml_client", return_value=context):
+        yield api
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        "components:\n"
+        "  final_stack: {}\n"
+        "  ingress_nginx:\n"
+        "    ingress-nginx:\n"
+        "      controller:\n"
+        "        podLabels:\n"
+        "          sidecar.istio.io/inject: 'true'\n"
+        "        untypedKey: 1\n",
+        '{"components": {"final_stack": {}, "ingress_nginx": {"ingress-nginx": {"controller": '
+        '{"podLabels": {"sidecar.istio.io/inject": "true"}, "untypedKey": 1}}}}}',
+    ],
+    ids=["yaml", "json"],
+)
+def test_update_cluster_sends_request_from_file_keeping_untyped_chart_keys(tmp_path, contents):
+    from centml.cli.cluster import update_cluster
+
+    request_file = tmp_path / "request"
+    request_file.write_text(contents)
+
+    with _patch_platform_api() as api:
+        result = CliRunner().invoke(update_cluster, ["7", str(request_file)])
+
+    assert result.exit_code == 0, result.output
+    cluster_id, request = api.update_cluster_clusters_cluster_id_put.call_args.args
+    assert cluster_id == 7
+    components = request.to_dict()["components"]
+    assert components["final_stack"] == {}
+    controller = components["ingress_nginx"]["ingress-nginx"]["controller"]
+    assert controller["podLabels"] == {"sidecar.istio.io/inject": "true"}
+    assert controller["untypedKey"] == 1
+
+
+@pytest.mark.parametrize(
+    "contents, error",
+    [
+        ("components:\n  final_stack: {}\n  ingress-nginx: {}\n", "unknown component(s) ingress-nginx"),
+        ("components:\n  final_stack: {}\n  1: x\n", "unknown component(s) 1"),
+        ("components:\n  final_stack: {}\n  istio:\n", "component(s) istio have no values; use {}"),
+        ("final_stack: {}\n", "components\n  Input should be a valid dictionary"),
+        ("component:\n  final_stack: {}\n", "components\n  Input should be a valid dictionary"),
+        ("components: []\n", "Input should be a valid dictionary"),
+        ("", "request is empty"),
+        ("components:\n  istio: {}\n", "final_stack"),
+        ("components: [\n", "not valid YAML or JSON"),
+    ],
+    ids=[
+        "unknown-component",
+        "non-string-name",
+        "empty-component",
+        "no-wrapper",
+        "misspelled-wrapper",
+        "not-mapping",
+        "empty-file",
+        "no-final-stack",
+        "bad-yaml",
+    ],
+)
+def test_update_cluster_rejects_invalid_request_file(tmp_path, contents, error):
+    from centml.cli.cluster import update_cluster
+
+    request_file = tmp_path / "request.yaml"
+    request_file.write_text(contents)
+
+    with _patch_platform_api() as api:
+        result = CliRunner().invoke(update_cluster, ["7", str(request_file)])
+
+    assert result.exit_code == 2, result.output
+    assert "Invalid value for REQUEST_FILE" in result.output
+    assert error in result.output
+    api.update_cluster_clusters_cluster_id_put.assert_not_called()
+
+
+def test_list_clusters_shows_clusters_sorted_by_id():
+    from centml.cli.cluster import list_clusters
+
+    with _patch_cluster_client() as client:
+        client.get_clusters.return_value = SimpleNamespace(
+            results=[
+                SimpleNamespace(id=9, display_name="second", region=None),
+                SimpleNamespace(id=3, display_name="first", region="us-east-1"),
+            ]
+        )
+
+        result = CliRunner().invoke(list_clusters)
+
+    assert result.exit_code == 0, result.output
+    assert "us-east-1" in result.output
+    assert result.output.index("first") < result.output.index("second")
+
+
+def test_delete_cluster_deletes_after_confirmation():
+    from centml.cli.cluster import delete_cluster
+
+    with _patch_cluster_client() as client:
+        result = CliRunner().invoke(delete_cluster, ["7"], input="y\n")
+
+    assert result.exit_code == 0, result.output
+    assert "Deleted cluster 7" in result.output
+    client.delete_cluster.assert_called_once_with(7)
+
+
+def test_delete_cluster_skips_prompt_with_yes():
+    from centml.cli.cluster import delete_cluster
+
+    with _patch_cluster_client() as client:
+        result = CliRunner().invoke(delete_cluster, ["7", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    client.delete_cluster.assert_called_once_with(7)
+
+
+def test_delete_cluster_does_nothing_when_declined():
+    from centml.cli.cluster import delete_cluster
+
+    with _patch_cluster_client() as client:
+        result = CliRunner().invoke(delete_cluster, ["7"], input="n\n")
+
+    assert result.exit_code == 1
+    client.delete_cluster.assert_not_called()

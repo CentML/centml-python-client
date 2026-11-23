@@ -8,3 +8,4 @@ pyte>=0.8.0
 platform-api-python-client==4.41.0
 click>=8.4.1
 typing-extensions>=4.5
+PyYAML>=6.0

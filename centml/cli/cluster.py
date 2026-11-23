@@ -2,6 +2,7 @@ import sys
 from functools import wraps
 from typing import Dict
 import click
+import yaml
 from tabulate import tabulate
 from centml.sdk import (
     DeploymentType,
@@ -10,6 +11,9 @@ from centml.sdk import (
     RolloutStatus,
     ApiException,
     HardwareInstanceResponse,
+    CloudProvider,
+    ClusterCredential,
+    ClusterRegistrationRequest,
 )
 from centml.sdk.api import get_centml_client
 
@@ -326,3 +330,83 @@ def capacity(cluster_id):
                 disable_numparse=True,
             )
         )
+
+
+@click.command(help="Register your own Kubernetes cluster")
+@click.option("--name", "display_name", required=True, help="Display name for the cluster")
+@click.option("--storage-class", required=True, help="Storage class to use for deployments on the cluster")
+@click.option("--server", required=True, help="URL of the cluster's Kubernetes API server")
+@click.option(
+    "--ca-cert",
+    required=True,
+    help="Base64-encoded PEM CA certificate of the API server (a kubeconfig's certificate-authority-data)",
+)
+@click.option(
+    "--bearer-token",
+    required=True,
+    prompt=True,
+    hide_input=True,
+    help="Bearer token for the API server; prompted for when omitted",
+)
+@click.option("--region", default=None, help="Region the cluster runs in")
+@click.option(
+    "--cloud-provider",
+    type=click.Choice([p.value for p in CloudProvider if p != CloudProvider.UNKNOWN], case_sensitive=False),
+    default=None,
+    help="Cloud provider the cluster runs on",
+)
+@handle_exception
+# pylint: disable=R0917
+def register_cluster(display_name, storage_class, server, ca_cert, bearer_token, region, cloud_provider):
+    request = ClusterRegistrationRequest(
+        display_name=display_name,
+        storage_class=storage_class,
+        region=region,
+        cloud_provider=CloudProvider(cloud_provider.lower()) if cloud_provider else None,
+        credential=ClusterCredential(server=server, bearer_token=bearer_token, ca_cert=ca_cert),
+    )
+    with get_centml_client() as cclient:
+        response = cclient.register_cluster(request)
+    click.echo(f"Registered cluster {response.id}")
+
+
+@click.command(help="""Set the components installed on a registered cluster.
+
+REQUEST_FILE is the PUT /clusters/{id} request body, in YAML or JSON: a "components"
+mapping of component name to its Helm chart values ({} for the defaults).
+final_stack is required. Components left out of the file are uninstalled from the cluster.""")
+@click.argument("cluster_id", type=int)
+@click.argument("request_file", type=click.File("r"))
+@handle_exception
+def update_cluster(cluster_id, request_file):
+    try:
+        # YAML is a superset of JSON, so this reads both.
+        body = yaml.safe_load(request_file)
+    except yaml.YAMLError as e:
+        raise click.BadParameter(f"not valid YAML or JSON: {e}", param_hint="REQUEST_FILE") from e
+    with get_centml_client() as cclient:
+        try:
+            cclient.update_cluster(cluster_id, body)
+        except ValueError as e:
+            raise click.BadParameter(str(e), param_hint="REQUEST_FILE") from e
+    click.echo(f"Updating components on cluster {cluster_id}")
+
+
+@click.command(help="List the clusters you can deploy to")
+@handle_exception
+def list_clusters():
+    with get_centml_client() as cclient:
+        clusters = cclient.get_clusters().results
+
+    rows = [[c.id, c.display_name, c.region or ""] for c in sorted(clusters, key=lambda c: c.id)]
+    click.echo(tabulate(rows, headers=["ID", "Name", "Region"], tablefmt="rounded_outline", disable_numparse=True))
+
+
+@click.command(help="Delete a registered cluster")
+@click.argument("cluster_id", type=int)
+@click.confirmation_option(prompt="Delete this cluster? Components installed through ccluster are uninstalled from it.")
+@handle_exception
+def delete_cluster(cluster_id):
+    with get_centml_client() as cclient:
+        cclient.delete_cluster(cluster_id)
+    click.echo(f"Deleted cluster {cluster_id}")
