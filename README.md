@@ -132,7 +132,7 @@ API server, as in a kubeconfig's `certificate-authority-data`. The bearer token 
 prompted for, with hidden input, when `--bearer-token` is omitted:
 
 ```bash
-ccluster register_cluster --name my-cluster --storage-class standard-rwo \
+ccluster register-cluster --name my-cluster --storage-class standard-rwo \
   --server https://<api-server> --ca-cert <base64-ca-cert> \
   --cloud-provider gcp --region us-east1
 ```
@@ -140,13 +140,13 @@ ccluster register_cluster --name my-cluster --storage-class standard-rwo \
 **List** the clusters you have access to, with their IDs:
 
 ```bash
-ccluster list_clusters
+ccluster list-clusters
 ```
 
 **Update** the components installed on a registered cluster. The file is the
 `PUT /clusters/{id}` request body, in YAML or JSON: `components` maps each component to
-its Helm chart values (`{}` for the defaults). `final_stack` is required, and components
-left out of the file are uninstalled:
+its Helm chart values (`{}` for the defaults). `final_stack` is required. Components left out
+of the file are uninstalled, and an empty entry such as `istio:` is rejected:
 
 ```bash
 cat > components.yaml <<EOF
@@ -162,14 +162,14 @@ components:
   metrics_server: {}
   final_stack: {}
 EOF
-ccluster update_cluster <cluster-id> components.yaml
+ccluster update-cluster <cluster-id> components.yaml
 ```
 
-**Delete** a cluster. This uninstalls its components; pass `--yes` to skip the
-confirmation prompt:
+**Delete** a cluster. For a cluster managed by ccluster, this also uninstalls the
+components installed through it. Pass `--yes` to skip the confirmation prompt:
 
 ```bash
-ccluster delete_cluster <cluster-id>
+ccluster delete-cluster <cluster-id>
 ```
 
 `examples/sdk/register_cluster.py`, `update_cluster.py`, `get_clusters.py` and

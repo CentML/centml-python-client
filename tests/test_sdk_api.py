@@ -203,7 +203,11 @@ def test_register_cluster_delegates_to_platform_client():
     request = ClusterRegistrationRequest(
         display_name="my-cluster",
         storage_class="standard",
-        credential=ClusterCredential(server="https://k8s.example.com", bearer_token="token", ca_cert="Y2E="),
+        credential=ClusterCredential(
+            server="https://k8s.example.com",
+            bearer_token="token",
+            ca_cert="LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUIKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=",
+        ),
     )
     client = CentMLClient(api)
 
@@ -213,14 +217,36 @@ def test_register_cluster_delegates_to_platform_client():
     api.create_cluster_clusters_post.assert_called_once_with(request)
 
 
-def test_update_cluster_delegates_to_platform_client():
+def test_update_cluster_builds_request_keeping_untyped_chart_keys():
     api = MagicMock()
-    request = UpdateClusterRequest.from_dict({"components": {"final_stack": {}}})
     client = CentMLClient(api)
 
-    client.update_cluster(42, request)
+    client.update_cluster(42, {"components": {"final_stack": {}, "keda": {"keda": {"untypedKey": 1}}}})
 
-    api.update_cluster_clusters_cluster_id_put.assert_called_once_with(42, request)
+    cluster_id, request = api.update_cluster_clusters_cluster_id_put.call_args.args
+    assert cluster_id == 42
+    assert isinstance(request, UpdateClusterRequest)
+    assert request.to_dict()["components"]["keda"]["keda"]["untypedKey"] == 1
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"components": {"final_stack": {}, "istio": None}},
+        {"components": {"final_stack": {}, "ingress-nginx": {}}},
+        {"final_stack": {}},
+        {"components": {"istio": {}}},
+    ],
+    ids=["empty-component", "unknown-component", "no-wrapper", "no-final-stack"],
+)
+def test_update_cluster_rejects_malformed_request_without_calling_api(body):
+    api = MagicMock()
+    client = CentMLClient(api)
+
+    with pytest.raises(ValueError):
+        client.update_cluster(42, body)
+
+    api.update_cluster_clusters_cluster_id_put.assert_not_called()
 
 
 def test_delete_cluster_delegates_to_platform_client():

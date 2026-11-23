@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Install the platform components on a registered cluster.
 
+This sets every component to its chart defaults, replacing any values set by an
+earlier update, and uninstalls any component not listed in COMPONENTS.
+
 Run `centml login` or configure service-account credentials first. Updating a
 cluster requires admin privileges (PERM_ADMIN_MANAGE_HARDWARE).
 
@@ -12,7 +15,6 @@ Register the cluster first with examples/sdk/register_cluster.py.
 
 import os
 
-from centml.sdk import UpdateClusterRequest
 from centml.sdk.api import get_centml_client
 
 # Each component maps to its Helm chart values; {} installs it with the catalog defaults.
@@ -37,11 +39,8 @@ def main() -> None:
     if not cluster_id:
         raise SystemExit("Set CLUSTER_ID before running this example.")
 
-    # Build the request with from_dict: the model constructors drop chart values
-    # their typed models don't list.
-    request = UpdateClusterRequest.from_dict({"components": COMPONENTS})
     with get_centml_client() as client:
-        client.update_cluster(int(cluster_id), request)
+        client.update_cluster(int(cluster_id), {"components": COMPONENTS})
     # The update returns without waiting for the components to roll out.
     print(f"Installing {len(COMPONENTS)} components on cluster {cluster_id}")
 

@@ -3,7 +3,6 @@ from functools import wraps
 from typing import Dict
 import click
 import yaml
-from pydantic import ValidationError
 from tabulate import tabulate
 from centml.sdk import (
     DeploymentType,
@@ -15,8 +14,6 @@ from centml.sdk import (
     CloudProvider,
     ClusterCredential,
     ClusterRegistrationRequest,
-    ClusterBaseComponents,
-    UpdateClusterRequest,
 )
 from centml.sdk.api import get_centml_client
 
@@ -335,7 +332,7 @@ def capacity(cluster_id):
         )
 
 
-@click.command(name="register_cluster", help="Register your own Kubernetes cluster")
+@click.command(help="Register your own Kubernetes cluster")
 @click.option("--name", "display_name", required=True, help="Display name for the cluster")
 @click.option("--storage-class", required=True, help="Storage class to use for deployments on the cluster")
 @click.option("--server", required=True, help="URL of the cluster's Kubernetes API server")
@@ -354,7 +351,7 @@ def capacity(cluster_id):
 @click.option("--region", default=None, help="Region the cluster runs in")
 @click.option(
     "--cloud-provider",
-    type=click.Choice([p.value for p in CloudProvider if p != CloudProvider.UNKNOWN]),
+    type=click.Choice([p.value for p in CloudProvider if p != CloudProvider.UNKNOWN], case_sensitive=False),
     default=None,
     help="Cloud provider the cluster runs on",
 )
@@ -365,7 +362,7 @@ def register_cluster(display_name, storage_class, server, ca_cert, bearer_token,
         display_name=display_name,
         storage_class=storage_class,
         region=region,
-        cloud_provider=CloudProvider(cloud_provider) if cloud_provider else None,
+        cloud_provider=CloudProvider(cloud_provider.lower()) if cloud_provider else None,
         credential=ClusterCredential(server=server, bearer_token=bearer_token, ca_cert=ca_cert),
     )
     with get_centml_client() as cclient:
@@ -373,50 +370,29 @@ def register_cluster(display_name, storage_class, server, ca_cert, bearer_token,
     click.echo(f"Registered cluster {response.id}")
 
 
-@click.command(
-    name="update_cluster",
-    help="""Set the components installed on a registered cluster.
+@click.command(help="""Set the components installed on a registered cluster.
 
 REQUEST_FILE is the PUT /clusters/{id} request body, in YAML or JSON: a "components"
 mapping of component name to its Helm chart values ({} for the defaults).
-final_stack is required. Components left out of the file are uninstalled from the cluster.""",
-)
+final_stack is required. Components left out of the file are uninstalled from the cluster.""")
 @click.argument("cluster_id", type=int)
 @click.argument("request_file", type=click.File("r"))
 @handle_exception
 def update_cluster(cluster_id, request_file):
-    def invalid(message):
-        return click.BadParameter(message, param_hint="REQUEST_FILE")
-
     try:
         # YAML is a superset of JSON, so this reads both.
         body = yaml.safe_load(request_file)
     except yaml.YAMLError as e:
-        raise invalid(f"not valid YAML or JSON: {e}") from e
-    # The generated models silently drop unknown keys, so a misspelled key would go
-    # unnoticed, and a misspelled component would be uninstalled.
-    if not isinstance(body, dict) or set(body) != {"components"}:
-        raise invalid('must be a mapping with a single "components" key')
-    components = body["components"]
-    if not isinstance(components, dict):
-        raise invalid('"components" must be a mapping of component name to chart values')
-    unknown = sorted(set(components) - set(ClusterBaseComponents.model_fields))
-    if unknown:
-        raise invalid(
-            f"unknown component(s) {', '.join(unknown)}; expected any of "
-            f"{', '.join(ClusterBaseComponents.model_fields)}"
-        )
-    # from_dict, not the constructors: they drop chart keys the typed models don't list.
-    try:
-        request = UpdateClusterRequest.from_dict(body)
-    except ValidationError as e:
-        raise invalid(str(e)) from e
+        raise click.BadParameter(f"not valid YAML or JSON: {e}", param_hint="REQUEST_FILE") from e
     with get_centml_client() as cclient:
-        cclient.update_cluster(cluster_id, request)
+        try:
+            cclient.update_cluster(cluster_id, body)
+        except ValueError as e:
+            raise click.BadParameter(str(e), param_hint="REQUEST_FILE") from e
     click.echo(f"Updating components on cluster {cluster_id}")
 
 
-@click.command(name="list_clusters", help="List the clusters you can deploy to")
+@click.command(help="List the clusters you can deploy to")
 @handle_exception
 def list_clusters():
     with get_centml_client() as cclient:
@@ -426,9 +402,9 @@ def list_clusters():
     click.echo(tabulate(rows, headers=["ID", "Name", "Region"], tablefmt="rounded_outline", disable_numparse=True))
 
 
-@click.command(name="delete_cluster", help="Delete a registered cluster and uninstall its components")
+@click.command(help="Delete a registered cluster")
 @click.argument("cluster_id", type=int)
-@click.confirmation_option(prompt="Delete this cluster and uninstall its components?")
+@click.confirmation_option(prompt="Delete this cluster? Components installed through ccluster are uninstalled from it.")
 @handle_exception
 def delete_cluster(cluster_id):
     with get_centml_client() as cclient:

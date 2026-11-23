@@ -17,11 +17,13 @@ from platform_api_python_client import (
     CreateHardwareInstanceRequest,
     ClusterRegistrationRequest,
     UpdateClusterRequest,
+    ClusterBaseComponents,
     UpdateClusterMetadataRequest,
     ApiException,
     InviteUserRequest,
     Metric,
 )
+from pydantic import ValidationError
 from typing_extensions import deprecated
 
 from centml.sdk import auth
@@ -46,6 +48,35 @@ LOG_RETRY_BASE_SECONDS = 0.5
 # Fraction of each backoff to vary it by: the bucket is shared, so clients backing off in
 # lockstep would re-collide on it every round.
 LOG_RETRY_JITTER = 0.25
+
+
+def _build_update_cluster_request(body) -> UpdateClusterRequest:
+    """Validate a PUT /clusters/{id} body and build the request from it.
+
+    The generated models silently drop keys they don't know and send None as null, which the
+    server reads as "not requested". A misspelled or empty component would be uninstalled
+    rather than rejected, so both are refused here.
+    """
+    if not isinstance(body, dict) or set(body) != {"components"}:
+        raise ValueError('request must be a mapping with a single "components" key')
+    components = body["components"]
+    if not isinstance(components, dict):
+        raise ValueError('"components" must be a mapping of component name to chart values')
+    known = list(ClusterBaseComponents.model_fields)
+    unknown = sorted(str(name) for name in components if name not in known)
+    if unknown:
+        raise ValueError(f"unknown component(s) {', '.join(unknown)}; expected any of {', '.join(known)}")
+    empty = [name for name in known if name in components and components[name] is None]
+    if empty:
+        raise ValueError(f"component(s) {', '.join(empty)} have no values; use {{}} for the chart defaults")
+    # from_dict, not the constructors: they drop chart keys the typed models don't list.
+    try:
+        request = UpdateClusterRequest.from_dict(body)
+    except ValidationError as e:
+        raise ValueError(str(e)) from e
+    # from_dict returns None only for a None body, which the checks above rule out.
+    assert request is not None
+    return request
 
 
 def _with_busy_retry(fetch_page: Callable[[], list]) -> list:
@@ -182,8 +213,14 @@ class CentMLClient:
     def register_cluster(self, request: ClusterRegistrationRequest):
         return self._api.create_cluster_clusters_post(request)
 
-    def update_cluster(self, cluster_id: int, request: UpdateClusterRequest):
-        return self._api.update_cluster_clusters_cluster_id_put(cluster_id, request)
+    def update_cluster(self, cluster_id: int, request: dict):
+        """Set the components installed on a registered cluster.
+
+        ``request`` is the PUT /clusters/{id} body: ``{"components": {name: chart values}}``,
+        with ``{}`` for a chart's defaults. final_stack is required, and a component left out
+        is uninstalled from the cluster. Raises ValueError for a malformed request.
+        """
+        return self._api.update_cluster_clusters_cluster_id_put(cluster_id, _build_update_cluster_request(request))
 
     def delete_cluster(self, cluster_id: int):
         return self._api.delete_cluster_clusters_cluster_id_delete(cluster_id)

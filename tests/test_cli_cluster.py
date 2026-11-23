@@ -245,11 +245,11 @@ def test_register_sends_registration_request_and_prints_cluster_id():
                 "--server",
                 "https://k8s.example.com",
                 "--ca-cert",
-                "Y2E=",
+                "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUIKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=",
                 "--region",
                 "us-east-1",
                 "--cloud-provider",
-                "aws",
+                "AWS",
             ],
             input="secret-token\n",
         )
@@ -263,8 +263,24 @@ def test_register_sends_registration_request_and_prints_cluster_id():
     assert request.region == "us-east-1"
     assert request.cloud_provider == CloudProvider.AWS
     assert request.credential.server == "https://k8s.example.com"
-    assert request.credential.ca_cert == "Y2E="
+    assert (
+        request.credential.ca_cert == "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUIKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo="
+    )
     assert request.credential.bearer_token == "secret-token"
+
+
+@contextmanager
+def _patch_platform_api():
+    """Patch the generated API under a real CentMLClient, so the SDK's validation runs."""
+    from centml.sdk.api import CentMLClient
+
+    api = MagicMock()
+    context = MagicMock()
+    context.__enter__.return_value = CentMLClient(api)
+    context.__exit__.return_value = False
+
+    with patch("centml.cli.cluster.get_centml_client", return_value=context):
+        yield api
 
 
 @pytest.mark.parametrize(
@@ -289,11 +305,11 @@ def test_update_cluster_sends_request_from_file_keeping_untyped_chart_keys(tmp_p
     request_file = tmp_path / "request"
     request_file.write_text(contents)
 
-    with _patch_cluster_client() as client:
+    with _patch_platform_api() as api:
         result = CliRunner().invoke(update_cluster, ["7", str(request_file)])
 
     assert result.exit_code == 0, result.output
-    cluster_id, request = client.update_cluster.call_args.args
+    cluster_id, request = api.update_cluster_clusters_cluster_id_put.call_args.args
     assert cluster_id == 7
     components = request.to_dict()["components"]
     assert components["final_stack"] == {}
@@ -306,6 +322,8 @@ def test_update_cluster_sends_request_from_file_keeping_untyped_chart_keys(tmp_p
     "contents, error",
     [
         ("components:\n  final_stack: {}\n  ingress-nginx: {}\n", "unknown component(s) ingress-nginx"),
+        ("components:\n  final_stack: {}\n  1: x\n", "unknown component(s) 1"),
+        ("components:\n  final_stack: {}\n  istio:\n", "component(s) istio have no values; use {}"),
         ("final_stack: {}\n", 'single "components" key'),
         ("component:\n  final_stack: {}\n", 'single "components" key'),
         ("components:\n  final_stack: {}\nextra: 1\n", 'single "components" key'),
@@ -315,6 +333,8 @@ def test_update_cluster_sends_request_from_file_keeping_untyped_chart_keys(tmp_p
     ],
     ids=[
         "unknown-component",
+        "non-string-name",
+        "empty-component",
         "no-wrapper",
         "misspelled-wrapper",
         "extra-key",
@@ -329,13 +349,13 @@ def test_update_cluster_rejects_invalid_request_file(tmp_path, contents, error):
     request_file = tmp_path / "request.yaml"
     request_file.write_text(contents)
 
-    with _patch_cluster_client() as client:
+    with _patch_platform_api() as api:
         result = CliRunner().invoke(update_cluster, ["7", str(request_file)])
 
-    assert result.exit_code == 2
+    assert result.exit_code == 2, result.output
     assert "Invalid value for REQUEST_FILE" in result.output
     assert error in result.output
-    client.update_cluster.assert_not_called()
+    api.update_cluster_clusters_cluster_id_put.assert_not_called()
 
 
 def test_list_clusters_shows_clusters_sorted_by_id():
