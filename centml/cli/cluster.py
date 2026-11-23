@@ -335,7 +335,7 @@ def capacity(cluster_id):
         )
 
 
-@click.command(help="Register your own Kubernetes cluster")
+@click.command(name="register_cluster", help="Register your own Kubernetes cluster")
 @click.option("--name", "display_name", required=True, help="Display name for the cluster")
 @click.option("--storage-class", required=True, help="Storage class to use for deployments on the cluster")
 @click.option("--server", required=True, help="URL of the cluster's Kubernetes API server")
@@ -360,7 +360,7 @@ def capacity(cluster_id):
 )
 @handle_exception
 # pylint: disable=R0917
-def register(display_name, storage_class, server, ca_cert, bearer_token, region, cloud_provider):
+def register_cluster(display_name, storage_class, server, ca_cert, bearer_token, region, cloud_provider):
     request = ClusterRegistrationRequest(
         display_name=display_name,
         storage_class=storage_class,

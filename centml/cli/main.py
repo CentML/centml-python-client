@@ -1,7 +1,7 @@
 import click
 
 from centml.cli.login import login, logout
-from centml.cli.cluster import ls, get, delete, pause, resume, capacity, register, update_cluster
+from centml.cli.cluster import ls, get, delete, pause, resume, capacity, register_cluster, update_cluster
 from centml.cli.shell import shell, exec_cmd
 
 # NVIDIA green (#76B900)
@@ -46,7 +46,7 @@ ccluster.add_command(delete)
 ccluster.add_command(pause)
 ccluster.add_command(resume)
 ccluster.add_command(capacity)
-ccluster.add_command(register)
+ccluster.add_command(register_cluster)
 ccluster.add_command(update_cluster)
 ccluster.add_command(shell)
 ccluster.add_command(exec_cmd, name="exec")

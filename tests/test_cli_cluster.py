@@ -229,14 +229,14 @@ def test_get_job_routes_to_job_api_and_displays_job_config():
 
 
 def test_register_sends_registration_request_and_prints_cluster_id():
-    from centml.cli.cluster import register
+    from centml.cli.cluster import register_cluster
     from centml.sdk import CloudProvider
 
     with _patch_cluster_client() as client:
         client.register_cluster.return_value = SimpleNamespace(id=7)
 
         result = CliRunner().invoke(
-            register,
+            register_cluster,
             [
                 "--name",
                 "my-cluster",
