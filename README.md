@@ -116,6 +116,63 @@ source scripts/completions/completion.<shell language>
 Shell language can be: bash, zsh, fish
 (Hint: add `source /path/to/completions/completion.<shell language>` to your `~/.bashrc`, `~/.zshrc` or `~/.config/fish/completions/centml.fish`)
 
+### Managing your own clusters
+
+Registering, updating and deleting clusters requires admin privileges
+(PERM_ADMIN_MANAGE_HARDWARE). Before registering, install the infra-plane operator in
+the cluster and create a ServiceAccount token with cluster-admin access:
+
+```bash
+helm install ccluster-ip oci://ghcr.io/nvidia/charts/ccluster-ip --version <version> \
+  -n ccluster-ip-system --create-namespace
+```
+
+**Register** a cluster. `--ca-cert` is the base64-encoded PEM CA certificate of the
+API server, as in a kubeconfig's `certificate-authority-data`. The bearer token is
+prompted for, with hidden input, when `--bearer-token` is omitted:
+
+```bash
+ccluster register_cluster --name my-cluster --storage-class standard-rwo \
+  --server https://<api-server> --ca-cert <base64-ca-cert> \
+  --cloud-provider gcp --region us-east1
+```
+
+**List** the clusters you have access to, with their IDs:
+
+```bash
+ccluster list_clusters
+```
+
+**Update** the components installed on a registered cluster. The file maps each
+component to its Helm chart values (`{}` for the defaults); `final_stack` is required,
+and components left out of the file are uninstalled:
+
+```bash
+cat > components.yaml <<EOF
+kube_prometheus_stack: {}
+istio: {}
+cert_manager: {}
+ingress_nginx: {}
+keda: {}
+argo_rollouts: {}
+gpu_operator: {}
+kai_scheduler: {}
+metrics_server: {}
+final_stack: {}
+EOF
+ccluster update_cluster <cluster-id> components.yaml
+```
+
+**Delete** a cluster. This uninstalls its components; pass `--yes` to skip the
+confirmation prompt:
+
+```bash
+ccluster delete_cluster <cluster-id>
+```
+
+`examples/sdk/register_cluster.py`, `update_cluster.py`, `get_clusters.py` and
+`delete_cluster.py` do the same with the SDK.
+
 ### Tests
 To run tests, first install required packages:
 ```bash
