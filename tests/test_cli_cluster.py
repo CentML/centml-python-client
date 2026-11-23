@@ -265,3 +265,59 @@ def test_register_sends_registration_request_and_prints_cluster_id():
     assert request.credential.server == "https://k8s.example.com"
     assert request.credential.ca_cert == "Y2E="
     assert request.credential.bearer_token == "secret-token"
+
+
+def test_update_sends_components_from_file_keeping_untyped_chart_keys(tmp_path):
+    from centml.cli.cluster import update
+
+    components_file = tmp_path / "components.yaml"
+    components_file.write_text(
+        "final_stack: {}\n"
+        "ingress_nginx:\n"
+        "  ingress-nginx:\n"
+        "    controller:\n"
+        "      podLabels:\n"
+        "        sidecar.istio.io/inject: 'true'\n"
+        "      untypedKey: 1\n"
+    )
+
+    with _patch_cluster_client() as client:
+        result = CliRunner().invoke(update, ["7", str(components_file)])
+
+    assert result.exit_code == 0, result.output
+    cluster_id, request = client.update_cluster.call_args.args
+    assert cluster_id == 7
+    components = request.to_dict()["components"]
+    assert components["final_stack"] == {}
+    controller = components["ingress_nginx"]["ingress-nginx"]["controller"]
+    assert controller["podLabels"] == {"sidecar.istio.io/inject": "true"}
+    assert controller["untypedKey"] == 1
+
+
+def test_update_rejects_unknown_component_names(tmp_path):
+    from centml.cli.cluster import update
+
+    components_file = tmp_path / "components.yaml"
+    components_file.write_text("final_stack: {}\ningress-nginx: {}\n")
+
+    with _patch_cluster_client() as client:
+        result = CliRunner().invoke(update, ["7", str(components_file)])
+
+    assert result.exit_code != 0
+    assert "unknown component(s) ingress-nginx" in result.output
+    client.update_cluster.assert_not_called()
+
+
+@pytest.mark.parametrize("contents", ["istio: {}\n", "final_stack: [\n"])
+def test_update_reports_invalid_components_file_without_traceback(tmp_path, contents):
+    from centml.cli.cluster import update
+
+    components_file = tmp_path / "components.yaml"
+    components_file.write_text(contents)
+
+    with _patch_cluster_client() as client:
+        result = CliRunner().invoke(update, ["7", str(components_file)])
+
+    assert result.exit_code == 2
+    assert "Invalid value for COMPONENTS_FILE" in result.output
+    client.update_cluster.assert_not_called()

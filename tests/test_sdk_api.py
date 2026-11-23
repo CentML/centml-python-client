@@ -8,6 +8,7 @@ import platform_api_python_client
 from platform_api_python_client import (
     ClusterCredential,
     ClusterRegistrationRequest,
+    UpdateClusterRequest,
     CreateDynamoDeploymentRequest,
     CreateHardwareInstanceRequest,
     CreateJobDeploymentRequest,
@@ -210,6 +211,16 @@ def test_register_cluster_delegates_to_platform_client():
 
     assert response is expected_response
     api.create_cluster_clusters_post.assert_called_once_with(request)
+
+
+def test_update_cluster_delegates_to_platform_client():
+    api = MagicMock()
+    request = UpdateClusterRequest.from_dict({"components": {"final_stack": {}}})
+    client = CentMLClient(api)
+
+    client.update_cluster(42, request)
+
+    api.update_cluster_clusters_cluster_id_put.assert_called_once_with(42, request)
 
 
 def test_get_hardware_instances_returns_results():

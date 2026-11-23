@@ -2,6 +2,8 @@ import sys
 from functools import wraps
 from typing import Dict
 import click
+import yaml
+from pydantic import ValidationError
 from tabulate import tabulate
 from centml.sdk import (
     DeploymentType,
@@ -13,6 +15,8 @@ from centml.sdk import (
     CloudProvider,
     ClusterCredential,
     ClusterRegistrationRequest,
+    ClusterBaseComponents,
+    UpdateClusterRequest,
 )
 from centml.sdk.api import get_centml_client
 
@@ -367,3 +371,36 @@ def register(display_name, storage_class, server, ca_cert, bearer_token, region,
     with get_centml_client() as cclient:
         response = cclient.register_cluster(request)
     click.echo(f"Registered cluster {response.id}")
+
+
+@click.command(help="""Set the components installed on a registered cluster.
+
+COMPONENTS_FILE is a YAML or JSON mapping of component name to its Helm chart values
+({} for the defaults). final_stack is required. Components left out of the file are
+uninstalled from the cluster.""")
+@click.argument("cluster_id", type=int)
+@click.argument("components_file", type=click.File("r"))
+@handle_exception
+def update(cluster_id, components_file):
+    try:
+        components = yaml.safe_load(components_file)
+    except yaml.YAMLError as e:
+        raise click.BadParameter(f"not valid YAML: {e}", param_hint="COMPONENTS_FILE") from e
+    if not isinstance(components, dict):
+        raise click.BadParameter("must be a mapping of component name to chart values", param_hint="COMPONENTS_FILE")
+    # The generated model silently drops unknown names, which would uninstall a misspelled component.
+    unknown = sorted(set(components) - set(ClusterBaseComponents.model_fields))
+    if unknown:
+        raise click.BadParameter(
+            f"unknown component(s) {', '.join(unknown)}; expected any of "
+            f"{', '.join(ClusterBaseComponents.model_fields)}",
+            param_hint="COMPONENTS_FILE",
+        )
+    # from_dict, not the constructors: they drop chart keys the typed models don't list.
+    try:
+        request = UpdateClusterRequest.from_dict({"components": components})
+    except ValidationError as e:
+        raise click.BadParameter(str(e), param_hint="COMPONENTS_FILE") from e
+    with get_centml_client() as cclient:
+        cclient.update_cluster(cluster_id, request)
+    click.echo(f"Updating components on cluster {cluster_id}")
