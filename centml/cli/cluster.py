@@ -373,15 +373,18 @@ def register(display_name, storage_class, server, ca_cert, bearer_token, region,
     click.echo(f"Registered cluster {response.id}")
 
 
-@click.command(help="""Set the components installed on a registered cluster.
+@click.command(
+    name="update_cluster",
+    help="""Set the components installed on a registered cluster.
 
 COMPONENTS_FILE is a YAML or JSON mapping of component name to its Helm chart values
 ({} for the defaults). final_stack is required. Components left out of the file are
-uninstalled from the cluster.""")
+uninstalled from the cluster.""",
+)
 @click.argument("cluster_id", type=int)
 @click.argument("components_file", type=click.File("r"))
 @handle_exception
-def update(cluster_id, components_file):
+def update_cluster(cluster_id, components_file):
     try:
         components = yaml.safe_load(components_file)
     except yaml.YAMLError as e:

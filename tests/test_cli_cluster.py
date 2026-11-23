@@ -268,7 +268,7 @@ def test_register_sends_registration_request_and_prints_cluster_id():
 
 
 def test_update_sends_components_from_file_keeping_untyped_chart_keys(tmp_path):
-    from centml.cli.cluster import update
+    from centml.cli.cluster import update_cluster
 
     components_file = tmp_path / "components.yaml"
     components_file.write_text(
@@ -282,7 +282,7 @@ def test_update_sends_components_from_file_keeping_untyped_chart_keys(tmp_path):
     )
 
     with _patch_cluster_client() as client:
-        result = CliRunner().invoke(update, ["7", str(components_file)])
+        result = CliRunner().invoke(update_cluster, ["7", str(components_file)])
 
     assert result.exit_code == 0, result.output
     cluster_id, request = client.update_cluster.call_args.args
@@ -295,13 +295,13 @@ def test_update_sends_components_from_file_keeping_untyped_chart_keys(tmp_path):
 
 
 def test_update_rejects_unknown_component_names(tmp_path):
-    from centml.cli.cluster import update
+    from centml.cli.cluster import update_cluster
 
     components_file = tmp_path / "components.yaml"
     components_file.write_text("final_stack: {}\ningress-nginx: {}\n")
 
     with _patch_cluster_client() as client:
-        result = CliRunner().invoke(update, ["7", str(components_file)])
+        result = CliRunner().invoke(update_cluster, ["7", str(components_file)])
 
     assert result.exit_code != 0
     assert "unknown component(s) ingress-nginx" in result.output
@@ -310,13 +310,13 @@ def test_update_rejects_unknown_component_names(tmp_path):
 
 @pytest.mark.parametrize("contents", ["istio: {}\n", "final_stack: [\n"])
 def test_update_reports_invalid_components_file_without_traceback(tmp_path, contents):
-    from centml.cli.cluster import update
+    from centml.cli.cluster import update_cluster
 
     components_file = tmp_path / "components.yaml"
     components_file.write_text(contents)
 
     with _patch_cluster_client() as client:
-        result = CliRunner().invoke(update, ["7", str(components_file)])
+        result = CliRunner().invoke(update_cluster, ["7", str(components_file)])
 
     assert result.exit_code == 2
     assert "Invalid value for COMPONENTS_FILE" in result.output
