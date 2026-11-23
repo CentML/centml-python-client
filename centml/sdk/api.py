@@ -51,31 +51,24 @@ LOG_RETRY_JITTER = 0.25
 
 
 def _build_update_cluster_request(body) -> UpdateClusterRequest:
-    """Validate a PUT /clusters/{id} body and build the request from it.
-
-    The generated models silently drop keys they don't know and send None as null, which the
-    server reads as "not requested". A misspelled or empty component would be uninstalled
-    rather than rejected, so both are refused here.
-    """
-    if not isinstance(body, dict) or set(body) != {"components"}:
-        raise ValueError('request must be a mapping with a single "components" key')
-    components = body["components"]
-    if not isinstance(components, dict):
-        raise ValueError('"components" must be a mapping of component name to chart values')
-    known = list(ClusterBaseComponents.model_fields)
-    unknown = sorted(str(name) for name in components if name not in known)
-    if unknown:
-        raise ValueError(f"unknown component(s) {', '.join(unknown)}; expected any of {', '.join(known)}")
-    empty = [name for name in known if name in components and components[name] is None]
-    if empty:
-        raise ValueError(f"component(s) {', '.join(empty)} have no values; use {{}} for the chart defaults")
+    """Build the request from a PUT /clusters/{id} body, raising ValueError if it is invalid."""
     # from_dict, not the constructors: they drop chart keys the typed models don't list.
     try:
         request = UpdateClusterRequest.from_dict(body)
     except ValidationError as e:
         raise ValueError(str(e)) from e
-    # from_dict returns None only for a None body, which the checks above rule out.
-    assert request is not None
+    if request is None:
+        raise ValueError("request is empty")
+    # from_dict accepts two mistakes that the server reads as "not requested", uninstalling
+    # the component: a misspelled name, which it drops, and a name with no values, sent as null.
+    components = body["components"]
+    known = list(ClusterBaseComponents.model_fields)
+    unknown = sorted(str(name) for name in components if name not in known)
+    if unknown:
+        raise ValueError(f"unknown component(s) {', '.join(unknown)}; expected any of {', '.join(known)}")
+    empty = [name for name, values in components.items() if values is None]
+    if empty:
+        raise ValueError(f"component(s) {', '.join(empty)} have no values; use {{}} for the chart defaults")
     return request
 
 
