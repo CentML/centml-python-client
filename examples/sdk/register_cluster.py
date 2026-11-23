@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Register your own Kubernetes cluster and install its platform components.
+"""Register your own Kubernetes cluster.
 
-Run `centml login` or configure service-account credentials first. Registering and
-updating clusters requires admin privileges (PERM_ADMIN_MANAGE_HARDWARE).
+Run `centml login` or configure service-account credentials first. Registering a
+cluster requires admin privileges (PERM_ADMIN_MANAGE_HARDWARE).
 
 The cluster's API server is reached with a bearer token and its CA certificate,
 base64-encoded as in a kubeconfig's `certificate-authority-data`:
@@ -13,29 +13,13 @@ base64-encoded as in a kubeconfig's `certificate-authority-data`:
     export CLUSTER_STORAGE_CLASS="<storage-class>"
     python examples/sdk/register_cluster.py
 
-Set CLUSTER_ID instead to skip registration and only update an existing cluster.
+Then install the cluster's components with examples/sdk/update_cluster.py.
 """
 
 import os
 
-from centml.sdk import ClusterCredential, ClusterRegistrationRequest, UpdateClusterRequest
+from centml.sdk import ClusterCredential, ClusterRegistrationRequest
 from centml.sdk.api import get_centml_client
-
-# Each component maps to its Helm chart values; {} installs it with the catalog defaults.
-# final_stack is required. A component left out is uninstalled, so every update must list
-# all the components the cluster should keep.
-COMPONENTS = {
-    "kube_prometheus_stack": {},
-    "istio": {},
-    "cert_manager": {},
-    "ingress_nginx": {},
-    "keda": {},
-    "argo_rollouts": {},
-    "gpu_operator": {},
-    "kai_scheduler": {},
-    "metrics_server": {},
-    "final_stack": {},
-}
 
 
 def required_env(name: str) -> str:
@@ -45,7 +29,7 @@ def required_env(name: str) -> str:
     return value
 
 
-def register_cluster(client) -> int:
+def main() -> None:
     request = ClusterRegistrationRequest(
         display_name=os.getenv("CLUSTER_NAME", "my-cluster"),
         storage_class=required_env("CLUSTER_STORAGE_CLASS"),
@@ -56,24 +40,9 @@ def register_cluster(client) -> int:
             ca_cert=required_env("CLUSTER_CA_CERT"),
         ),
     )
-    cluster_id = client.register_cluster(request).id
-    print(f"Registered cluster {cluster_id}")
-    return cluster_id
-
-
-def update_cluster(client, cluster_id: int) -> None:
-    # Build the request with from_dict: the model constructors drop chart values
-    # their typed models don't list.
-    request = UpdateClusterRequest.from_dict({"components": COMPONENTS})
-    client.update_cluster(cluster_id, request)
-    # The update returns without waiting for the components to roll out.
-    print(f"Installing {len(COMPONENTS)} components on cluster {cluster_id}")
-
-
-def main() -> None:
     with get_centml_client() as client:
-        cluster_id = int(os.environ["CLUSTER_ID"]) if os.getenv("CLUSTER_ID") else register_cluster(client)
-        update_cluster(client, cluster_id)
+        cluster_id = client.register_cluster(request).id
+    print(f"Registered cluster {cluster_id}")
 
 
 if __name__ == "__main__":
