@@ -173,9 +173,10 @@ gh workflow run update_platform_api_client.yml \
   --repo CentML/centml-python-client -f version=4.42.0
 ```
 
-The workflow accepts stable `X.Y.Z` versions with an optional `v` prefix. It checks
-that PyPI has a distribution compatible with Python 3.10, and skips versions at or
-below the pin on the default branch. Repeated requests for the same newer version
+The workflow runs on Python 3.12 and accepts stable `X.Y.Z` versions with an optional
+`v` prefix. It explicitly checks that PyPI has a distribution compatible with the
+SDK's minimum supported version, Python 3.10. It skips versions at or below the pin
+on the default branch. Repeated requests for the same newer version
 leave its existing PR unchanged, including handwritten SDK/CLI fixes. A closed PR
 is also left alone; reopen it manually if the upgrade should proceed. If a run
 pushed the branch but failed to open a PR, retrying opens a PR from that branch
