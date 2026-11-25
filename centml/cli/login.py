@@ -96,6 +96,7 @@ def login(token_file):
         click.echo("✅ Login successful")
     else:
         click.echo("Logging into CCluster...")
+        click.echo(f"By continuing, you agree to the Terms of Service: {settings.CENTML_TERMS_OF_SERVICE_URL}\n")
 
         choice = click.confirm("Do you want to log in with your browser now?", default=True)
         if choice:

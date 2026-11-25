@@ -9,6 +9,9 @@ class Config(BaseSettings):
     model_config = SettingsConfigDict(env_file=Path(".env"), extra="ignore")
 
     CENTML_WEB_URL: str = os.getenv("CENTML_WEB_URL", default="https://app.centml.com/")
+    CENTML_TERMS_OF_SERVICE_URL: str = os.getenv(
+        "CENTML_TERMS_OF_SERVICE_URL", default="https://app.centml.com/terms-of-service/"
+    )
     CENTML_CONFIG_PATH: str = os.getenv("CENTML_CONFIG_PATH", default=os.path.expanduser("~/.centml"))
     CENTML_CRED_FILE: str = os.getenv("CENTML_CRED_FILE", default="credentials.json")
     CENTML_CRED_FILE_PATH: str = os.path.join(CENTML_CONFIG_PATH, CENTML_CRED_FILE)
