@@ -3,7 +3,7 @@
 
 ### Installation
 
-This client uses Platform API `4.41.0`.
+This client uses Platform API `4.42.0`.
 
 To install without cloning, run the following command:
 ```bash
